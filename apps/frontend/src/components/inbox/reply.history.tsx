@@ -20,7 +20,7 @@ export const ReplyHistoryModal: FC = () => {
   return (
     <div className="flex flex-col gap-[10px] w-full">
       <div className="max-h-[60vh] overflow-auto rounded-[8px] border border-newTableBorder">
-        <table className="w-full text-[13px]">
+        <table className="w-full text-[13px] min-w-[640px] md:min-w-0">
           <thead className="bg-newTableHeader sticky top-0">
             <tr>
               <th className="p-[8px] text-start">{t('time', '时间')}</th>

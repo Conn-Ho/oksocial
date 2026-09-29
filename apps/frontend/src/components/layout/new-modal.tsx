@@ -187,7 +187,7 @@ export const Component: FC<{
               !modal.fullScreen
                 ? modal.top
                   ? ''
-                  : 'min-h-full pt-[100px] pb-[100px]'
+                  : 'min-h-full pt-[24px] pb-[24px] md:pt-[100px] md:pb-[100px]'
                 : 'h-screen',
               modal.size && modal.height
                 ? 'flex justify-center items-center'
@@ -196,9 +196,10 @@ export const Component: FC<{
           >
             <div
               className={clsx(
-                !modal.removeLayout && 'gap-[40px] p-[32px]',
-                'bg-newBgColorInner mx-auto flex flex-col w-fit rounded-[24px] relative',
-                modal.size ? '' : 'min-w-[600px]',
+                // phones: the dialog takes the screen width (less a margin) and never forces sideways scroll
+                !modal.removeLayout && 'gap-[20px] p-[20px] md:gap-[40px] md:p-[32px]',
+                'bg-newBgColorInner mx-auto flex flex-col w-full md:w-fit max-w-[calc(100vw-24px)] md:max-w-none rounded-[24px] relative',
+                modal.size ? '' : 'md:min-w-[600px]',
                 modal.fullScreen && 'h-full'
               )}
               {...((!!modal.size || !!modal.height || !!modal.maxSize) && {
@@ -211,7 +212,7 @@ export const Component: FC<{
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center">
-                <div className="text-[24px] font-[600] flex-1">
+                <div className="text-[20px] md:text-[24px] font-[600] flex-1 pe-[28px] md:pe-0">
                   {modal.title}
                 </div>
                 {typeof modal.withCloseButton === 'undefined' ||
