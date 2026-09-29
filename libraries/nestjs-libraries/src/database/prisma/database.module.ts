@@ -29,6 +29,7 @@ import { ApiKeysRepository } from '@gitroom/nestjs-libraries/database/prisma/api
 import { ApiKeysService } from '@gitroom/nestjs-libraries/database/prisma/api-keys/api.keys.service';
 import { ExtractContentService } from '@gitroom/nestjs-libraries/openai/extract.content.service';
 import { OpenaiService } from '@gitroom/nestjs-libraries/openai/openai.service';
+import { RelayImageService } from '@gitroom/nestjs-libraries/openai/relay.image.service';
 import { DeepgramService } from '@gitroom/nestjs-libraries/deepgram/deepgram.service';
 import { ClippingService } from '@gitroom/nestjs-libraries/database/prisma/clipping/clipping.service';
 import { ClippingRepository } from '@gitroom/nestjs-libraries/database/prisma/clipping/clipping.repository';
@@ -135,6 +136,7 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     MonitorAiService,
     ExtractContentService,
     OpenaiService,
+    RelayImageService,
     DeepgramService,
     ClippingService,
     ClippingRepository,

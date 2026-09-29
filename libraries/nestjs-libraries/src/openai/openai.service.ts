@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { shuffle } from 'lodash';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
+import { RelayImageService } from '@gitroom/nestjs-libraries/openai/relay.image.service';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
@@ -31,6 +32,8 @@ const ClipsPrompt = z.object({
 
 @Injectable()
 export class OpenaiService {
+  constructor(private _relayImage: RelayImageService) {}
+
   // The model answers with line numbers and not times, so a clip can only
   // start and end where the transcript really has a boundary
   async pickClips(
@@ -76,17 +79,11 @@ Clips must not overlap. Write the title and the post in this language, whatever 
   }
 
   async generateImage(prompt: string, isVertical = false) {
-    // gpt-image models always return base64 (b64_json) and do not accept the
-    // `response_format` parameter, unlike the deprecated dall-e-3.
-    const generate = (
-      await openai.images.generate({
-        prompt,
-        model: 'chatgpt-image-latest',
-        size: isVertical ? '1024x1536' : '1024x1024',
-      })
-    ).data[0];
-
-    return generate.b64_json;
+    // oksocial: the relay has no chatgpt-image-latest and serves images on chat completions, so
+    // this goes through RelayImageService (OKSOCIAL_IMAGE_MODEL). Still bare base64 for the callers.
+    return (
+      await this._relayImage.generate(prompt, { aspect: isVertical ? '2:3' : '1:1' })
+    ).base64;
   }
 
   async generatePromptForPicture(prompt: string) {
