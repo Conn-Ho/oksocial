@@ -1,0 +1,27 @@
+{
+  "name": "oksocial-browser-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Host-side browser worker for oksocial: per-account Chrome slots, opencli runs, noVNC screen proxy, media fetch.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/main.ts\" --test-coverage-lines=80 \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fastify/http-proxy": "^11.6.3",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3",
+    "ws": "^8.22.0"
+  }
+}

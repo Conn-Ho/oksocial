@@ -35,6 +35,7 @@ import {
   AuthorizationActions,
   Sections,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import { AllowViewer, RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 
 @ApiTags('User')
 @Controller('/user')
@@ -185,6 +186,7 @@ export class UsersController {
   }
 
   @Post('/switch')
+  @AllowViewer()
   async switchUser(
     @GetUserFromRequest() user: User,
     @Body('id') id: string,
@@ -230,6 +232,7 @@ export class UsersController {
   }
 
   @Post('/personal')
+  @AllowViewer()
   async changePersonal(
     @GetUserFromRequest() user: User,
     @Body() body: UserDetailDto
@@ -243,6 +246,7 @@ export class UsersController {
   }
 
   @Post('/email-notifications')
+  @AllowViewer()
   async updateEmailNotifications(
     @GetUserFromRequest() user: User,
     @Body() body: EmailNotificationsDto
@@ -251,6 +255,7 @@ export class UsersController {
   }
 
   @Post('/api-key/rotate')
+  @RequireRoles('ADMIN')
   @CheckPolicies([AuthorizationActions.Create, Sections.ADMIN])
   async rotateApiKey(@GetOrgFromRequest() organization: Organization) {
     return this._orgService.updateApiKey(organization.id);
@@ -273,6 +278,7 @@ export class UsersController {
   }
 
   @Post('/join-org')
+  @AllowViewer()
   async joinOrg(
     @GetUserFromRequest() user: User,
     @Body('org') org: string,
@@ -304,6 +310,7 @@ export class UsersController {
   }
 
   @Post('/change-org')
+  @AllowViewer()
   changeOrg(
     @Body('id') id: string,
     @Res({ passthrough: true }) response: Response
@@ -328,6 +335,7 @@ export class UsersController {
   }
 
   @Post('/delete-account')
+  @AllowViewer()
   async deleteAccount(
     @GetUserFromRequest() user: User,
     @Req() req: Request,
@@ -365,6 +373,7 @@ export class UsersController {
   }
 
   @Post('/logout')
+  @AllowViewer()
   logout(@Res({ passthrough: true }) response: Response) {
     response.header('logout', 'true');
     response.cookie('auth', '', {
@@ -410,6 +419,7 @@ export class UsersController {
   }
 
   @Post('/t')
+  @AllowViewer()
   async trackEvent(
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request,

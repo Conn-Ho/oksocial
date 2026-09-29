@@ -585,6 +585,31 @@ export class OrganizationRepository {
     });
   }
 
+  updateTeamMemberRole(orgId: string, userId: string, role: Role) {
+    return this._userOrg.model.userOrganization.update({
+      where: {
+        userId_organizationId: { userId, organizationId: orgId },
+        role: { not: Role.SUPERADMIN },
+      },
+      data: { role },
+    });
+  }
+
+  getPostApproval(orgId: string) {
+    return this._organization.model.organization.findUnique({
+      where: { id: orgId },
+      select: { requirePostApproval: true },
+    });
+  }
+
+  setPostApproval(orgId: string, enabled: boolean) {
+    return this._organization.model.organization.update({
+      where: { id: orgId },
+      data: { requirePostApproval: enabled },
+      select: { requirePostApproval: true },
+    });
+  }
+
   async deleteTeamMember(orgId: string, userId: string) {
     return this._userOrg.model.userOrganization.delete({
       where: {

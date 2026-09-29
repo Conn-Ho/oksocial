@@ -745,6 +745,12 @@ export class PostsService {
       return;
     }
 
+    // Posts waiting for approval, or refused, never start publishing (every start goes through here).
+    const approval = (await this._postRepository.getApproval(postId))?.approval;
+    if (approval === 'PENDING' || approval === 'REJECTED') {
+      return;
+    }
+
     try {
       await this._temporalService.client
         .getRawClient()
@@ -928,7 +934,10 @@ export class PostsService {
     orgId: string,
     body: CreatePostDto,
     creationMethod: CreationMethod,
-    keepGroup = false
+    keepGroup = false,
+    // oksocial approval: 'hold' keeps a 内容运营's scheduled post from publishing until reviewed,
+    // 'approve' records that a reviewer scheduled it (their own post, or an edit of a pending one).
+    approval?: { mode: 'hold' | 'approve'; userId: string }
   ): Promise<any[]> {
     const postList = [];
     for (const post of body.posts) {
@@ -981,6 +990,16 @@ export class PostsService {
       await this.detachStaleAnchors(
         posts.filter((p) => existingIds.includes(p.id))
       );
+
+      if (approval && (body.type === 'schedule' || body.type === 'now')) {
+        await this._postRepository.setApproval(
+          orgId,
+          posts.map((p) => p.id),
+          approval.mode === 'hold'
+            ? { approval: 'PENDING', approvalNote: null, requestedById: approval.userId }
+            : { approval: 'APPROVED', approvalById: approval.userId }
+        );
+      }
 
       if (body.type !== 'update') {
         this.startWorkflow(
@@ -1150,6 +1169,57 @@ export class PostsService {
 
   async separatePosts(content: string, len: number) {
     return this._openaiService.separatePosts(content, len);
+  }
+
+  listPendingApprovals(orgId: string) {
+    return this._postRepository.pendingApprovals(orgId);
+  }
+
+  /** Approve: start publishing exactly as a normal save would. Reject: back to draft with a note. */
+  async reviewPosts(
+    orgId: string,
+    group: string,
+    reviewerId: string,
+    decision: 'approve' | 'reject',
+    note?: string
+  ) {
+    const pending = (await this._postRepository.groupForApproval(orgId, group)).filter(
+      (p) => p.approval === 'PENDING'
+    );
+    if (!pending.length) {
+      throw new BadRequestException('Nothing waiting for approval in this group');
+    }
+    const ids = pending.map((p) => p.id);
+    if (decision === 'reject') {
+      await this._postRepository.setApproval(orgId, ids, {
+        approval: 'REJECTED',
+        approvalNote: note || null,
+        approvalById: reviewerId,
+      });
+      for (const post of pending) {
+        await this._postRepository.changeState(post.id, 'DRAFT');
+      }
+    } else {
+      await this._postRepository.setApproval(orgId, ids, {
+        approval: 'APPROVED',
+        approvalNote: note || null,
+        approvalById: reviewerId,
+      });
+      for (const post of pending) {
+        await this.startWorkflow(
+          post.integration.providerIdentifier.split('-')[0].toLowerCase(),
+          post.id,
+          orgId,
+          post.state
+        );
+      }
+    }
+    return {
+      group,
+      decision,
+      count: pending.length,
+      requestedById: pending[0].requestedById,
+    };
   }
 
   async changeState(id: string, state: State, err?: any, body?: any) {

@@ -49,6 +49,8 @@ export class PostsRepository {
         state: 'QUEUE',
         deletedAt: null,
         parentPostId: null,
+        // posts waiting for (or refused) approval must not be restarted by this sweeper
+        OR: [{ approval: null }, { approval: 'APPROVED' }],
       },
       select: {
         id: true,
@@ -59,6 +61,69 @@ export class PostsRepository {
           },
         },
         publishDate: true,
+      },
+    });
+  }
+
+  setApproval(
+    orgId: string,
+    ids: string[],
+    data: {
+      approval: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+      approvalNote?: string | null;
+      approvalById?: string | null;
+      requestedById?: string | null;
+    }
+  ) {
+    return this._post.model.post.updateMany({
+      where: { id: { in: ids }, organizationId: orgId },
+      data: {
+        ...data,
+        approvalAt: data.approval === 'PENDING' ? null : new Date(),
+      },
+    });
+  }
+
+  getApproval(postId: string) {
+    return this._post.model.post.findUnique({
+      where: { id: postId },
+      select: { approval: true },
+    });
+  }
+
+  pendingApprovals(orgId: string) {
+    return this._post.model.post.findMany({
+      where: {
+        organizationId: orgId,
+        approval: 'PENDING',
+        parentPostId: null,
+        deletedAt: null,
+      },
+      orderBy: { publishDate: 'asc' },
+      select: {
+        id: true,
+        group: true,
+        content: true,
+        image: true,
+        publishDate: true,
+        requestedById: true,
+        createdAt: true,
+        integration: {
+          select: { id: true, name: true, picture: true, providerIdentifier: true },
+        },
+      },
+    });
+  }
+
+  groupForApproval(orgId: string, group: string) {
+    return this._post.model.post.findMany({
+      where: { organizationId: orgId, group, parentPostId: null, deletedAt: null },
+      select: {
+        id: true,
+        state: true,
+        approval: true,
+        requestedById: true,
+        integration: { select: { providerIdentifier: true } },
       },
     });
   }

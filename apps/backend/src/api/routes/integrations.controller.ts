@@ -35,6 +35,7 @@ import {
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { uniqBy } from 'lodash';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
+import { AllowViewer, RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -47,6 +48,7 @@ export class IntegrationsController {
   ) {}
 
   @Post('/provider/:id/connect')
+  @RequireRoles('ADMIN', 'MANAGER')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async saveProviderPage(
     @GetOrgFromRequest() org: Organization,
@@ -67,6 +69,7 @@ export class IntegrationsController {
   }
 
   @Put('/:id/group')
+  @RequireRoles('ADMIN', 'MANAGER')
   async updateIntegrationGroup(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -80,6 +83,7 @@ export class IntegrationsController {
   }
 
   @Put('/:id/customer-name')
+  @RequireRoles('ADMIN', 'MANAGER')
   async updateOnCustomerName(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -128,6 +132,7 @@ export class IntegrationsController {
   }
 
   @Post('/:id/settings')
+  @RequireRoles('ADMIN', 'MANAGER')
   async updateProviderSettings(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -140,6 +145,7 @@ export class IntegrationsController {
     await this._integrationService.updateProviderSettings(org.id, id, body);
   }
   @Post('/:id/nickname')
+  @RequireRoles('ADMIN', 'MANAGER')
   async setNickname(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -195,6 +201,7 @@ export class IntegrationsController {
   }
 
   @Get('/social/:integration')
+  @RequireRoles('ADMIN', 'MANAGER')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async getIntegrationUrl(
     @Param('integration') integration: string,
@@ -266,6 +273,7 @@ export class IntegrationsController {
   }
 
   @Post('/:id/time')
+  @RequireRoles('ADMIN', 'MANAGER')
   async setTime(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -401,6 +409,7 @@ export class IntegrationsController {
   }
 
   @Post('/disable')
+  @RequireRoles('ADMIN', 'MANAGER')
   disableChannel(
     @GetOrgFromRequest() org: Organization,
     @Body('id') id: string
@@ -409,6 +418,7 @@ export class IntegrationsController {
   }
 
   @Post('/enable')
+  @RequireRoles('ADMIN', 'MANAGER')
   enableChannel(
     @GetOrgFromRequest() org: Organization,
     @Body('id') id: string
@@ -422,6 +432,7 @@ export class IntegrationsController {
   }
 
   @Delete('/')
+  @RequireRoles('ADMIN', 'MANAGER')
   async deleteChannel(
     @GetOrgFromRequest() org: Organization,
     @Body('id') id: string
@@ -453,6 +464,7 @@ export class IntegrationsController {
   }
 
   @Post('/:id/plugs')
+  @RequireRoles('ADMIN', 'MANAGER')
   async postPlugsByIntegrationId(
     @Param('id') id: string,
     @GetOrgFromRequest() org: Organization,
@@ -462,6 +474,7 @@ export class IntegrationsController {
   }
 
   @Put('/plugs/:id/activate')
+  @RequireRoles('ADMIN', 'MANAGER')
   async changePlugActivation(
     @Param('id') id: string,
     @GetOrgFromRequest() org: Organization,
@@ -476,6 +489,7 @@ export class IntegrationsController {
   }
 
   @Post('/moltbook/register')
+  @RequireRoles('ADMIN', 'MANAGER')
   async moltbookRegister(@Body() body: { name: string; description: string }) {
     try {
       const provider = new MoltbookProvider();

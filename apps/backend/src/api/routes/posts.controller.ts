@@ -34,6 +34,10 @@ import {
   ResolveCommentDto,
 } from '@gitroom/nestjs-libraries/dtos/comments/add.comment.dto';
 import { RealIP } from 'nestjs-real-ip';
+import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
+import { ReviewPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/review.posts.dto';
+import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
+import { needsApproval, canReviewPosts } from '@gitroom/helpers/auth/org.roles';
 
 @ApiTags('Posts')
 @Controller('/posts')
@@ -41,8 +45,42 @@ export class PostsController {
   constructor(
     private _postsService: PostsService,
     private _agentGraphService: AgentGraphService,
-    private _shortLinkService: ShortLinkService
+    private _shortLinkService: ShortLinkService,
+    private _notificationService: NotificationService
   ) {}
+
+  // Declared first so "/approvals" is not captured by the "/:id" routes below.
+  @Get('/approvals')
+  @RequireRoles('ADMIN', 'MANAGER')
+  listApprovals(@GetOrgFromRequest() org: Organization) {
+    return this._postsService.listPendingApprovals(org.id);
+  }
+
+  @Post('/approvals/:group')
+  @RequireRoles('ADMIN', 'MANAGER')
+  async reviewPosts(
+    @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
+    @Param('group') group: string,
+    @Body() body: ReviewPostsDto
+  ) {
+    const result = await this._postsService.reviewPosts(
+      org.id,
+      group,
+      user.id,
+      body.decision,
+      body.note
+    );
+    await this._notificationService.inAppNotification(
+      org.id,
+      body.decision === 'approve' ? '帖子已通过审核' : '帖子被退回',
+      body.decision === 'approve'
+        ? `${user.name || user.email} 通过了 ${result.count} 条帖子，已进入发布队列`
+        : `${user.name || user.email} 退回了 ${result.count} 条帖子${body.note ? `：${body.note}` : ''}，已改为草稿`,
+      false
+    );
+    return result;
+  }
 
   @Get('/:id/statistics')
   async getStatistics(
@@ -197,6 +235,7 @@ export class PostsController {
   @CheckPolicies([AuthorizationActions.Create, Sections.POSTS_PER_MONTH])
   async createPost(
     @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body() rawBody: any
   ) {
     // Server-side validation — never trust the client to have validated.
@@ -237,7 +276,23 @@ export class PostsController {
     }
 
     const body = await this._postsService.mapTypeToPost(rawBody, org.id);
-    return this._postsService.createPost(org.id, body, 'WEB');
+    // @ts-ignore set by AuthMiddleware: the caller's membership
+    const role: string | undefined = org.users?.[0]?.role;
+    const requireApproval = !!(org as any).requirePostApproval;
+    const hold = needsApproval(role, requireApproval);
+    const approval = requireApproval && (hold || canReviewPosts(role))
+      ? { mode: hold ? ('hold' as const) : ('approve' as const), userId: user.id }
+      : undefined;
+    const created = await this._postsService.createPost(org.id, body, 'WEB', false, approval);
+    if (hold && (body.type === 'schedule' || body.type === 'now') && created.length) {
+      await this._notificationService.inAppNotification(
+        org.id,
+        '有帖子等待审核',
+        `${user.name || user.email} 提交了 ${created.length} 条帖子，等待运营主管或管理员审核`,
+        true
+      );
+    }
+    return created;
   }
 
   @Post('/generator/draft')

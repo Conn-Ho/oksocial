@@ -1,0 +1,24 @@
+[Unit]
+Description=oksocial browser worker (Chrome slots, opencli runs, noVNC proxy, media cache)
+After=network-online.target opencli-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mac
+WorkingDirectory=/home/mac/oksocial/browser-fleet/worker
+EnvironmentFile=/home/mac/oksocial/browser-worker.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/main.ts
+Restart=always
+RestartSec=3
+# SIGTERM goes to the worker only; it stops accepting requests and lets running opencli commands finish.
+# Whatever is still running after TimeoutStopSec is killed with the whole cgroup.
+KillMode=mixed
+TimeoutStopSec=150
+# No NoNewPrivileges: account-ctl drives systemd through sudo.
+# No PrivateTmp: media downloaded to MEDIA_DIR (/tmp/oksocial-media) is uploaded by Chrome, which runs in
+# its own chrome@<slot> unit and must see the same /tmp.
+
+[Install]
+WantedBy=multi-user.target

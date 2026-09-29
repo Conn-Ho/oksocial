@@ -42,6 +42,22 @@ export const useMenuItem = () => {
       path: '/launches',
     },
     {
+      name: t('approvals', '审核'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="23" height="23" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M9 12.5L11 14.5L15.5 10M20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      path: '/approvals',
+      role: ['ADMIN', 'SUPERADMIN', 'MANAGER'],
+    },
+    {
       name: 'Agent',
       icon: (
         <svg

@@ -18,6 +18,7 @@ import {
   AuthorizationActions,
   Sections,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import {
   CreateBrowserProxyDto,
@@ -29,6 +30,7 @@ import {
 // the fleet, and manage the outbound proxies those browsers use.
 @ApiTags('Browser Sessions')
 @Controller('/browser-sessions')
+@RequireRoles('ADMIN', 'MANAGER')
 export class BrowserSessionsController {
   constructor(private _browserSlotService: BrowserSlotService) {}
 

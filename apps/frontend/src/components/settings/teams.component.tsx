@@ -17,17 +17,10 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
 import copy from 'copy-to-clipboard';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { ASSIGNABLE_ROLES, ROLE_LABELS, OrgRole, canManageOrg } from '@gitroom/helpers/auth/org.roles';
 
-const roles = [
-  {
-    name: 'User',
-    value: 'USER',
-  },
-  {
-    name: 'Admin',
-    value: 'ADMIN',
-  },
-];
+const roles = ASSIGNABLE_ROLES.map((value) => ({ name: ROLE_LABELS[value], value }));
+const RANK: Record<string, number> = { VIEWER: 0, USER: 1, MANAGER: 2, ADMIN: 3, SUPERADMIN: 4 };
 export const AddMember = () => {
   const modals = useModals();
   const fetch = useFetch();
@@ -105,21 +98,42 @@ export const AddMember = () => {
     </FormProvider>
   );
 };
+const PostApprovalToggle = () => {
+  const fetch = useFetch();
+  const t = useT();
+  const load = useCallback(async () => (await fetch('/settings/approval')).json(), []);
+  const { data, mutate } = useSWR('post-approval-setting', load);
+  const toggle = useCallback(async () => {
+    await fetch('/settings/approval', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: !data?.requirePostApproval }),
+    });
+    mutate();
+  }, [data]);
+  return (
+    <label className="mt-[12px] flex items-center gap-[10px] text-[14px] cursor-pointer">
+      <input type="checkbox" checked={!!data?.requirePostApproval} onChange={toggle} />
+      {t(
+        'require_post_approval',
+        '发布审核：内容运营的定时帖子需要运营主管或管理员通过后才发布'
+      )}
+    </label>
+  );
+};
+
 export const TeamsComponent = () => {
   const fetch = useFetch();
+  const toast = useToaster();
   const user = useUser();
   const modals = useModals();
   const t = useT();
-  const myLevel = user?.role === 'USER' ? 0 : user?.role === 'ADMIN' ? 1 : 2;
-  const getLevel = useCallback(
-    (role: 'USER' | 'ADMIN' | 'SUPERADMIN') =>
-      role === 'USER' ? 0 : role === 'ADMIN' ? 1 : 2,
-    []
-  );
+  const myLevel = RANK[user?.role || 'VIEWER'];
+  const getLevel = useCallback((role: string) => RANK[role] ?? 0, []);
+  const isAdmin = canManageOrg(user?.role);
   const loadTeam = useCallback(async () => {
     return (await (await fetch('/settings/team')).json()).users as Array<{
       id: string;
-      role: 'SUPERADMIN' | 'ADMIN' | 'USER';
+      role: OrgRole;
       user: {
         email: string;
         id: string;
@@ -163,9 +177,25 @@ export const TeamsComponent = () => {
     [t]
   );
 
+  const changeRole = useCallback(
+    (id: string) => async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const res = await fetch(`/settings/team/${id}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ role: e.target.value }),
+      });
+      toast.show(
+        res.ok ? t('role_updated', '角色已更新') : t('role_update_failed', '修改失败'),
+        res.ok ? 'success' : 'warning'
+      );
+      await mutate();
+    },
+    [t]
+  );
+
   return (
     <div className="flex flex-col">
       <h3 className="text-[20px]">{t('team_members', 'Team Members')}</h3>
+      {isAdmin && <PostApprovalToggle />}
       <div className="text-customColor18 mt-[4px]">
         {t(
           'invite_your_assistant_or_team_member_to_manage_your_account',
@@ -180,11 +210,22 @@ export const TeamsComponent = () => {
                 {capitalize(p.user.email.split('@')[0]).split('.')[0]}
               </div>
               <div className="flex-1">
-                {p.role === 'USER'
-                  ? t('user', 'User')
-                  : p.role === 'ADMIN'
-                  ? t('admin', 'Admin')
-                  : t('super_admin', 'Super Admin')}
+                {isAdmin && p.role !== 'SUPERADMIN' && p.user.id !== user?.id ? (
+                  <select
+                    aria-label={t('role', '角色')}
+                    value={p.role}
+                    onChange={changeRole(p.user.id)}
+                    className="bg-newTableHeader rounded-[4px] px-[8px] h-[32px]"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  ROLE_LABELS[p.role] ?? p.role
+                )}
               </div>
               {+myLevel > +getLevel(p.role) ? (
                 <div className="flex-1 flex justify-end">

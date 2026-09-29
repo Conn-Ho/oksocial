@@ -33,6 +33,7 @@ import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 import { BulkImportModal } from '@gitroom/frontend/components/launches/bulk.import.modal';
 import { useSWRConfig } from 'swr';
+import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
 
 export const SVGLine = () => {
   return (
@@ -590,14 +591,16 @@ export const LaunchesComponent = () => {
               </div>
             </div>
             <div className="flex flex-col gap-[8px] group-[.sidebar]:mx-auto group-[.sidebar]:w-[44px]">
-              <AddProviderButton update={() => update(true)} />
+              {canManageChannels(user?.role) && (
+                <AddProviderButton update={() => update(true)} />
+              )}
               <div className="flex gap-[8px] group-[.sidebar]:flex-col">
-                {sortedIntegrations?.length > 0 && <NewPost />}
+                {sortedIntegrations?.length > 0 && canWritePosts(user?.role) && <NewPost />}
                 {sortedIntegrations?.length > 0 &&
                   user?.tier?.ai &&
                   billingEnabled && <GeneratorComponent />}
               </div>
-              {sortedIntegrations?.length > 0 && (
+              {sortedIntegrations?.length > 0 && canWritePosts(user?.role) && (
                 <button
                   type="button"
                   className="text-[13px] text-textColor/70 hover:text-textColor underline-offset-4 hover:underline text-start group-[.sidebar]:hidden"

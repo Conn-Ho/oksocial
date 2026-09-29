@@ -1,0 +1,65 @@
+/** Fastify app: token check on every request, JSON error envelope, routes. Dependencies are injected. */
+import Fastify from 'fastify';
+import type { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
+import { TOKEN_HEADER, tokenMatches } from './auth.ts';
+import type { OpenedTab } from './cdp.ts';
+import { HttpError } from './errors.ts';
+import type { MediaFetcher } from './media.ts';
+import { QueueAbortedError, QueueClosedError, QueueFullError } from './queue.ts';
+import type { KeyedQueue } from './queue.ts';
+import { safeMessage } from './redact.ts';
+import { registerHealthRoutes } from './routes/health.ts';
+import { registerMediaRoutes } from './routes/media.ts';
+import { registerRunRoutes } from './routes/run.ts';
+import { registerScreenRoutes } from './routes/screen.ts';
+import { registerSlotRoutes } from './routes/slots.ts';
+import type { SlotRunner } from './runner.ts';
+import type { SlotsService } from './slots.ts';
+
+export interface AppDeps {
+  token: string;
+  slots: SlotsService;
+  runner: SlotRunner;
+  runQueue: KeyedQueue;
+  daemonUp: () => Promise<boolean>;
+  openTab: (cdpPort: number, url: string) => Promise<OpenedTab>;
+  media: MediaFetcher;
+  /** Optional allow-list of opencli site commands for /run (RUN_ALLOWED_SITES). */
+  runAllowedSites?: ReadonlySet<string>;
+  logger?: FastifyServerOptions['logger'];
+}
+
+export const LOG_REDACT_PATHS = [`req.headers["${TOKEN_HEADER}"]`, 'req.headers.authorization', 'req.headers.cookie'];
+
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const app = Fastify({ logger: deps.logger ?? false, bodyLimit: 1024 * 1024 });
+
+  // Registered before any route or plugin so it covers everything, WebSocket upgrades included.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!tokenMatches(deps.token, req.headers[TOKEN_HEADER])) {
+      await reply.code(401).send({ ok: false, code: 'UNAUTHORIZED', error: `missing or invalid ${TOKEN_HEADER}` });
+    }
+  });
+
+  app.setErrorHandler((err: FastifyError | Error, req, reply) => {
+    if (err instanceof HttpError) {
+      if (err.statusCode >= 500) req.log.warn({ code: err.code, err: err.message }, 'request failed');
+      return reply.code(err.statusCode).send({ ok: false, code: err.code, error: err.message, ...err.extra });
+    }
+    if (err instanceof QueueFullError) return reply.code(429).send({ ok: false, code: 'QUEUE_FULL', error: err.message });
+    if (err instanceof QueueClosedError) return reply.code(503).send({ ok: false, code: 'SHUTTING_DOWN', error: err.message });
+    if (err instanceof QueueAbortedError) return reply.code(499).send({ ok: false, code: 'CANCELLED', error: err.message });
+    const status = 'statusCode' in err && typeof err.statusCode === 'number' ? err.statusCode : 500;
+    if (status < 500) return reply.code(status).send({ ok: false, code: ('code' in err && err.code) || 'BAD_REQUEST', error: safeMessage(err.message) });
+    req.log.error({ err: { message: safeMessage(err.message), name: err.name } }, 'request failed');
+    return reply.code(500).send({ ok: false, code: 'INTERNAL', error: 'internal error' });
+  });
+  app.setNotFoundHandler((_req, reply) => reply.code(404).send({ ok: false, code: 'NOT_FOUND', error: 'route not found' }));
+
+  registerHealthRoutes(app, deps);
+  registerSlotRoutes(app, deps);
+  registerRunRoutes(app, deps);
+  registerMediaRoutes(app, deps);
+  await registerScreenRoutes(app, deps);
+  return app;
+}

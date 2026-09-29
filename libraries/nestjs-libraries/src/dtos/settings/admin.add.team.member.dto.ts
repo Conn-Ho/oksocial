@@ -6,6 +6,6 @@ export class AdminAddTeamMemberDto {
   email: string;
 
   @IsString()
-  @IsIn(['USER', 'ADMIN'])
+  @IsIn(['USER', 'ADMIN', 'MANAGER', 'VIEWER'])
   role: string;
 }

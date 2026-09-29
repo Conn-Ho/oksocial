@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+# Per-account browser instances on one host, all paired with the single opencli daemon.
+#   account-ctl create <name> [--proxy <url|->]  profile dir + display + Chrome unit, start it (existing account: never started, only --proxy applied)
+#   account-ctl proxy <name> <url|-|none>        per-account upstream proxy through a local gost forwarder (- reads the URL from stdin)
+#   account-ctl screen  <name>                   start x11vnc + noVNC for that account, bound to 127.0.0.1 (the browser worker proxies it)
+#   account-ctl unscreen <name>                  stop the screen stream (Chrome keeps running)
+#   account-ctl stop|start|restart <name>        stop/start/restart the Chrome (login state stays on disk)
+#   account-ctl remove <name> [--purge]          stop+disable Chrome, proxy and screen; --purge also deletes the account dir
+#   account-ctl list [--json]                    accounts, display, ports, running state, opencli profile id
+#   account-ctl profile <name>                   bridge profile id of the account
+#   account-ctl install-units                    (re)write the systemd unit templates (running units are untouched)
+# Exit codes: 0 ok, 1 failure, 2 usage / invalid input, 3 no such account, 4 not supported on a legacy unit.
+set -euo pipefail
+U="${SUDO_USER:-$(whoami)}"; [ "$U" = root ] && { echo "run account-ctl as the operator user, not root" >&2; exit 1; }
+# ACCOUNT_CTL_BASE / ACCOUNT_CTL_UNIT_DIR / ACCOUNT_CTL_GOST exist for tests; production uses the defaults.
+BASE="${ACCOUNT_CTL_BASE:-/home/$U/accounts}"; UNIT_DIR="${ACCOUNT_CTL_UNIT_DIR:-/etc/systemd/system}"; GOST="${ACCOUNT_CTL_GOST:-/usr/local/bin/gost}"
+CHROME=/opt/chrome-testing/chrome-linux64/chrome; EXT=/home/$U/opencli-ext; NOVNC=/usr/share/novnc
+PROXY_RE='^(http|https|socks5|socks5h)://([A-Za-z0-9._~%!*+,;=-]+(:[A-Za-z0-9._~%!*+,;=-]*)?@)?([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\]):([0-9]{1,5})/?$'
+mkdir -p "$BASE"
+
+fail() { local code=$1; shift; echo "account-ctl: $*" >&2; exit "$code"; }
+valid_name() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]]; }
+need_slot() { # every command except create: the account must exist
+  [ -n "${1:-}" ] || fail 2 "missing account name"
+  valid_name "$1" || fail 2 "invalid account name: $1"
+  [ -f "$BASE/$1/env" ] || fail 3 "no such account: $1"
+}
+lock() { # serialize create/proxy/remove (idx allocation, unit files); flock is util-linux, present on the VM
+  command -v flock >/dev/null 2>&1 || return 0
+  exec 9>"$BASE/.lock"; flock -w 120 9 || fail 1 "another account-ctl is still running"
+}
+env_get() { # env_get <name> <KEY>: value from the account env file, without surrounding quotes
+  local v; v=$(sed -n "s/^$2=//p" "$BASE/$1/env" 2>/dev/null | head -n 1)
+  v=${v#\"}; printf '%s' "${v%\"}"
+}
+disp_of() { # validated display number of an account (used in arithmetic, unit names and pkill patterns)
+  local v; v=$(env_get "$1" DISP)
+  [[ "$v" =~ ^[0-9]{1,4}$ ]] || fail 1 "account $1: env has no valid DISP"
+  printf '%s' "$v"
+}
+env_set() { # env_set <name> <KEY> <value>: replace or append one line, atomically
+  local f="$BASE/$1/env" tmp; tmp=$(mktemp "$BASE/$1/.env.XXXXXX")
+  { grep -v "^$2=" "$f" 2>/dev/null || true; printf '%s="%s"\n' "$2" "$3"; } > "$tmp"
+  chmod 644 "$tmp"; mv -f "$tmp" "$f"
+}
+idx_of() { # stable small integer per account name (1..), stored in $BASE/<name>/idx
+  local d="$BASE/$1" n=1 used; mkdir -p "$d"
+  if [ ! -f "$d/idx" ]; then
+    used=" $( (cat "$BASE"/*/idx 2>/dev/null || true) | tr '\n' ' ') "
+    while [[ "$used" == *" $n "* ]]; do n=$((n+1)); done
+    echo "$n" > "$d/idx"
+  fi
+  cat "$d/idx"
+}
+unit_of() { [ -f "$BASE/$1/unit" ] && tr -cd 'A-Za-z0-9@._:-' < "$BASE/$1/unit" || echo "chrome@$1"; }
+is_legacy() { [ "$(unit_of "$1")" != "chrome@$1" ]; }
+unit_state() { local s; s=$(systemctl is-active "$1" 2>/dev/null || true); s=$(printf '%s' "$s" | head -n 1 | tr -cd 'a-z-'); echo "${s:-unknown}"; }
+
+UNITS_CHANGED=0
+write_unit() { # write_unit <file>: content on stdin; only replaced when it changed
+  local f="$UNIT_DIR/$1" tmp; tmp=$(mktemp)
+  cat > "$tmp"
+  if ! cmp -s "$tmp" "$f"; then sudo install -m 0644 "$tmp" "$f"; UNITS_CHANGED=1; fi
+  rm -f "$tmp"
+}
+reload_units() { if [ "$UNITS_CHANGED" = 1 ]; then sudo systemctl daemon-reload; UNITS_CHANGED=0; fi; }
+install_units() {
+  write_unit xvfb@.service <<'S'
+[Unit]
+Description=Xvfb display :%i
+[Service]
+ExecStart=/usr/bin/Xvfb :%i -screen 0 1440x900x24 -nolisten tcp
+Restart=always
+[Install]
+WantedBy=multi-user.target
+S
+  # Identical to the original template except ${PROXY_ARGS} (empty unless the account has a proxy).
+  write_unit chrome@.service <<S
+[Unit]
+Description=Chrome for account %i
+After=network.target
+[Service]
+User=$U
+EnvironmentFile=$BASE/%i/env
+Environment=LANG=zh_CN.UTF-8
+Environment=CHROME_DEVEL_SANDBOX=/opt/chrome-testing/chrome-linux64/chrome_sandbox
+ExecStartPre=/home/$U/chrome-clean-start.sh $BASE/%i/profile
+ExecStart=/bin/sh -c 'exec env DISPLAY=:\${DISP} $CHROME --user-data-dir=$BASE/%i/profile --no-first-run --no-default-browser-check --disable-gpu --window-size=1440,900 --window-position=0,0 --lang=zh-CN --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --remote-debugging-port=\${CDP} --load-extension=$EXT --disable-extensions-except=$EXT --hide-crash-restore-bubble \${PROXY_ARGS} about:blank'
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+S
+  # Chrome's --proxy-server cannot carry credentials: gost listens on 127.0.0.1:(18000+idx) and forwards upstream.
+  # The upstream URL (with credentials) lives only in the 0600 gost.json, never on a command line.
+  write_unit gost@.service <<S
+[Unit]
+Description=gost proxy forwarder for account %i
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=$U
+ExecStart=$GOST -C $BASE/%i/gost.json
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+S
+  # Screen: x11vnc (VNC 5900+DISP-10) and websockify/noVNC (web 6080+DISP-10), both on loopback only.
+  # No VNC password: the only way in is the browser worker (token) behind Caddy (login).
+  write_unit x11vnc@.service <<S
+[Unit]
+Description=x11vnc screen for account %i (127.0.0.1 only)
+[Service]
+User=$U
+EnvironmentFile=$BASE/%i/env
+ExecStart=/bin/sh -c 'exec x11vnc -display :\$\${DISP} -forever -shared -localhost -nopw -rfbport \$\$((5900+DISP-10)) -noxdamage'
+Restart=on-failure
+RestartSec=2
+S
+  write_unit novnc@.service <<S
+[Unit]
+Description=noVNC web screen for account %i (127.0.0.1 only)
+Requires=x11vnc@%i.service
+After=x11vnc@%i.service
+[Service]
+User=$U
+EnvironmentFile=$BASE/%i/env
+ExecStart=/bin/sh -c 'exec websockify --web $NOVNC 127.0.0.1:\$\$((6080+DISP-10)) 127.0.0.1:\$\$((5900+DISP-10))'
+Restart=on-failure
+RestartSec=2
+S
+}
+
+# ---------- proxy ----------
+valid_proxy() {
+  [ "${#1}" -le 512 ] || return 1
+  [[ "$1" =~ $PROXY_RE ]] || return 1
+  [ "${BASH_REMATCH[5]}" -ge 1 ] && [ "${BASH_REMATCH[5]}" -le 65535 ]
+}
+redact() { printf '%s' "$1" | sed -E 's#^([a-z0-9]+://)[^@/]*@#\1***@#'; }
+read_proxy_arg() { # "-" = read the URL from stdin (keeps credentials out of the process list)
+  local v=$1
+  if [ "$v" = - ]; then IFS= read -r v || true; fi
+  printf '%s' "$v"
+}
+# gost v3 config for one account: HTTP proxy on 127.0.0.1:<port> -> upstream. URL on stdin, JSON on stdout.
+GOST_PY='
+import json, sys, urllib.parse as up
+name, port = sys.argv[1], int(sys.argv[2])
+u = up.urlsplit(sys.stdin.readline().strip())
+host = u.hostname
+node = {"name": "upstream", "addr": ("[%s]" % host if ":" in host else host) + ":" + str(u.port),
+        "connector": {"type": {"http": "http", "https": "http", "socks5": "socks5", "socks5h": "socks5"}[u.scheme]},
+        "dialer": {"type": "tls", "tls": {"secure": True, "serverName": host}} if u.scheme == "https" else {"type": "tcp"}}
+if u.username is not None:
+    node["connector"]["auth"] = {"username": up.unquote(u.username), "password": up.unquote(u.password or "")}
+json.dump({"services": [{"name": "account-" + name, "addr": "127.0.0.1:%d" % port,
+                         "handler": {"type": "http", "chain": "upstream"}, "listener": {"type": "tcp"}}],
+           "chains": [{"name": "upstream", "hops": [{"name": "hop-0", "nodes": [node]}]}],
+           "log": {"level": "warn", "format": "json"}}, sys.stdout, indent=2)
+'
+write_proxy_files() { # write_proxy_files <name> <url>: proxy.url + gost.json (0600), env PROXY_ARGS, Chrome drop-in
+  local name=$1 url=$2 d="$BASE/$1" port
+  port=$((18000 + $(cat "$d/idx")))
+  ( umask 077
+    trap 'rm -f "$d/.proxy.url.tmp" "$d/.gost.json.tmp"' EXIT # never leave credentials behind on failure
+    printf '%s\n' "$url" > "$d/.proxy.url.tmp"
+    python3 -c "$GOST_PY" "$name" "$port" <<< "$url" > "$d/.gost.json.tmp"
+    mv -f "$d/.proxy.url.tmp" "$d/proxy.url"; mv -f "$d/.gost.json.tmp" "$d/gost.json" )
+  # WebRTC would otherwise reveal the host IP over UDP, bypassing the proxy.
+  env_set "$name" PROXY_ARGS "--proxy-server=http://127.0.0.1:$port --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+  sudo mkdir -p "$UNIT_DIR/chrome@$name.service.d"
+  write_unit "chrome@$name.service.d/10-proxy.conf" <<S
+[Unit]
+Wants=gost@$name.service
+After=gost@$name.service
+S
+}
+set_proxy() { # set_proxy <name> <url> [norestart]
+  local name=$1 url=$2 d="$BASE/$1"
+  valid_proxy "$url" || fail 2 "invalid proxy URL for $name: want http|https|socks5|socks5h://[user:pass@]host:port with percent-encoded credentials"
+  if is_legacy "$name"; then
+    fail 4 "account $name runs on the legacy unit '$(unit_of "$name")'; a per-account proxy needs it migrated to chrome@$name first (see README, 'Migrating a legacy unit')"
+  fi
+  [ -x "$GOST" ] || fail 1 "gost is not installed at $GOST (run install-gost.sh)"
+  if [ -f "$d/proxy.url" ] && [ "$(cat "$d/proxy.url")" = "$url" ] && [ -f "$d/gost.json" ]; then
+    sudo systemctl --quiet enable --now "gost@$name"
+    echo "proxy for $name unchanged ($(redact "$url"))"; return 0
+  fi
+  install_units
+  write_proxy_files "$name" "$url"
+  reload_units
+  sudo systemctl --quiet enable "gost@$name"; sudo systemctl restart "gost@$name"
+  [ "${3:-}" = norestart ] || sudo systemctl try-restart "chrome@$name" # only a running Chrome; a stopped one stays stopped
+  echo "proxy for $name set to $(redact "$url") via 127.0.0.1:$((18000 + $(cat "$d/idx")))"
+}
+clear_proxy() {
+  local name=$1 d="$BASE/$1"
+  if [ ! -f "$d/proxy.url" ] && [ -z "$(env_get "$name" PROXY_ARGS)" ]; then echo "no proxy for $name"; return 0; fi
+  sudo systemctl --quiet disable --now "gost@$name" 2>/dev/null || true
+  rm -f "$d/proxy.url" "$d/gost.json"
+  env_set "$name" PROXY_ARGS ""
+  if [ -d "$UNIT_DIR/chrome@$name.service.d" ]; then sudo rm -f "$UNIT_DIR/chrome@$name.service.d/10-proxy.conf"; UNITS_CHANGED=1; fi
+  reload_units
+  sudo systemctl try-restart "chrome@$name"
+  echo "proxy for $name removed"
+}
+proxy_cmd() {
+  need_slot "${1:-}"; [ -n "${2:-}" ] || fail 2 "usage: account-ctl proxy <name> <url|-|none>"
+  local name=$1 url; url=$(read_proxy_arg "$2")
+  lock
+  if [ "$url" = none ]; then clear_proxy "$name"; elif [ -z "$url" ]; then fail 2 "empty proxy URL (use 'none' to remove the proxy)"; else set_proxy "$name" "$url"; fi
+}
+
+# ---------- lifecycle ----------
+create() {
+  local name=${1:-} proxy="" idx disp cdp; shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in --proxy) [ $# -ge 2 ] || fail 2 "--proxy needs a URL"; proxy=$(read_proxy_arg "$2"); shift 2;; *) fail 2 "unknown option: $1";; esac
+  done
+  [[ "$name" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]] || fail 2 "account name must match ^[a-z0-9][a-z0-9-]{1,31}\$"
+  [ -z "$proxy" ] || valid_proxy "$proxy" || fail 2 "invalid proxy URL: want http|https|socks5|socks5h://[user:pass@]host:port with percent-encoded credentials"
+  lock
+  if [ -f "$BASE/$name/env" ]; then # idempotent: never (re)start an existing account here
+    echo "account $name exists (display :$(env_get "$name" DISP), cdp $(env_get "$name" CDP)); not starting it"
+    [ -z "$proxy" ] || set_proxy "$name" "$proxy"
+    return 0
+  fi
+  idx=$(idx_of "$name"); disp=$((10+idx)); cdp=$((9300+idx))
+  mkdir -p "$BASE/$name/profile"
+  install_units
+  printf 'DISP=%s\nCDP=%s\nPROXY_ARGS=""\n' "$disp" "$cdp" > "$BASE/$name/env"
+  if [ -n "$proxy" ]; then
+    [ -x "$GOST" ] || fail 1 "gost is not installed at $GOST (run install-gost.sh)"
+    write_proxy_files "$name" "$proxy"
+  fi
+  UNITS_CHANGED=1; reload_units
+  sudo systemctl --quiet enable --now "xvfb@$disp"; sleep 1
+  [ -z "$proxy" ] || sudo systemctl --quiet enable --now "gost@$name"
+  sudo systemctl --quiet enable --now "chrome@$name"
+  echo "created $name: display :$disp cdp $cdp${proxy:+ proxy $(redact "$proxy")}"
+  if [ -t 1 ]; then sleep 8; list; fi
+}
+ensure_display() { # a chrome@ account needs its Xvfb; legacy units bring their own
+  local disp; is_legacy "$1" && return 0
+  disp=$(disp_of "$1"); sudo systemctl start "xvfb@$disp"
+}
+remove() {
+  need_slot "${1:-}"; local name=$1 purge=0 unit disp
+  [ "${2:-}" = --purge ] && purge=1
+  lock
+  unit=$(unit_of "$name"); disp=$(disp_of "$name")
+  sudo systemctl --quiet disable --now "novnc@$name" "x11vnc@$name" "gost@$name" 2>/dev/null || true
+  kill_legacy_screen "$disp"
+  sudo systemctl --quiet disable --now "$unit" 2>/dev/null || true
+  if ! is_legacy "$name"; then
+    sudo systemctl --quiet disable --now "xvfb@$disp" 2>/dev/null || true
+    if [ -d "$UNIT_DIR/chrome@$name.service.d" ]; then sudo rm -rf "$UNIT_DIR/chrome@$name.service.d"; UNITS_CHANGED=1; fi
+  fi
+  reload_units
+  if [ "$purge" = 1 ]; then rm -rf -- "${BASE:?}/$name"; echo "removed $name (purged)"; else echo "removed $name (profile kept in $BASE/$name)"; fi
+}
+
+# ---------- screen ----------
+kill_legacy_screen() { # nohup'd x11vnc/websockify started by the previous account-ctl (not systemd-managed)
+  local disp=$1 vnc=$((5900+$1-10)) web=$((6080+$1-10))
+  pkill -f "x11vnc -display :$disp -rfbauth .* -rfbport $vnc " 2>/dev/null || true
+  pkill -f "websockify.* $web localhost:" 2>/dev/null || true
+}
+screen_running() { # screen_running <name> <disp>
+  [ "$(unit_state "novnc@$1")" = active ] || pgrep -f "websockify.* $((6080+$2-10)) localhost:" >/dev/null 2>&1
+}
+screen() {
+  need_slot "${1:-}"; local name=$1 disp web
+  disp=$(disp_of "$name"); web=$((6080+disp-10))
+  install_units; reload_units
+  [ "$(unit_state "novnc@$name")" = active ] || kill_legacy_screen "$disp"
+  sudo systemctl start "x11vnc@$name" "novnc@$name"
+  echo "screen for $name: http://127.0.0.1:$web/vnc.html (loopback only; the browser worker serves it at /screen/$name/)"
+}
+unscreen() {
+  need_slot "${1:-}"; local name=$1 disp; disp=$(disp_of "$name")
+  sudo systemctl stop "novnc@$name" "x11vnc@$name" 2>/dev/null || true
+  kill_legacy_screen "$disp"
+  echo "screen off for $name"
+}
+
+# ---------- listing ----------
+profile_id() { # bridge profile id = the context id the extension stored in this Chrome profile
+  local d="$BASE/$1/profile/Default/Local Extension Settings" id; [ -d "$d" ] || { echo "?"; return; }
+  # Same heuristic as before; a missing *.log or *.ldb no longer trips pipefail into printing "<id>\n?".
+  id=$( (cat "$d"/*/*.log "$d"/*/*.ldb 2>/dev/null || true) | grep -aoE '[a-z0-9]{8}' | grep -vE '^[0-9]+$' | grep -vE '(context|opencli|storage|version)' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}' || true)
+  echo "${id:-?}"
+}
+list() {
+  printf '%-14s %-6s %-6s %-9s %s\n' ACCOUNT DISP CDP CHROME PROFILE
+  for d in "$BASE"/*/; do n=$(basename "$d"); [ -f "$d/env" ] || continue; printf '%-14s :%-5s %-6s %-9s %s\n' "$n" "$(env_get "$n" DISP)" "$(env_get "$n" CDP)" "$(unit_state "$(unit_of "$n")")" "$(profile_id "$n")"; done
+  echo "--- opencli profiles ---"; opencli profile list 2>&1 | grep -E "connected|disconnected" || true
+}
+list_json() { # [{name, display, cdp, screenPort, chrome, unit, profileId, proxy, screen}]
+  local first=1 d n disp cdp unit pid proxy scr
+  printf '['
+  for d in "$BASE"/*/; do
+    n=$(basename "$d"); if [ ! -f "$d/env" ] || ! valid_name "$n"; then continue; fi
+    disp=$(env_get "$n" DISP); cdp=$(env_get "$n" CDP)
+    [[ "$disp" =~ ^[0-9]+$ && "$cdp" =~ ^[0-9]+$ ]] || continue
+    unit=$(unit_of "$n"); pid=$(profile_id "$n")
+    if [[ "$pid" =~ ^[a-z0-9]+$ ]]; then pid="\"$pid\""; else pid=null; fi
+    proxy=false; [ -s "$d/proxy.url" ] && proxy=true
+    scr=false; screen_running "$n" "$disp" && scr=true
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"name":"%s","display":%d,"cdp":%d,"screenPort":%d,"chrome":"%s","unit":"%s","profileId":%s,"proxy":%s,"screen":%s}' \
+      "$n" "$disp" "$cdp" "$((6080+disp-10))" "$(unit_state "$unit")" "$unit" "$pid" "$proxy" "$scr"
+  done
+  printf ']\n'
+}
+
+case "${1:-}" in
+  profile) need_slot "${2:-}"; profile_id "$2";;
+  create) shift; create "$@";;
+  proxy) proxy_cmd "${2:-}" "${3:-}";;
+  screen) screen "${2:-}";;
+  unscreen) unscreen "${2:-}";;
+  stop) need_slot "${2:-}"; sudo systemctl stop "$(unit_of "$2")"; echo stopped;;
+  start) need_slot "${2:-}"; ensure_display "$2"; sudo systemctl start "$(unit_of "$2")"; echo started;;
+  restart) need_slot "${2:-}"; ensure_display "$2"; sudo systemctl restart "$(unit_of "$2")"; echo restarted;;
+  remove) remove "${2:-}" "${3:-}";;
+  list) if [ "${2:-}" = --json ]; then list_json; else list; fi;;
+  install-units) lock; install_units; reload_units; echo "unit templates installed in $UNIT_DIR";;
+  *) sed -n 2,12p "$0";;
+esac

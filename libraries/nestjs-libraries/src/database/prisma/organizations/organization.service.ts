@@ -8,7 +8,7 @@ import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import dayjs from 'dayjs';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
-import { Organization, ShortLinkPreference, User } from '@prisma/client';
+import { Organization, Role, ShortLinkPreference, User } from '@prisma/client';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
 @Injectable()
@@ -108,8 +108,8 @@ export class OrganizationService {
         : user.email;
       await this._notificationsService.sendEmail(
         body.email,
-        `${user.name || user.email} invited you to join "${org.name}"`,
-        `${inviter} has invited you to join the "${org.name}" team.<br /><a href="${url}">Accept the invitation</a> to get started.<br />The link will expire in 2 days.`
+        `${user.name || user.email} 邀请你加入「${org.name}」`,
+        `${inviter} 邀请你加入 oksocial 团队「${org.name}」。<br /><a href="${url}">接受邀请</a>即可开始。<br />链接 2 天内有效。`
       );
     }
     return { url };
@@ -169,6 +169,18 @@ export class OrganizationService {
     }
 
     return { added: true };
+  }
+
+  updateTeamMemberRole(orgId: string, userId: string, role: Role) {
+    return this._organizationRepository.updateTeamMemberRole(orgId, userId, role);
+  }
+
+  getPostApproval(orgId: string) {
+    return this._organizationRepository.getPostApproval(orgId);
+  }
+
+  setPostApproval(orgId: string, enabled: boolean) {
+    return this._organizationRepository.setPostApproval(orgId, enabled);
   }
 
   async deleteTeamMember(org: Organization, userId: string) {
