@@ -46,7 +46,11 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   return (
     <>
       <div className="hover:text-newTextColor">
-        <div className="group text-[12px] relative">
+        {/* focusable so a tap (no hover on phones) or the keyboard opens the list too */}
+        <div
+          className="group text-[12px] relative rounded-[6px] focus-visible:ring-2 focus-visible:ring-btnPrimary"
+          tabIndex={data?.length > 1 ? 0 : undefined}
+        >
           {asOpenSelect && (
             <div className="bg-btnPrimary !flex !relative max-w-[500px] mx-auto py-[12px] px-[12px]">{t('label_select_organization', 'Select organization')}</div>
           )}
@@ -66,14 +70,14 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                 />
               </svg>
               {!!current?.name && (
-                <div className="max-w-[240px] truncate">{current?.name}</div>
+                <div className="max-w-[25vw] md:max-w-[240px] truncate">{current?.name}</div>
               )}
             </div>
           )}
           {data?.length > 1 && (
             <div
               className={clsx(
-                'hidden py-[12px] px-[12px] group-hover:flex absolute top-[100%] end-0 w-max max-w-[400px] bg-third border-tableBorder border gap-[12px] cursor-pointer flex-col',
+                'hidden py-[12px] px-[12px] group-hover:flex group-focus-within:flex absolute top-[100%] end-0 w-max max-w-[min(400px,calc(100vw-96px))] bg-third border-tableBorder border gap-[12px] cursor-pointer flex-col',
                 asOpenSelect ? '!flex !relative max-w-[500px] mx-auto mb-[10px]' : '',
               )}
             >
