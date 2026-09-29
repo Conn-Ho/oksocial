@@ -130,9 +130,9 @@ export const UsageComponent: FC = () => {
             {usage.features.map((f) => (
               <span
                 key={f.key}
-                className={clsx('text-[12px] px-[8px] h-[24px] leading-[24px] rounded-full border', f.enabled ? 'border-btnPrimary text-textColor' : 'border-newTableBorder text-textColor/40 line-through')}
+                className={clsx('text-[12px] px-[10px] h-[24px] leading-[22px] rounded-full border whitespace-nowrap', f.enabled ? 'border-btnPrimary text-textColor' : 'border-newTableBorder text-textColor/50')}
               >
-                {f.label}
+                {f.enabled ? `✓ ${f.label}` : `${f.label} · 需升级`}
               </span>
             ))}
           </div>
@@ -183,7 +183,7 @@ export const UsageComponent: FC = () => {
             {catalogue.prices.map((p) => (
               <li key={p.action} className="flex justify-between gap-[12px] border-b border-newTableBorder py-[6px]">
                 <span className="text-textColor/80">{p.label}</span>
-                <span className="tabular-nums">{p.credits} 积分/次</span>
+                <span className="tabular-nums whitespace-nowrap">{p.credits} 积分/次</span>
               </li>
             ))}
           </ul>

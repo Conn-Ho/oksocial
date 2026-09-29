@@ -37,7 +37,7 @@ export const CreditsLedger: FC = () => {
                 setDays(r.days);
                 setPage(1);
               }}
-              className={clsx('px-[12px] h-[30px] rounded-[6px] text-[13px]', days === r.days ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
+              className={clsx('px-[12px] h-[30px] rounded-[6px] text-[13px] whitespace-nowrap', days === r.days ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
             >
               {r.label}
             </button>
