@@ -42,6 +42,7 @@ import { PreConditionComponent } from '@gitroom/frontend/components/layout/pre-c
 import { AttachToFeedbackIcon } from '@gitroom/frontend/components/new-layout/sentry.feedback.component';
 import { FirstBillingComponent } from '@gitroom/frontend/components/billing/first.billing.component';
 import { TrialTracker } from '@gitroom/frontend/components/layout/gtm.component';
+import { MobileNav } from '@gitroom/frontend/components/new-layout/mobile.nav';
 import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
 
 const jakartaSans = Plus_Jakarta_Sans({
@@ -76,6 +77,9 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
 
   if (!user) return null;
 
+  // a free org on the hosted plan only sees the plan picker: no menu, so no phone bar either
+  const firstBilling = user.tier === 'FREE' && isGeneral && billingEnabled;
+
   return (
     <ContextWrapper user={user}>
       <CopilotKit
@@ -99,18 +103,19 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
             <div
               className={clsx(
                 'flex flex-col min-h-screen min-w-screen text-newTextColor p-[12px]',
+                !firstBilling && 'pb-[calc(80px+env(safe-area-inset-bottom))] md:pb-[12px]',
                 jakartaSans.className
               )}
             >
               <div>{user?.admin ? <Impersonate /> : <div />}</div>
-              {user.tier === 'FREE' && isGeneral && billingEnabled ? (
+              {firstBilling ? (
                 <FirstBillingComponent />
               ) : (
                 <>
                   <AnnouncementBanner />
                   <div className="flex-1 flex gap-[8px]">
                     <Support />
-                    <div className="flex flex-col bg-newBgColorInner w-[80px] rounded-[12px]">
+                    <div className="hidden md:flex flex-col bg-newBgColorInner w-[80px] rounded-[12px]">
                       <div
                         id="left-menu"
                         className={clsx(
@@ -124,29 +129,35 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex-1 bg-newBgLineColor rounded-[12px] overflow-hidden flex flex-col gap-[1px] blurMe">
-                      <div className="flex bg-newBgColorInner h-[80px] px-[20px] items-center">
-                        <div className="text-[24px] font-[600] flex flex-1">
+                    <div className="flex-1 min-w-0 bg-newBgLineColor rounded-[12px] overflow-hidden flex flex-col gap-[1px] blurMe">
+                      <div className="flex bg-newBgColorInner h-[56px] md:h-[80px] px-[16px] md:px-[20px] gap-[12px] items-center">
+                        <div className="text-[20px] md:text-[24px] font-[600] flex flex-1 min-w-0">
                           <Title />
                         </div>
-                        <div className="flex gap-[20px] text-textItemBlur">
-                          <StreakComponent />
-                          <div className="w-[1px] h-[20px] bg-blockSeparator" />
-                          <OrganizationSelector />
-                          <div className="hover:text-newTextColor">
-                            <ModeComponent />
+                        {/* phones keep the organisation and notifications; theme and language move to 「更多」 */}
+                        <div className="flex items-center md:items-stretch gap-[12px] md:gap-[20px] text-textItemBlur">
+                          <div className="hidden md:contents">
+                            <StreakComponent />
+                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
                           </div>
-                          <div className="w-[1px] h-[20px] bg-blockSeparator" />
-                          <LanguageComponent />
-                          <ChromeExtensionComponent />
-                          <div className="w-[1px] h-[20px] bg-blockSeparator" />
-                          <AttachToFeedbackIcon />
+                          <OrganizationSelector />
+                          <div className="hidden md:contents">
+                            <div className="hover:text-newTextColor">
+                              <ModeComponent />
+                            </div>
+                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
+                            <LanguageComponent />
+                            <ChromeExtensionComponent />
+                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
+                            <AttachToFeedbackIcon />
+                          </div>
                           <NotificationComponent />
                         </div>
                       </div>
                       <div className="flex flex-1 gap-[1px]">{children}</div>
                     </div>
                   </div>
+                  <MobileNav />
                 </>
               )}
             </div>

@@ -4,17 +4,21 @@ import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import Link from 'next/link';
 
-export const MenuItem: FC<{ label: string; icon: ReactNode; path: string; onClick?: () => void }> = ({
-  label,
-  icon,
-  path,
-  onClick,
-}) => {
+export const MenuItem: FC<{
+  label: string;
+  icon: ReactNode;
+  path: string;
+  onClick?: () => void;
+  /** Overrides the "path is the current page" check, e.g. for the phone 「更多」 button. */
+  active?: boolean;
+  /** For a button that opens a dialog: whether that dialog is open. */
+  expanded?: boolean;
+}> = ({ label, icon, path, onClick, active, expanded }) => {
   const currentPath = usePathname();
-  const isActive = currentPath.indexOf(path) === 0;
+  const isActive = active ?? currentPath.indexOf(path) === 0;
 
   const className = clsx(
-    'group w-full minCustom:h-[54px] custom:h-[44px] py-[8px] px-[6px] minCustom:gap-[4px] custom:gap-[2px] flex flex-col font-[600] items-center justify-center rounded-[12px] hover:text-textItemFocused hover:bg-boxFocused transition-colors',
+    'group w-full minCustom:h-[54px] custom:h-[44px] py-[8px] px-[6px] minCustom:gap-[4px] custom:gap-[2px] flex flex-col font-[600] items-center justify-center rounded-[12px] hover:text-textItemFocused hover:bg-boxFocused transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-btnPrimary',
     isActive ? 'text-textItemFocused bg-boxFocused' : 'text-textItemBlur'
   );
 
@@ -29,7 +33,14 @@ export const MenuItem: FC<{ label: string; icon: ReactNode; path: string; onClic
 
   if (onClick) {
     return (
-      <button onClick={onClick} title={label} className={className}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={label}
+        aria-haspopup={expanded === undefined ? undefined : 'dialog'}
+        aria-expanded={expanded}
+        className={className}
+      >
         {inner}
       </button>
     );
@@ -40,6 +51,7 @@ export const MenuItem: FC<{ label: string; icon: ReactNode; path: string; onClic
       prefetch={true}
       href={path}
       title={label}
+      aria-current={isActive ? 'page' : undefined}
       {...path.indexOf('http') === 0 && { target: '_blank' }}
       className={className}
     >
