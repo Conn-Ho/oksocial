@@ -49,7 +49,8 @@ export class MonitorRepository {
     private _targets: PrismaRepository<'monitorTarget'>,
     private _snapshots: PrismaRepository<'monitorSnapshot'>,
     private _items: PrismaRepository<'monitorItem'>,
-    private _integrations: PrismaRepository<'integration'>
+    private _integrations: PrismaRepository<'integration'>,
+    private _slots: PrismaRepository<'browserSlot'>
   ) {}
 
   createTarget(orgId: string, data: NewMonitorTarget) {
@@ -259,8 +260,20 @@ export class MonitorRepository {
         disabled: false,
         refreshNeeded: false,
         inBetweenSteps: false,
+        // a browser channel the platform pushed back on rests until its brake runs out
+        OR: [
+          { browserSlot: { is: null } },
+          { browserSlot: { is: { OR: [{ brakeUntil: null }, { brakeUntil: { lte: new Date() } }] } } },
+        ],
       },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  brake(integrationId: string, until: Date, reason: string) {
+    return this._slots.model.browserSlot.updateMany({
+      where: { integrationId },
+      data: { brakeUntil: until, brakeReason: reason.slice(0, 300) },
     });
   }
 }

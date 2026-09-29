@@ -12,8 +12,10 @@ const setup = () => {
     monitorSnapshot: delegate({ findMany: jest.fn(async () => [{ id: 's2' }, { id: 's1' }]) }),
     monitorItem: delegate(),
     integration: delegate(),
+    browserSlot: delegate(),
   };
   const repo = new MonitorRepository(
+    { model: models } as any,
     { model: models } as any,
     { model: models } as any,
     { model: models } as any,
@@ -99,7 +101,7 @@ describe('MonitorRepository', () => {
     });
   });
 
-  it('reader channels are the usable ones of that platform, oldest first', async () => {
+  it('reader channels are the usable, unbraked ones of that platform, oldest first', async () => {
     const { repo, integration } = setup();
     await repo.channels('o1', 'xiaohongshu');
     expect(integration.findMany).toHaveBeenCalledWith({
@@ -110,8 +112,22 @@ describe('MonitorRepository', () => {
         disabled: false,
         refreshNeeded: false,
         inBetweenSteps: false,
+        OR: [
+          { browserSlot: { is: null } },
+          { browserSlot: { is: { OR: [{ brakeUntil: null }, { brakeUntil: { lte: expect.any(Date) } }] } } },
+        ],
       },
       orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('braking a channel sets its browser slot brake', async () => {
+    const { repo, browserSlot } = setup();
+    const until = new Date('2026-09-30T00:00:00Z');
+    await repo.brake('c1', until, 'x'.repeat(400));
+    expect(browserSlot.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'c1' },
+      data: { brakeUntil: until, brakeReason: 'x'.repeat(300) },
     });
   });
 

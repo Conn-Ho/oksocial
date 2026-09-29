@@ -14,11 +14,10 @@ import {
   matchesTriggers,
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
+import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
 dayjs.extend(utc);
 
-// A platform that pushes back (risk control, "looks automated") stops this channel's automations.
-export const BRAKE_HOURS = 6;
-export const CHALLENGE_RE = /风控|CHALLENGE|automated|not be allowed/i;
+export { BRAKE_HOURS, CHALLENGE_RE };
 // Random human-like gap between two automated writes (per run).
 export const PACE_MIN_MS = 20_000;
 export const PACE_MAX_MS = 60_000;

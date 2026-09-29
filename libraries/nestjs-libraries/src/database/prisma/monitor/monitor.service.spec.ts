@@ -54,6 +54,7 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean } = {}) => {
     createTarget: jest.fn(async (_o: string, data: any) => ({ id: 't1', ...data })),
     channels: jest.fn(async () => opts.channels ?? [{ id: 'c1', token: 'slot1' }, { id: 'c2', token: 'slot2' }]),
     finishRun: jest.fn(async () => ({})),
+    brake: jest.fn(async () => ({ count: 1 })),
     savePostReading: jest.fn(async () => ({})),
     addComments: jest.fn(async () => ({})),
     setTitleIfEmpty: jest.fn(async () => ({})),
@@ -219,6 +220,24 @@ describe('runTarget', () => {
     expect(xhs.readPost).toHaveBeenCalledWith('slot1', expect.anything(), 20);
     expect(res).toEqual(expect.objectContaining({ ok: false, error: '平台风控拦截了这次操作' }));
     expect(repo.finishRun).toHaveBeenCalledWith('t1', expect.objectContaining({ lastError: '平台风控拦截了这次操作' }));
+  });
+
+  it('a risk-control block brakes the reading channel and tells the organization', async () => {
+    const { service, repo, notifications } = setup();
+    xhs.readPost.mockRejectedValueOnce(new Error('平台风控拦截了这次操作'));
+    const before = Date.now();
+    await service.runTarget(target({ integrationId: 'c2' }));
+    expect(repo.brake).toHaveBeenCalledWith('c2', expect.any(Date), '平台风控拦截了这次操作');
+    const until = (repo.brake.mock.calls[0] as any[])[1] as Date;
+    expect(until.getTime()).toBeGreaterThanOrEqual(before + 6 * 3600_000);
+    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.stringContaining('风控'), expect.any(String), true);
+  });
+
+  it('other read failures do not brake the channel', async () => {
+    const { service, repo } = setup();
+    xhs.readPost.mockRejectedValueOnce(new Error('timeout'));
+    await service.runTarget(target());
+    expect(repo.brake).not.toHaveBeenCalled();
   });
 
   it('a competitor first reading sets the baseline without a notification', async () => {

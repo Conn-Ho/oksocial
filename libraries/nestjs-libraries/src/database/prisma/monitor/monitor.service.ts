@@ -26,6 +26,7 @@ import {
 } from '@gitroom/nestjs-libraries/monitor/monitor.ai.service';
 import { CreatePostDto } from '@gitroom/nestjs-libraries/dtos/posts/create.post.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
+import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
 
 dayjs.extend(utc);
 
@@ -333,19 +334,36 @@ export class MonitorService {
   /** Reads one target now. Failures land on the target (lastError), never throw. */
   async runTarget(target: MonitorTarget) {
     const nextRunAt = new Date(Date.now() + target.intervalMinutes * 60_000);
+    let channel: Channel | null = null;
     try {
       const provider = this.provider(target.platform);
-      const channel = await this.readerOrFail(target.organizationId, provider, target.integrationId);
+      channel = await this.readerOrFail(target.organizationId, provider, target.integrationId);
       const added = await this.read(target, provider, channel);
       await this._repository.finishRun(target.id, { lastError: null, nextRunAt, succeeded: true });
       return { ok: true, added };
     } catch (err) {
       const message = ((err as Error)?.message || '读取失败').slice(0, 500);
+      if (channel && CHALLENGE_RE.test(message)) {
+        await this.brake(target.organizationId, channel, message).catch((e) =>
+          console.log(`monitor brake ${channel?.id}`, (e as Error)?.message)
+        );
+      }
       await this._repository
         .finishRun(target.id, { lastError: message, nextRunAt, succeeded: false })
         .catch((e) => console.log(`monitor ${target.id}`, (e as Error)?.message));
       return { ok: false, added: 0, error: message };
     }
+  }
+
+  /** The platform pushed back on this channel: it stops reading (and automating) for a while. */
+  private async brake(orgId: string, channel: Channel, reason: string) {
+    await this._repository.brake(channel.id, dayjs().add(BRAKE_HOURS, 'hour').toDate(), reason);
+    await this._notificationService.inAppNotification(
+      orgId,
+      '账号触发平台风控，监控已暂停',
+      `监控用「${channel.name}」读取时被平台拦截（${reason.slice(0, 80)}），该账号的监控和自动化暂停 ${BRAKE_HOURS} 小时。请先在浏览器里确认账号状态。`,
+      true
+    );
   }
 
   // Targets this process is reading on request, so a second click does not start a second read.
