@@ -35,6 +35,7 @@ model Organization {
   Integration         Integration[]
   media               Media[]
   brandProfiles       BrandProfile[]
+  aiGenerations       AiGeneration[]
   buyerOrganization   MessagesGroup[]
   notifications       Notifications[]
   plugs               Plugs[]
@@ -130,6 +131,7 @@ model User {
   agencies              SocialMediaAgency?
   picture               Media?               @relation(fields: [pictureId], references: [id])
   organizations         UserOrganization[]
+  aiGenerations         AiGeneration[]
   sendSuccessEmails     Boolean              @default(true)
   sendFailureEmails     Boolean              @default(true)
   sendStreakEmails      Boolean              @default(true)
@@ -2346,4 +2348,23 @@ model BrandProfile {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, deletedAt])
+}
+
+// oksocial AI 创作 history: one row per generation (who, which template, input, output), so
+// results can be reopened; images are stored files, referenced by URL in the output.
+model AiGeneration {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String?
+  brandId        String?
+  // template / action key: brand, adapt, titles, remake, script, cover, translate
+  template       String
+  input          Json
+  output         Json?
+  error          String?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
 }

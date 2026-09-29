@@ -40,6 +40,8 @@ import { ReportsController } from '@gitroom/backend/api/routes/reports.controlle
 import { AutomationsController } from '@gitroom/backend/api/routes/automations.controller';
 import { PublicReportsController } from '@gitroom/backend/api/routes/public.reports.controller';
 import { MonitoringController } from '@gitroom/backend/api/routes/monitoring.controller';
+import { BrandsController } from '@gitroom/backend/api/routes/brands.controller';
+import { CreationController } from '@gitroom/backend/api/routes/creation.controller';
 import { AutopostController } from '@gitroom/backend/api/routes/autopost.controller';
 import { SetsController } from '@gitroom/backend/api/routes/sets.controller';
 import { ThirdPartyController } from '@gitroom/backend/api/routes/third-party.controller';
@@ -83,6 +85,8 @@ const authenticatedController = [
   ReportsController,
   AutomationsController,
   MonitoringController,
+  BrandsController,
+  CreationController,
   AutopostController,
   SetsController,
   ThirdPartyController,

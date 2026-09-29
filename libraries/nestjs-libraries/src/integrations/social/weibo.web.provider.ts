@@ -1,5 +1,6 @@
 import { Integration } from '@prisma/client';
 import {
+  CreationCapabilities,
   InboxCapabilities,
   InboxFetched,
   MonitorAccountRef,
@@ -79,6 +80,14 @@ export class WeiboWebProvider
   maxLength() {
     return 2000;
   }
+
+  creation: CreationCapabilities = {
+    format: 'post',
+    imagesMax: IMAGES_MAX,
+    hashtag: '#{tag}#',
+    coverAspect: '1:1',
+    guide: '微博：第一句就抛出观点或话题，短小有信息量，适合转发讨论；不需要单独的标题；1-3 个话题标签。',
+  };
 
   // Profile totals; engagement summed over the latest 20 posts (weibo shows no account totals).
   stats = async (slot: string, integration: { internalId: string }) => {

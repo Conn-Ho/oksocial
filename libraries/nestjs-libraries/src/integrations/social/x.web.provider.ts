@@ -1,5 +1,6 @@
 import { Integration } from '@prisma/client';
 import {
+  CreationCapabilities,
   InboxCapabilities,
   MonitorAccountRef,
   MonitorCapabilities,
@@ -81,6 +82,16 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
   maxLength() {
     return 280;
   }
+
+  creation: CreationCapabilities = {
+    format: 'thread',
+    imagesMax: MEDIA_MAX,
+    weighted: true,
+    coverAspect: '16:9',
+    guide:
+      'X（Twitter）：简洁直接，一条讲清一个点；内容多时拆成串推，第一条是钩子，每条都能单独读懂；' +
+      '中文按 2 个字符计算，一条约 140 个汉字；最多 1-2 个话题标签。',
+  };
 
   async postAnalytics(internalId: string, slot: string, tweetId: string) {
     if (!/^\d+$/.test(tweetId || '')) {

@@ -191,6 +191,24 @@ export type MonitorCapabilities = {
   readGapMs?: [number, number];
 };
 
+// oksocial AI 创作: how a post for this platform is written (跨平台适配, titles, covers).
+export type CreationCapabilities = {
+  // what one post is: a text; a thread of parts (each within maxLength) replying to each other;
+  // or a video, written as a spoken script to film plus the caption it is posted with
+  format: 'post' | 'thread' | 'video';
+  // a title shown apart from the text, taken from its first line: at most this many characters
+  titleMax?: number;
+  imagesMax?: number;
+  // length counted the way X does (CJK characters count twice)
+  weighted?: boolean;
+  // how a topic is written, {tag} is replaced (default #{tag})
+  hashtag?: string;
+  // the platform's feed shape for a cover image
+  coverAspect: '1:1' | '3:4' | '9:16' | '16:9';
+  // how posts read on this platform, for the writer
+  guide: string;
+};
+
 export type GenerateAuthUrlResponse = {
   url: string;
   codeVerifier: string;
@@ -336,6 +354,8 @@ export interface SocialProvider
   // oksocial billing: credit price-table action charged for every write through this channel
   // (post, comment, reply); unset = writes are free.
   writeCreditAction?: CreditAction;
+  // oksocial AI 创作: how to write for this platform.
+  creation?: CreationCapabilities;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

@@ -1,5 +1,6 @@
 import { Integration } from '@prisma/client';
 import {
+  CreationCapabilities,
   InboxCapabilities,
   InboxFetched,
   MonitorCapabilities,
@@ -61,6 +62,16 @@ export class XiaohongshuWebProvider
   maxLength() {
     return 1000;
   }
+
+  creation: CreationCapabilities = {
+    format: 'post',
+    titleMax: TITLE_MAX,
+    imagesMax: IMAGES_MAX,
+    coverAspect: '3:4',
+    guide:
+      '小红书笔记：标题抓眼球、口语化，可带 1 个 emoji；正文像真实用户的分享，分成短段，适当用 emoji 做段首或列表，' +
+      '有干货和个人感受，不要广告腔；结尾 3-8 个话题标签。',
+  };
 
   // Per-note data from the creator center (基础数据: 曝光, 观看, 点击率, 涨粉...).
   async postAnalytics(internalId: string, slot: string, noteId: string) {

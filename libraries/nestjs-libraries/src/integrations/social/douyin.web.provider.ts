@@ -1,5 +1,6 @@
 import { Integration } from '@prisma/client';
 import {
+  CreationCapabilities,
   MonitorCapabilities,
   MonitorPost,
   PostDetails,
@@ -88,6 +89,15 @@ export class DouyinWebProvider
   maxLength() {
     return 1000;
   }
+
+  creation: CreationCapabilities = {
+    format: 'video',
+    titleMax: TITLE_MAX,
+    coverAspect: '9:16',
+    guide:
+      '抖音竖屏短视频：口播稿开头 3 秒必须有钩子，口语化、短句、有节奏感，适合 30-60 秒；' +
+      '标题简短有悬念；视频描述一两句话；3-5 个话题标签。',
+  };
 
   async postAnalytics(internalId: string, slot: string, awemeId: string) {
     if (!awemeId || awemeId.startsWith('douyin-')) {
