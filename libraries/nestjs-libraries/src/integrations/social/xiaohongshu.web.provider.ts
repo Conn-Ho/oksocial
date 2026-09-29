@@ -10,6 +10,8 @@ import {
   BrowserSocialAbstract,
   contentId,
   firstRow,
+  metricRowsToAnalytics,
+  sumOf,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -47,6 +49,39 @@ export class XiaohongshuWebProvider
   maxLength() {
     return 1000;
   }
+
+  // Per-note data from the creator center (基础数据: 曝光, 观看, 点击率, 涨粉...).
+  async postAnalytics(internalId: string, slot: string, noteId: string) {
+    if (!noteId || noteId.startsWith('xhs-')) {
+      return [];
+    }
+    const rows = await this.exec<Array<{ section: string; metric: string; value: string }>>(
+      slot,
+      ['xiaohongshu', 'creator-note-detail', noteId],
+      180_000
+    );
+    return metricRowsToAnalytics((rows || []).filter((r) => r.section === '基础数据'));
+  }
+
+  // Followers from the creator profile; views and engagement summed over every note.
+  stats = async (slot: string) => {
+    const me = firstRow<Record<string, any>>(await this.exec(slot, ['xhs2', 'me'], 90_000));
+    const notes = await this.exec<Array<Record<string, any>>>(
+      slot,
+      ['xhs2', 'notes', '--limit', '500', '--timeout', '240'],
+      300_000
+    );
+    return {
+      followers: Number(me?.followers) || 0,
+      following: Number(me?.following) || 0,
+      posts: Array.isArray(notes) ? notes.length : 0,
+      views: sumOf(notes, 'views'),
+      likes: sumOf(notes, 'likes'),
+      comments: sumOf(notes, 'comments'),
+      shares: sumOf(notes, 'shares'),
+      collects: sumOf(notes, 'collects'),
+    };
+  };
 
   // Comments and @mentions from 消息 (no ids: hashed), DMs through the xhsdm plugin (web IM).
   inbox: InboxCapabilities = {

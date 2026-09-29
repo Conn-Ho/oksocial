@@ -38,6 +38,9 @@ import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/br
 import { InboxRepository } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.repository';
 import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
 import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
+import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
+import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 import { SetsService } from '@gitroom/nestjs-libraries/database/prisma/sets/sets.service';
@@ -97,6 +100,9 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     InboxRepository,
     InboxService,
     InboxAiService,
+    ChannelStatsRepository,
+    ChannelStatsService,
+    ReportService,
     ExtractContentService,
     OpenaiService,
     DeepgramService,

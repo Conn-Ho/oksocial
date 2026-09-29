@@ -1,3 +1,4 @@
+import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 import {
   forwardRef,
   HttpException,
@@ -41,7 +42,8 @@ export class IntegrationService {
     private _notificationService: NotificationService,
     @Inject(forwardRef(() => RefreshIntegrationService))
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _temporalService: TemporalService
+    private _temporalService: TemporalService,
+    private _channelStatsService: ChannelStatsService
   ) {}
 
   async changeActiveCron(orgId: string) {
@@ -457,6 +459,11 @@ export class IntegrationService {
 
     if (getIntegration.type !== 'social') {
       return [];
+    }
+
+    // Browser channels: trends come from the periodic snapshots, not from a live platform call.
+    if (this._channelStatsService.usesSnapshots(getIntegration.providerIdentifier)) {
+      return this._channelStatsService.analytics(org.id, getIntegration.id, +date);
     }
 
     const integrationProvider = this._integrationManager.getSocialIntegration(

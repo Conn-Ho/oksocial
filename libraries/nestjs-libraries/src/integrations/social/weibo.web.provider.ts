@@ -10,6 +10,7 @@ import {
   BrowserSocialAbstract,
   contentId,
   firstRow,
+  sumOf,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
@@ -44,6 +45,24 @@ export class WeiboWebProvider
   maxLength() {
     return 2000;
   }
+
+  // Profile totals; engagement summed over the latest 20 posts (weibo shows no account totals).
+  stats = async (slot: string, integration: { internalId: string }) => {
+    const me = firstRow<Record<string, any>>(await this.exec(slot, ['weibo', 'me'], 90_000));
+    const posts = await this.exec<Array<Record<string, any>>>(
+      slot,
+      ['weibo', 'user-posts', integration.internalId, '--limit', '20'],
+      120_000
+    );
+    return {
+      followers: Number(me?.followers) || 0,
+      following: Number(me?.following) || 0,
+      posts: Number(me?.statuses) || 0,
+      likes: sumOf(posts, 'likes'),
+      comments: sumOf(posts, 'comments'),
+      shares: sumOf(posts, 'reposts'),
+    };
+  };
 
   // Comments on the account's latest posts (read only until a reply command exists).
   inbox: InboxCapabilities = {

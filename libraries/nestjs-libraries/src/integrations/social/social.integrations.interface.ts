@@ -110,6 +110,20 @@ export type InboxCapabilities = {
   >;
 };
 
+export const CHANNEL_STAT_KEYS = [
+  'followers',
+  'following',
+  'posts',
+  'views',
+  'likes',
+  'comments',
+  'shares',
+  'collects',
+] as const;
+export type ChannelStatKey = (typeof CHANNEL_STAT_KEYS)[number];
+// Current account totals; a platform fills what it exposes.
+export type ChannelStats = Partial<Record<ChannelStatKey, number>>;
+
 export type GenerateAuthUrlResponse = {
   url: string;
   codeVerifier: string;
@@ -248,6 +262,8 @@ export interface SocialProvider
   browserSession?: BrowserSession;
   // oksocial inbox: read comments / DMs / mentions and reply to them.
   inbox?: InboxCapabilities;
+  // oksocial analytics: current account totals, sampled into a time series (ChannelSnapshot).
+  stats?: (token: string, integration: Integration) => Promise<ChannelStats>;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

@@ -36,6 +36,8 @@ import { WebhookController } from '@gitroom/backend/api/routes/webhooks.controll
 import { SignatureController } from '@gitroom/backend/api/routes/signature.controller';
 import { BrowserSessionsController } from '@gitroom/backend/api/routes/browser.sessions.controller';
 import { InboxController } from '@gitroom/backend/api/routes/inbox.controller';
+import { ReportsController } from '@gitroom/backend/api/routes/reports.controller';
+import { PublicReportsController } from '@gitroom/backend/api/routes/public.reports.controller';
 import { AutopostController } from '@gitroom/backend/api/routes/autopost.controller';
 import { SetsController } from '@gitroom/backend/api/routes/sets.controller';
 import { ThirdPartyController } from '@gitroom/backend/api/routes/third-party.controller';
@@ -74,6 +76,7 @@ const authenticatedController = [
   SignatureController,
   BrowserSessionsController,
   InboxController,
+  ReportsController,
   AutopostController,
   SetsController,
   ThirdPartyController,
@@ -98,6 +101,7 @@ const authenticatedController = [
         StripeController,
         AuthController,
         PublicController,
+        PublicReportsController,
         MonitorController,
         EnterpriseController,
         NoAuthIntegrationsController,

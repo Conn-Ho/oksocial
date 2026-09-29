@@ -7,6 +7,8 @@ import {
 import {
   BrowserSocialAbstract,
   firstRow,
+  metricRowsToAnalytics,
+  sumOf,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -43,6 +45,35 @@ export class DouyinWebProvider
   maxLength() {
     return 1000;
   }
+
+  async postAnalytics(internalId: string, slot: string, awemeId: string) {
+    if (!awemeId || awemeId.startsWith('douyin-')) {
+      return [];
+    }
+    return metricRowsToAnalytics(
+      await this.exec(slot, ['douyin', 'stats', awemeId], 120_000)
+    );
+  }
+
+  // Profile totals; plays and engagement summed over the latest 50 videos.
+  stats = async (slot: string) => {
+    const me = firstRow<Record<string, any>>(await this.exec(slot, ['douyin', 'profile'], 90_000));
+    const videos = await this.exec<Array<Record<string, any>>>(
+      slot,
+      ['douyin', 'videos', '--limit', '50'],
+      180_000
+    );
+    return {
+      followers: Number(me?.follower_count) || 0,
+      following: Number(me?.following_count) || 0,
+      posts: Number(me?.aweme_count) || 0,
+      views: sumOf(videos, 'play_count'),
+      likes: sumOf(videos, 'digg_count'),
+      comments: sumOf(videos, 'comment_count'),
+      shares: sumOf(videos, 'share_count'),
+      collects: sumOf(videos, 'collect_count'),
+    };
+  };
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {
     const first = posts?.[0] ?? [];

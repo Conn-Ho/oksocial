@@ -9,6 +9,7 @@ import {
   BrowserSocialAbstract,
   contentId,
   firstRow,
+  metricRowsToAnalytics,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
@@ -42,6 +43,30 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
   maxLength() {
     return 280;
   }
+
+  async postAnalytics(internalId: string, slot: string, tweetId: string) {
+    if (!/^\d+$/.test(tweetId || '')) {
+      return [];
+    }
+    const tweet = firstRow<Record<string, any>>(
+      await this.exec(slot, ['twitter', 'thread', tweetId, '--limit', '1'], 120_000)
+    );
+    return metricRowsToAnalytics([
+      { metric: '点赞', value: tweet?.likes },
+      { metric: '转发', value: tweet?.retweets },
+    ]);
+  }
+
+  stats = async (slot: string, integration: { internalId: string }) => {
+    const me = firstRow<Record<string, any>>(
+      await this.exec(slot, ['twitter', 'profile', integration.internalId], 90_000)
+    );
+    return {
+      followers: Number(me?.followers) || 0,
+      following: Number(me?.following) || 0,
+      posts: Number(me?.tweets) || 0,
+    };
+  };
 
   // Replies to our posts and @mentions from the notifications timeline; answered with a reply.
   inbox: InboxCapabilities = {

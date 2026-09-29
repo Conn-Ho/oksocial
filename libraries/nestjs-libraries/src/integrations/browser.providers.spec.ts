@@ -331,3 +331,66 @@ describe('inbox fetch mapping', () => {
     expect(items).toEqual([expect.objectContaining({ kind: 'COMMENT', threadId: 'm1', authorName: '路人', content: '支持' })]);
   });
 });
+
+describe('stats mapping', () => {
+  it('Xiaohongshu sums every note and takes followers from the profile', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [{ logged_in: true, user_id: 'u1', followers: 283, following: 751 }] },
+      { ok: true, data: [
+        { id: 'a', views: 100, likes: 5, comments: 1, collects: 2, shares: 0 },
+        { id: 'b', views: 50, likes: '3', comments: 0, collects: 1, shares: 1 },
+      ] },
+    ]);
+    const p = withFleet(new XiaohongshuWebProvider(), fleet);
+    expect(await p.stats('s1')).toEqual({
+      followers: 283, following: 751, posts: 2, views: 150, likes: 8, comments: 1, shares: 1, collects: 3,
+    });
+  });
+
+  it('Douyin, Weibo and X map their own column names', async () => {
+    const douyin = withFleet(new DouyinWebProvider(), fakeFleet([
+      { ok: true, data: [{ follower_count: 10, following_count: 2, aweme_count: 3 }] },
+      { ok: true, data: [{ play_count: 90, digg_count: 9, comment_count: 1, share_count: 2, collect_count: 4 }] },
+    ]));
+    expect(await douyin.stats('s1')).toEqual({ followers: 10, following: 2, posts: 3, views: 90, likes: 9, comments: 1, shares: 2, collects: 4 });
+
+    const weiboFleet = fakeFleet([
+      { ok: true, data: [{ followers: 7, following: 1, statuses: 40 }] },
+      { ok: true, data: [{ likes: 2, comments: 1, reposts: 3 }] },
+    ]);
+    const weibo = withFleet(new WeiboWebProvider(), weiboFleet);
+    expect(await weibo.stats('s1', { internalId: '9' })).toEqual({ followers: 7, following: 1, posts: 40, likes: 2, comments: 1, shares: 3 });
+    expect(weiboFleet.calls[1]).toEqual(['weibo', 'user-posts', '9', '--limit', '20']);
+
+    const x = withFleet(new XWebProvider(), fakeFleet([{ ok: true, data: [{ followers: 1432, following: 300, tweets: 900 }] }]));
+    expect(await x.stats('s1', { internalId: 'wenbuilds' })).toEqual({ followers: 1432, following: 300, posts: 900 });
+  });
+});
+
+describe('post analytics', () => {
+  it('metricRowsToAnalytics keeps numeric rows and parses percentages', async () => {
+    const { metricRowsToAnalytics } = await import('@gitroom/nestjs-libraries/integrations/browser.social.abstract');
+    expect(metricRowsToAnalytics([{ metric: '曝光数', value: '1,894' }, { metric: '封面点击率', value: '18.2%' }, { metric: '备注', value: '无' }], '2026-10-01')).toEqual([
+      { label: '曝光数', percentageChange: 0, data: [{ date: '2026-10-01', total: '1894' }] },
+      { label: '封面点击率', percentageChange: 0, data: [{ date: '2026-10-01', total: '18.2' }] },
+    ]);
+  });
+
+  it('Xiaohongshu reads 基础数据 of a note and skips notes whose id was never found', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [
+      { section: '基础数据', metric: '曝光数', value: '1894' },
+      { section: '观众画像', metric: '性别/女性', value: '73%' },
+    ] }]);
+    const p = withFleet(new XiaohongshuWebProvider(), fleet);
+    const out = await p.postAnalytics('u1', 's1', 'n123');
+    expect(out.map((a) => a.label)).toEqual(['曝光数']);
+    expect(fleet.calls[0]).toEqual(['xiaohongshu', 'creator-note-detail', 'n123']);
+    expect(await p.postAnalytics('u1', 's1', 'xhs-123')).toEqual([]);
+  });
+
+  it('X reads likes and retweets of a tweet', async () => {
+    const p = withFleet(new XWebProvider(), fakeFleet([{ ok: true, data: [{ likes: 12, retweets: 3 }] }]));
+    expect((await p.postAnalytics('wen', 's1', '111')).map((a) => [a.label, a.data[0].total])).toEqual([['点赞', '12'], ['转发', '3']]);
+    expect(await p.postAnalytics('wen', 's1', 'x-1')).toEqual([]);
+  });
+});

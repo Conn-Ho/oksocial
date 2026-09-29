@@ -20,3 +20,5 @@ export * from './generate.video.workflow';
 export * from './process.media.workflow';
 export * from './clipping.workflow';
 export * from './inbox.sync.workflow';
+export * from './channel.stats.workflow';
+export * from './weekly.report.workflow';

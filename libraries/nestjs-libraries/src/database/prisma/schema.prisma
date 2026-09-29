@@ -21,6 +21,8 @@ model Organization {
   allowTrial          Boolean              @default(false)
   // posts scheduled by 内容运营 wait for a 运营主管/管理员 before they publish
   requirePostApproval Boolean              @default(false)
+  // opt-in weekly channel report email to admins and managers
+  weeklyReportEmail   Boolean              @default(false)
   isTrailing          Boolean              @default(false)
   shortlink           ShortLinkPreference  @default(ASK)
   autoPost            AutoPost[]
@@ -51,6 +53,8 @@ model Organization {
   browserProxies      BrowserProxy[]
   inboxItems          InboxItem[]
   replyTemplates      ReplyTemplate[]
+  channelSnapshots    ChannelSnapshot[]
+  reportShares        ReportShare[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -402,6 +406,7 @@ model Integration {
   posts                 Post[]
   browserSlot           BrowserSlot?
   inboxItems            InboxItem[]
+  channelSnapshots      ChannelSnapshot[]
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -1978,4 +1983,33 @@ model ReplyTemplate {
 
   @@index([organizationId, scope])
   @@index([deletedAt])
+}
+
+// Account totals of channels whose platform only shows current numbers (browser channels):
+// sampled every few hours so analytics can draw trends (followers, views, engagement).
+model ChannelSnapshot {
+  id             String       @id @default(uuid())
+  organizationId String
+  integrationId  String
+  capturedAt     DateTime     @default(now())
+  metrics        Json
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  integration    Integration  @relation(fields: [integrationId], references: [id])
+
+  @@index([integrationId, capturedAt])
+}
+
+// Read-only link to the channel report (no login), optionally with a password and an expiry.
+model ReportShare {
+  id             String       @id @default(uuid())
+  organizationId String
+  token          String       @unique
+  days           Int
+  passwordHash   String?
+  expiresAt      DateTime?
+  createdAt      DateTime     @default(now())
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
 }

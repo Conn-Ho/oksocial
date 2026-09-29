@@ -121,6 +121,30 @@ export const contentId = (...parts: Array<string | number | undefined | null>) =
     .digest('hex')
     .slice(0, 24);
 
+/** Sum of a numeric column over opencli rows (missing / non-numeric count as 0). */
+export const sumOf = (rows: unknown, key: string) =>
+  (Array.isArray(rows) ? rows : []).reduce(
+    (total: number, row: any) => total + (Number(row?.[key]) || 0),
+    0
+  );
+
+/**
+ * Metric rows ({metric, value}) as single-point analytics series for today. Percent values keep
+ * their number ("18.2%" -> 18.2); rows without a number are dropped. Pure.
+ */
+export const metricRowsToAnalytics = (
+  rows: unknown,
+  today = new Date().toISOString().slice(0, 10)
+) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((r: any) => {
+      const digits = String(r?.value ?? '').replace(/[^\d.-]/g, '');
+      // "无" / "" / "-" carry no number (Number('') would be 0)
+      return { label: String(r?.metric ?? '').trim(), value: /\d/.test(digits) ? Number(digits) : NaN };
+    })
+    .filter((r) => r.label && Number.isFinite(r.value))
+    .map((r) => ({ label: r.label, percentageChange: 0, data: [{ date: today, total: String(r.value) }] }));
+
 /** First row of an opencli table result (commands return arrays of rows). */
 export const firstRow = <T = Record<string, any>>(rows: unknown): T | null =>
   Array.isArray(rows) ? ((rows[0] as T) ?? null) : ((rows as T) ?? null);

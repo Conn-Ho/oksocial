@@ -23,6 +23,22 @@ export class InfiniteWorkflowRegister implements OnModuleInit {
             taskQueue: 'main',
           });
       } catch (err) {}
+      try {
+        await this._temporalService.client
+          ?.getRawClient()
+          ?.workflow?.start('channelStatsWorkflow', {
+            workflowId: 'channel-stats-workflow',
+            taskQueue: 'main',
+          });
+      } catch (err) {}
+      try {
+        await this._temporalService.client
+          ?.getRawClient()
+          ?.workflow?.start('weeklyReportWorkflow', {
+            workflowId: 'weekly-report-workflow',
+            taskQueue: 'main',
+          });
+      } catch (err) {}
     }
   }
 }
