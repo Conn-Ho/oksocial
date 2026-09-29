@@ -119,13 +119,14 @@ export const SettingsPopup: FC<{
 
   return (
     <>
-      <div className="bg-newBgColorInner p-[20px] flex flex-col transition-all w-[260px]">
-        <div className="flex flex-1 flex-col gap-[15px]">
+      {/* phones: the sections become a row of tabs above the content */}
+      <div className="bg-newBgColorInner p-[12px] md:p-[20px] flex flex-col transition-all w-full md:w-[260px]">
+        <div className="flex flex-1 flex-row md:flex-col gap-[4px] md:gap-[15px] overflow-x-auto md:overflow-visible">
           {list.map(({ tab: tabKey, label }) => (
             <div
               key={tabKey}
               className={clsx(
-                'cursor-pointer flex items-center gap-[12px] group/profile hover:bg-boxHover rounded-e-[8px]',
+                'cursor-pointer flex items-center gap-[12px] group/profile hover:bg-boxHover rounded-e-[8px] shrink-0 whitespace-nowrap md:whitespace-normal pe-[12px] md:pe-0',
                 tabKey === tab && 'bg-boxHover'
               )}
               onClick={() => setTab(tabKey)}
@@ -150,7 +151,7 @@ export const SettingsPopup: FC<{
           )}
         </div>
       </div>
-      <div className="bg-newBgColorInner flex-1 flex-col flex p-[20px] gap-[12px]">
+      <div className="bg-newBgColorInner flex-1 flex-col flex p-[16px] md:p-[20px] gap-[12px]">
         <FormProvider {...form}>
           <form onSubmit={form.handleSubmit(submit)}>
             {!!getRef && (
