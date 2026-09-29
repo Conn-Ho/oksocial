@@ -1,11 +1,13 @@
 import { Integration } from '@prisma/client';
 import {
+  InboxCapabilities,
   PostDetails,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
   BrowserSocialAbstract,
+  contentId,
   firstRow,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -39,6 +41,37 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
 
   maxLength() {
     return 280;
+  }
+
+  // Replies to our posts and @mentions from the notifications timeline; answered with a reply.
+  inbox: InboxCapabilities = {
+    fetch: async (slot) => {
+      const rows = await this.exec<
+        Array<{ id: string; action: string; author: string; text: string; url: string }>
+      >(slot, ['twitter', 'notifications', '--limit', '40'], 120_000);
+      return (rows || [])
+        .filter((r) => /mention/i.test(r.action) && r.text && r.author)
+        .map((r) => ({
+          kind: /reply/i.test(r.action) ? ('COMMENT' as const) : ('MENTION' as const),
+          externalId: statusId(r.url) || String(r.id) || contentId(r.author, r.text),
+          authorName: r.author,
+          authorUrl: `https://x.com/${r.author.replace(/^@/, '')}`,
+          content: r.text,
+          threadUrl: r.url,
+          replyTarget: r.url,
+        }));
+    },
+    reply: {
+      COMMENT: (slot, _integration, item, text) => this.replyTo(slot, item.replyTarget, text),
+      MENTION: (slot, _integration, item, text) => this.replyTo(slot, item.replyTarget, text),
+    },
+  };
+
+  private async replyTo(slot: string, url: string | null, text: string) {
+    if (!url) {
+      throw new Error('nothing to reply to');
+    }
+    await this.exec(slot, ['xq', 'reply', url, text]);
   }
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {

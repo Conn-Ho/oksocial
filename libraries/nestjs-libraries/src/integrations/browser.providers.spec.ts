@@ -258,3 +258,76 @@ describe('temporal task queues', () => {
     expect(ids).not.toContain('x');
   });
 });
+
+describe('inbox fetch mapping', () => {
+  it('X keeps replies and mentions, classifies them and replies to the tweet URL', async () => {
+    const fleet = fakeFleet([
+      {
+        ok: true,
+        data: [
+          { id: '1', action: 'Mention/Reply', author: 'amy', text: 'nice', url: 'https://x.com/i/status/111' },
+          { id: '2', action: 'Mention', author: 'bob', text: '@wen hi', url: 'https://x.com/i/status/222' },
+          { id: '3', action: 'heart_icon', author: 'cat', text: 'liked', url: 'https://x.com/i/status/333' },
+        ],
+      },
+      { ok: true, data: [{ status: 'success' }] },
+    ]);
+    const p = withFleet(new XWebProvider(), fleet);
+    const items = await p.inbox.fetch('s1', {} as any);
+    expect(items.map((i) => [i.kind, i.externalId, i.authorName])).toEqual([
+      ['COMMENT', '111', 'amy'],
+      ['MENTION', '222', 'bob'],
+    ]);
+    await p.inbox.reply!.COMMENT!('s1', {} as any, { replyTarget: items[0].replyTarget!, threadId: null }, '谢谢');
+    expect(fleet.calls[1]).toEqual(['xq', 'reply', 'https://x.com/i/status/111', '谢谢']);
+  });
+
+  it('Xiaohongshu hashes notifications and reads unread DM conversations, skipping our own messages', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [
+        { user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' },
+        { user: '小B', action: '在评论中@了你', content: '@WenWen 看这个', note: '别人的笔记', time: '09-28' },
+      ] },
+      { ok: true, data: [
+        { id: 'c1', name: '小C', unread: 2, group: false },
+        { id: 'g1', name: '群', unread: 9, group: true },
+      ] },
+      { ok: true, data: [
+        { time: '10:00', from: '小C', mine: false, text: '在吗' },
+        { time: '10:01', from: 'me', mine: true, text: '在' },
+      ] },
+    ]);
+    const p = withFleet(new XiaohongshuWebProvider(), fleet);
+    const items = await p.inbox.fetch('s1', {} as any);
+    expect(items.map((i) => [i.kind, i.authorName, i.content])).toEqual([
+      ['COMMENT', '小A', '求链接'],
+      ['MENTION', '小B', '@WenWen 看这个'],
+      ['DM', '小C', '在吗'],
+    ]);
+    expect(fleet.calls[2]).toEqual(['xhsdm', 'read', 'c1', '--limit', '10']);
+    expect(items[0].externalId).toMatch(/^[0-9a-f]{24}$/);
+    expect((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
+      { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' }] },
+      { ok: true, data: [] },
+    ])).inbox.fetch('s1', {} as any))[0].externalId).toBe(items[0].externalId);
+    expect(p.inbox.reply?.COMMENT).toBeUndefined();
+    expect(typeof p.inbox.reply?.DM).toBe('function');
+  });
+
+  it('Weibo reads comments only for posts that have some', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [
+        { id: 'm1', text: '第一条', url: 'https://weibo.com/9/m1', comments: 2 },
+        { id: 'm2', text: '第二条', url: 'https://weibo.com/9/m2', comments: 0 },
+      ] },
+      { ok: true, data: [{ author: '路人', text: '支持', time: '1分钟前' }] },
+    ]);
+    const p = withFleet(new WeiboWebProvider(), fleet);
+    const items = await p.inbox.fetch('s1', { internalId: '9' } as any);
+    expect(fleet.calls).toEqual([
+      ['weibo', 'user-posts', '9', '--limit', '5'],
+      ['weibo', 'comments', 'm1', '--limit', '20'],
+    ]);
+    expect(items).toEqual([expect.objectContaining({ kind: 'COMMENT', threadId: 'm1', authorName: '路人', content: '支持' })]);
+  });
+});

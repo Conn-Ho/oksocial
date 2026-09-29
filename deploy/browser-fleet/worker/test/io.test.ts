@@ -46,7 +46,21 @@ describe('openTab (fake DevTools endpoint)', () => {
     }, async (port) => {
       await assert.rejects(openTab(port, 'https://x.com'), /no target id/);
     });
-    await assert.rejects(openTab(1, 'https://x.com'), (e: unknown) => e instanceof HttpError && e.statusCode === 502 && e.code === 'CHROME_UNREACHABLE');
+    await assert.rejects(openTab(1, 'https://x.com', fetch, 0), (e: unknown) => e instanceof HttpError && e.statusCode === 502 && e.code === 'CHROME_UNREACHABLE');
+  });
+
+  it('keeps retrying while a just-started Chrome has not opened DevTools yet', async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const flaky = async () => {
+      calls += 1;
+      if (calls < 3) throw new Error('ECONNREFUSED');
+      return new Response(JSON.stringify({ id: 't1', url: 'https://x.com/' }));
+    };
+    const tab = await openTab(9, 'https://x.com', flaky, 10_000, async (ms) => { waits.push(ms); });
+    assert.deepEqual(tab, { id: 't1', url: 'https://x.com/' });
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [500, 500]);
   });
 });
 

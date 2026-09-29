@@ -49,6 +49,8 @@ model Organization {
   oauthAuthorizations OAuthAuthorization[]
   browserSlots        BrowserSlot[]
   browserProxies      BrowserProxy[]
+  inboxItems          InboxItem[]
+  replyTemplates      ReplyTemplate[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -399,6 +401,7 @@ model Integration {
   plugs                 Plugs[]
   posts                 Post[]
   browserSlot           BrowserSlot?
+  inboxItems            InboxItem[]
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -1879,5 +1882,100 @@ model BrowserProxy {
   slots          BrowserSlot[]
 
   @@index([organizationId])
+  @@index([deletedAt])
+}
+
+// oksocial inbox: comments, direct messages and mentions from every channel in one queue.
+enum InboxKind {
+  COMMENT
+  DM
+  MENTION
+}
+
+enum InboxStatus {
+  UNREPLIED
+  REPLIED
+  RESOLVED
+}
+
+model InboxItem {
+  id                String        @id @default(uuid())
+  organizationId    String
+  integrationId     String
+  kind              InboxKind
+  // platform id of the comment / message, or a content hash when the platform exposes none
+  externalId        String
+  // conversation id (DM) or the post the comment belongs to
+  threadId          String?
+  threadTitle       String?
+  threadUrl         String?
+  // where a reply is sent (tweet URL, note URL, conversation id)
+  replyTarget       String?
+  authorName        String
+  authorId          String?
+  authorUrl         String?
+  authorAvatar      String?
+  content           String
+  translated        String?
+  platformTime      String?
+  status            InboxStatus   @default(UNREPLIED)
+  sentiment         String?
+  intent            String?
+  assigneeId        String?
+  repliedAt         DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+  organization      Organization  @relation(fields: [organizationId], references: [id])
+  integration       Integration   @relation(fields: [integrationId], references: [id])
+  replies           ReplyLog[]
+
+  @@unique([integrationId, kind, externalId])
+  @@index([organizationId, kind, status])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+enum ReplySource {
+  MANUAL
+  AI
+  TEMPLATE
+  AUTOMATION
+}
+
+model ReplyLog {
+  id          String      @id @default(uuid())
+  inboxItemId String
+  userId      String?
+  content     String
+  source      ReplySource @default(MANUAL)
+  error       String?
+  createdAt   DateTime    @default(now())
+  inboxItem   InboxItem   @relation(fields: [inboxItemId], references: [id])
+
+  @@index([inboxItemId])
+  @@index([createdAt])
+}
+
+enum ReplyTemplateScope {
+  COMMENT
+  DM
+  POST_ASSIST
+}
+
+// 话术库: canned replies, picked at random or by AI in the inbox and in automations.
+model ReplyTemplate {
+  id             String             @id @default(uuid())
+  organizationId String
+  scope          ReplyTemplateScope
+  title          String?
+  content        String
+  tags           String[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, scope])
   @@index([deletedAt])
 }

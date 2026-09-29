@@ -1,0 +1,114 @@
+'use client';
+
+import { useCallback } from 'react';
+import useSWR from 'swr';
+import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
+
+export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';
+export type InboxStatus = 'UNREPLIED' | 'REPLIED' | 'RESOLVED';
+
+export type InboxItem = {
+  id: string;
+  kind: InboxKind;
+  status: InboxStatus;
+  authorName: string;
+  authorUrl?: string | null;
+  content: string;
+  translated?: string | null;
+  threadTitle?: string | null;
+  threadUrl?: string | null;
+  platformTime?: string | null;
+  sentiment?: string | null;
+  intent?: string | null;
+  createdAt: string;
+  integration: { id: string; name: string; picture?: string | null; providerIdentifier: string };
+};
+
+export type InboxFilters = {
+  kind: InboxKind;
+  status?: InboxStatus;
+  integrationId?: string;
+  sentiment?: string;
+  intent?: string;
+  q?: string;
+  page: number;
+};
+
+export type ReplyTemplate = {
+  id: string;
+  scope: 'COMMENT' | 'DM' | 'POST_ASSIST';
+  title?: string | null;
+  content: string;
+  tags: string[];
+};
+
+export const KIND_TABS: Array<{ kind: InboxKind; label: string }> = [
+  { kind: 'COMMENT', label: '评论' },
+  { kind: 'DM', label: '私信' },
+  { kind: 'MENTION', label: '@提及' },
+];
+
+export const SENTIMENT_LABELS: Record<string, string> = {
+  positive: '积极',
+  negative: '消极',
+  neutral: '中性',
+};
+
+export const INTENT_LABELS: Record<string, string> = {
+  lead: '高意向',
+  complaint: '投诉',
+  question: '咨询',
+  suggestion: '建议',
+  other: '无关',
+};
+
+export const inboxQuery = (f: InboxFilters) => {
+  const params = new URLSearchParams();
+  Object.entries(f).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') {
+      params.set(k, String(v));
+    }
+  });
+  return params.toString();
+};
+
+export const useInboxList = (filters: InboxFilters) => {
+  const fetch = useFetch();
+  const key = `/inbox?${inboxQuery(filters)}`;
+  const load = useCallback(async () => (await fetch(key)).json(), [key]);
+  return useSWR<{ total: number; page: number; pages: number; items: InboxItem[] }>(key, load);
+};
+
+export const useInboxCounts = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/counts')).json(), []);
+  return useSWR<Partial<Record<InboxKind, number>>>('/inbox/counts', load, { refreshInterval: 60_000 });
+};
+
+export const useInboxCapabilities = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/capabilities')).json(), []);
+  return useSWR<Record<string, InboxKind[]>>('/inbox/capabilities', load);
+};
+
+export const useReplyTemplates = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/templates')).json(), []);
+  return useSWR<ReplyTemplate[]>('/inbox/templates', load);
+};
+
+export const useReplyHistory = (page: number) => {
+  const fetch = useFetch();
+  const key = `/inbox/history?page=${page}`;
+  const load = useCallback(async () => (await fetch(key)).json(), [key]);
+  return useSWR<
+    Array<{
+      id: string;
+      content: string;
+      source: string;
+      error?: string | null;
+      createdAt: string;
+      inboxItem: { kind: InboxKind; authorName: string; content: string; integration: { name: string } };
+    }>
+  >(key, load);
+};

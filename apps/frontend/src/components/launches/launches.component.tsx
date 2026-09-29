@@ -671,9 +671,10 @@ export const LaunchesComponent = () => {
               {billingEnabled && user?.isLifetime && (
                 <div>{capitalize(user?.tier?.current || '')} tier</div>
               )}
-              <div>
+              <div className="text-[12px] text-textColor/40">
+                {/* our image is tagged with the git sha: show a short build id */}
                 {process.env.NEXT_PUBLIC_VERSION
-                  ? process.env.NEXT_PUBLIC_VERSION
+                  ? process.env.NEXT_PUBLIC_VERSION.slice(0, 7)
                   : ''}
               </div>
             </div>

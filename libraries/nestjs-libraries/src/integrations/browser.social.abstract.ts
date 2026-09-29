@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   AuthTokenDetails,
   BrowserSession,
@@ -112,6 +113,13 @@ export abstract class BrowserSocialAbstract extends SocialAbstract {
     return paths;
   }
 }
+
+/** Stable id for platform items that expose none (same author, text, place and time = same item). */
+export const contentId = (...parts: Array<string | number | undefined | null>) =>
+  createHash('sha1')
+    .update(parts.map((p) => String(p ?? '')).join('\u0001'))
+    .digest('hex')
+    .slice(0, 24);
 
 /** First row of an opencli table result (commands return arrays of rows). */
 export const firstRow = <T = Record<string, any>>(rows: unknown): T | null =>

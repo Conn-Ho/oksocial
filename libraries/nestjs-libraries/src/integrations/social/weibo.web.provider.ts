@@ -1,16 +1,21 @@
 import { Integration } from '@prisma/client';
 import {
+  InboxCapabilities,
+  InboxFetched,
   PostDetails,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
   BrowserSocialAbstract,
+  contentId,
   firstRow,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 const IMAGES_MAX = 9;
+// Own posts whose comments are read per sync.
+const POSTS_PER_SYNC = 5;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 
 export class WeiboWebProvider
@@ -39,6 +44,37 @@ export class WeiboWebProvider
   maxLength() {
     return 2000;
   }
+
+  // Comments on the account's latest posts (read only until a reply command exists).
+  inbox: InboxCapabilities = {
+    fetch: async (slot, integration) => {
+      const posts = await this.exec<
+        Array<{ id: string; text: string; url: string; comments: number | string }>
+      >(slot, ['weibo', 'user-posts', integration.internalId, '--limit', String(POSTS_PER_SYNC)], 120_000);
+      const items: InboxFetched[] = [];
+      for (const post of (posts || []).filter((p) => Number(p.comments) > 0)) {
+        const comments = await this.exec<
+          Array<{ author: string; text: string; time: string }>
+        >(slot, ['weibo', 'comments', post.id, '--limit', '20'], 90_000).catch(() => []);
+        for (const c of comments || []) {
+          if (!c.author || !c.text) {
+            continue;
+          }
+          items.push({
+            kind: 'COMMENT',
+            externalId: contentId(post.id, c.author, c.text, c.time),
+            threadId: post.id,
+            threadTitle: post.text?.slice(0, 60),
+            threadUrl: post.url,
+            authorName: c.author,
+            content: c.text,
+            platformTime: c.time,
+          });
+        }
+      }
+      return items;
+    },
+  };
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {
     const first = posts?.[0] ?? [];

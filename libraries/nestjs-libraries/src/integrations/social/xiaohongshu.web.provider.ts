@@ -1,11 +1,14 @@
 import { Integration } from '@prisma/client';
 import {
+  InboxCapabilities,
+  InboxFetched,
   PostDetails,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
   BrowserSocialAbstract,
+  contentId,
   firstRow,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
@@ -14,6 +17,8 @@ import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abs
 const TITLE_MAX = 20;
 const IMAGES_MAX = 9;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
+// DM conversations read per sync (unread first); each read is a page load in the account's browser.
+const DM_CONVERSATIONS_PER_SYNC = 5;
 
 export class XiaohongshuWebProvider
   extends BrowserSocialAbstract
@@ -41,6 +46,67 @@ export class XiaohongshuWebProvider
 
   maxLength() {
     return 1000;
+  }
+
+  // Comments and @mentions from 消息 (no ids: hashed), DMs through the xhsdm plugin (web IM).
+  inbox: InboxCapabilities = {
+    fetch: async (slot) => [...(await this.notifications(slot)), ...(await this.directMessages(slot))],
+    reply: {
+      DM: async (slot, _integration, item, text) => {
+        if (!item.threadId) {
+          throw new Error('missing conversation');
+        }
+        await this.exec(slot, ['xhsdm', 'send', item.threadId, text]);
+      },
+    },
+  };
+
+  private async notifications(slot: string): Promise<InboxFetched[]> {
+    const rows = await this.exec<
+      Array<{ user: string; action: string; content: string; note: string; time: string }>
+    >(slot, ['xiaohongshu', 'notifications', '--type', 'mentions', '--limit', '30'], 120_000);
+    return (rows || [])
+      .filter((r) => r.user && r.content)
+      .map((r) => ({
+        kind: /@|提到/.test(r.action) ? ('MENTION' as const) : ('COMMENT' as const),
+        externalId: contentId(r.user, r.content, r.note, r.time),
+        threadTitle: r.note || undefined,
+        authorName: r.user,
+        content: r.content,
+        platformTime: r.time || undefined,
+      }));
+  }
+
+  private async directMessages(slot: string): Promise<InboxFetched[]> {
+    const conversations = await this.exec<
+      Array<{ id: string; name: string; unread: number | string; group: boolean | string }>
+    >(slot, ['xhsdm', 'list', '--limit', '30'], 120_000).catch(() => []);
+    const recent = (conversations || [])
+      .filter((c) => String(c.group) !== 'true')
+      .sort((a, b) => Number(b.unread || 0) - Number(a.unread || 0))
+      .slice(0, DM_CONVERSATIONS_PER_SYNC);
+    const items: InboxFetched[] = [];
+    for (const conv of recent) {
+      const messages = await this.exec<
+        Array<{ time: string; from: string; mine: boolean | string; text: string }>
+      >(slot, ['xhsdm', 'read', conv.id, '--limit', '10'], 90_000).catch(() => []);
+      for (const m of messages || []) {
+        if (String(m.mine) === 'true' || !m.text) {
+          continue;
+        }
+        items.push({
+          kind: 'DM',
+          externalId: contentId(conv.id, m.time, m.from, m.text),
+          threadId: conv.id,
+          threadTitle: conv.name,
+          replyTarget: conv.id,
+          authorName: m.from || conv.name,
+          content: m.text,
+          platformTime: m.time,
+        });
+      }
+    }
+    return items;
   }
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {

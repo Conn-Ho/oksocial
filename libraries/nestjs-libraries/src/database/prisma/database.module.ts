@@ -35,6 +35,9 @@ import { SignatureRepository } from '@gitroom/nestjs-libraries/database/prisma/s
 import { SignatureService } from '@gitroom/nestjs-libraries/database/prisma/signatures/signature.service';
 import { BrowserSlotRepository } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.repository';
 import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
+import { InboxRepository } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.repository';
+import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
+import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 import { SetsService } from '@gitroom/nestjs-libraries/database/prisma/sets/sets.service';
@@ -91,6 +94,9 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     RefreshIntegrationService,
     BrowserSlotRepository,
     BrowserSlotService,
+    InboxRepository,
+    InboxService,
+    InboxAiService,
     ExtractContentService,
     OpenaiService,
     DeepgramService,

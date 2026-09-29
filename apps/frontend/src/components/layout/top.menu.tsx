@@ -42,6 +42,21 @@ export const useMenuItem = () => {
       path: '/launches',
     },
     {
+      name: t('inbox', '互动'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="23" height="23" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 13H8L9.5 15.5H14.5L16 13H20M4 13V17.8C4 18.9201 4 19.4802 4.21799 19.908C4.40973 20.2843 4.71569 20.5903 5.09202 20.782C5.51984 21 6.0799 21 7.2 21H16.8C17.9201 21 18.4802 21 18.908 20.782C19.2843 20.5903 19.5903 20.2843 19.782 19.908C20 19.4802 20 18.9201 20 17.8V13M4 13L6.4 5.8C6.62 5.14 6.73 4.81 6.93 4.57C7.11 4.35 7.34 4.18 7.6 4.08C7.89 3.97 8.24 3.97 8.93 3.97H15.07C15.76 3.97 16.11 3.97 16.4 4.08C16.66 4.18 16.89 4.35 17.07 4.57C17.27 4.81 17.38 5.14 17.6 5.8L20 13"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      path: '/inbox',
+    },
+    {
       name: t('approvals', '审核'),
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="23" height="23" viewBox="0 0 24 24" fill="none">

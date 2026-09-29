@@ -1,0 +1,1 @@
+{ "name": "xhs-dm", "version": "0.1.0", "description": "Xiaohongshu web DM: list, read, send", "opencli": ">=1.8.0" }

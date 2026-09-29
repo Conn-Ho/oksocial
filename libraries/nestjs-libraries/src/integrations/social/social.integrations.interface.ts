@@ -73,6 +73,43 @@ export type BrowserSession = {
   identity(rows: unknown): BrowserSessionIdentity | null;
 };
 
+export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';
+
+// One comment / message / mention read from a platform for the oksocial inbox.
+export type InboxFetched = {
+  kind: InboxKind;
+  // platform id, or a stable content hash when the platform exposes none
+  externalId: string;
+  threadId?: string;
+  threadTitle?: string;
+  threadUrl?: string;
+  // what reply() needs to answer this item (tweet URL, conversation id, ...)
+  replyTarget?: string;
+  authorName: string;
+  authorId?: string;
+  authorUrl?: string;
+  authorAvatar?: string;
+  content: string;
+  platformTime?: string;
+};
+
+export type InboxCapabilities = {
+  // Latest items; the inbox de-duplicates by (kind, externalId).
+  fetch(token: string, integration: Integration): Promise<InboxFetched[]>;
+  // Kinds this channel can answer, and how.
+  reply?: Partial<
+    Record<
+      InboxKind,
+      (
+        token: string,
+        integration: Integration,
+        item: { replyTarget: string | null; threadId: string | null },
+        text: string
+      ) => Promise<void>
+    >
+  >;
+};
+
 export type GenerateAuthUrlResponse = {
   url: string;
   codeVerifier: string;
@@ -209,6 +246,8 @@ export interface SocialProvider
   // oksocial browser channel: the account logs in by scanning the platform's QR code inside its own
   // Chrome on the browser fleet, and every action runs as an opencli command in that browser.
   browserSession?: BrowserSession;
+  // oksocial inbox: read comments / DMs / mentions and reply to them.
+  inbox?: InboxCapabilities;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<
