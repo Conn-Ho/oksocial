@@ -3,6 +3,8 @@ import {
   CreationCapabilities,
   InboxCapabilities,
   MonitorAccountRef,
+  InteractCapabilities,
+  InteractPost,
   MonitorCapabilities,
   MonitorPost,
   PostDetails,
@@ -55,6 +57,10 @@ const fromTweet = (t: TweetRow): MonitorPost => ({
   publishedAt: dateFrom(t.created_at),
   platformTime: t.created_at || undefined,
 });
+
+/** A tweet's URL; the id alone resolves through x.com/i/status. Pure. */
+export const tweetUrl = (p: InteractPost) =>
+  p.url || (p.authorName ? `https://x.com/${p.authorName.replace(/^@/, '')}/status/${p.externalId}` : `https://x.com/i/status/${p.externalId}`);
 
 // Writes go through the x-quote plugin's composer (the path X accepts from a browser); the
 // official X API cannot reply to strangers, follow, like or quote on self-serve tiers.
@@ -189,6 +195,21 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
           120_000
         )
       ).map(fromTweet),
+  };
+
+  // 帖文操作助手 / 帖文拓客助手. Likes, bookmarks and follows use opencli's twitter adapters,
+  // replies the x-quote composer like every other reply.
+  interact: InteractCapabilities = {
+    like: async (slot, post) => {
+      await this.exec(slot, ['twitter', 'like', tweetUrl(post)]);
+    },
+    bookmark: async (slot, post) => {
+      await this.exec(slot, ['twitter', 'bookmark', tweetUrl(post)]);
+    },
+    follow: async (slot, author) => {
+      await this.exec(slot, ['twitter', 'follow', author.name.replace(/^@/, '')]);
+    },
+    replyToComment: (slot, comment, text) => this.replyTo(slot, tweetUrl(comment), text),
   };
 
   private async timeline(slot: string, account: MonitorAccountRef, limit: number) {

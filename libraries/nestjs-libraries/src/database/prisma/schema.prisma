@@ -2049,6 +2049,8 @@ enum AutomationType {
   LEAD_COLLECTOR
   REWRITE_SYNC
   AUTO_POST
+  POST_ACTIONS
+  PROSPECTING
 }
 
 model Automation {
@@ -2093,6 +2095,8 @@ model AutomationAction {
   targetKey     String
   targetLabel   String?
   content       String?
+  // what is needed to run a held interaction later (platform, post / comment / author)
+  payload       Json?
   status        AutomationActionStatus
   error         String?
   createdAt     DateTime               @default(now())

@@ -21,6 +21,10 @@ import {
 } from '@gitroom/frontend/components/automations/automations.hooks';
 import { AutomationForm } from '@gitroom/frontend/components/automations/automation.form';
 
+// what an action did, for actions without text (likes, follows) and the log
+const KIND_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注', comment_reply: '评论区回复', reply: '回复', dm: '私信', post: '发帖' };
+const HAS_TEXT = ['reply', 'dm', 'post', 'comment_reply'];
+
 const TABS = [
   { key: 'manage', label: '管理' },
   { key: 'held', label: '待确认' },
@@ -164,14 +168,18 @@ const HeldQueue: FC = () => {
       {data.map((a) => (
         <li key={a.id} className="rounded-[10px] border border-newTableBorder p-[14px] flex flex-col gap-[8px]">
           <span className="text-[12px] text-textColor/50">
-            {a.automation.name} · {a.targetLabel} · {dayjs(a.createdAt).format('MM-DD HH:mm')}
+            {a.automation.name} · {KIND_TEXT[a.kind] || a.kind} · {a.targetLabel} · {dayjs(a.createdAt).format('MM-DD HH:mm')}
           </span>
-          <textarea
-            defaultValue={a.content || ''}
-            onChange={(e) => setEdits((x) => ({ ...x, [a.id]: e.target.value }))}
-            className="bg-newTableHeader rounded-[6px] p-[8px] min-h-[64px] text-[14px]"
-            aria-label={t('action_content', '要发送的内容')}
-          />
+          {HAS_TEXT.includes(a.kind) ? (
+            <textarea
+              defaultValue={a.content || ''}
+              onChange={(e) => setEdits((x) => ({ ...x, [a.id]: e.target.value }))}
+              className="bg-newTableHeader rounded-[6px] p-[8px] min-h-[64px] text-[14px]"
+              aria-label={t('action_content', '要发送的内容')}
+            />
+          ) : (
+            <p className="text-[14px]">{`${KIND_TEXT[a.kind] || a.kind}：${a.targetLabel || ''}`}</p>
+          )}
           <div className="flex gap-[8px]">
             <Button onClick={() => review(a.id, 'confirm')}>{t('confirm_send', '确认执行')}</Button>
             <Button secondary={true} onClick={() => review(a.id, 'cancel')}>{t('cancel', '取消')}</Button>
@@ -204,7 +212,7 @@ const RunLog: FC = () => {
                 <td className="p-[8px] whitespace-nowrap">{dayjs(a.createdAt).format('MM-DD HH:mm')}</td>
                 <td className="p-[8px]">{a.automation.name}</td>
                 <td className="p-[8px]">{a.targetLabel}</td>
-                <td className="p-[8px] max-w-[320px] whitespace-pre-wrap">{a.content}{a.error && <div className="text-red-400">{a.error}</div>}</td>
+                <td className="p-[8px] max-w-[320px] whitespace-pre-wrap">{a.content || KIND_TEXT[a.kind]}{a.error && <div className="text-red-400">{a.error}</div>}</td>
                 <td className={clsx('p-[8px]', a.status === 'FAILED' && 'text-red-400', a.status === 'DONE' && 'text-green-400')}>{STATUS_TEXT[a.status]}</td>
               </tr>
             ))}

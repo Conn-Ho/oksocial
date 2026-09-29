@@ -2,7 +2,7 @@ import { HttpException, Injectable } from '@nestjs/common';
 import { Automation, AutomationActionStatus } from '@prisma/client';
 import dayjs from 'dayjs';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
-import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
+import { AutomationRunner, InteractPayload } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
 import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
 import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
@@ -12,9 +12,14 @@ import { toCsv } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.ser
 import {
   AUTOMATION_META,
   AutomationType,
+  POST_ACTION_TEXT,
   describeAutomation,
+  matchesTriggers,
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
+
+// held interactions of 帖文操作助手 / 帖文拓客助手, run from their stored payload
+const INTERACTIONS = ['like', 'bookmark', 'follow', 'comment_reply'];
 
 // How often each kind of automation looks for work.
 export const RUN_EVERY_MINUTES: Record<AutomationType, number> = {
@@ -23,6 +28,9 @@ export const RUN_EVERY_MINUTES: Record<AutomationType, number> = {
   LEAD_COLLECTOR: 30,
   REWRITE_SYNC: 60,
   AUTO_POST: 60,
+  // monitor reads are hourly, so these find new items about as often
+  POST_ACTIONS: 30,
+  PROSPECTING: 30,
 };
 
 /** Whether an automation should run now. Pure. */
@@ -173,6 +181,12 @@ export class AutomationService {
           throw new Error('账号已不存在');
         }
         await this._postsService.createPost(orgId, editorPostBody(target, [text], new Date()), 'AUTOMATION');
+      } else if (INTERACTIONS.includes(action.kind) && action.integrationId && action.payload) {
+        const [channel] = await this._repository.channels(orgId, [action.integrationId]);
+        if (!channel) {
+          throw new Error('账号已不存在');
+        }
+        await this._runner.interact(orgId, channel, action.payload as unknown as InteractPayload, text);
       }
       await this._repository.setActionStatus(action.id, 'DONE');
       return { ok: true };
@@ -197,6 +211,31 @@ export class AutomationService {
         return {
           output: await this._ai.generatePost(sample || c.topics[0], { tone: c.tone, extraPrompt: c.extraPrompt, avoid: [] }, brand),
         };
+      case 'POST_ACTIONS': {
+        // sentiment is only known for monitored items, so the test checks the keywords
+        const passes = matchesTriggers({ content: sample }, { keywords: c.keywords });
+        return {
+          output: passes
+            ? `这条帖子符合条件，会${c.actions.map((a: string) => POST_ACTION_TEXT[a]).join('、')}`
+            : '这条帖子不包含设定的关键词，不会操作',
+          passes,
+        };
+      }
+      case 'PROSPECTING': {
+        if (c.leadPrompt) {
+          const [score] = await this._ai.scoreLeads(c.leadPrompt, [{ id: 'sample', content: sample }]);
+          if (!score || score.score < c.minScore) {
+            return { output: score ? `${score.score} 分：${score.summary}（低于 ${c.minScore} 分，不会回复）` : '模型没有给出分数', passes: false };
+          }
+        }
+        return {
+          output: await this._ai.suggestReply(
+            { content: sample, kind: 'COMMENT', templates: c.extraPrompt ? [`（运营要求）${c.extraPrompt}`] : [] },
+            brand
+          ),
+          passes: true,
+        };
+      }
       default:
         return {
           output: await this._ai.suggestReply(

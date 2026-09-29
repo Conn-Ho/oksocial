@@ -166,6 +166,16 @@ export type MonitorAccountRef = {
   url: string;
 };
 
+// oksocial 帖文操作助手 / 帖文拓客助手: acting on other people's posts and comments.
+export type InteractPost = { externalId: string; url?: string | null; authorName?: string | null };
+export type InteractCapabilities = {
+  like?: (slot: string, post: InteractPost) => Promise<void>;
+  bookmark?: (slot: string, post: InteractPost) => Promise<void>;
+  follow?: (slot: string, author: { name: string; url?: string | null }) => Promise<void>;
+  // a reply under someone's comment on a post
+  replyToComment?: (slot: string, comment: InteractPost, text: string) => Promise<void>;
+};
+
 export type MonitorCapabilities = {
   // This platform's post link as a ref, or null when the link belongs to another platform.
   parsePostUrl(url: string): MonitorPostRef | null;
@@ -351,6 +361,8 @@ export interface SocialProvider
   stats?: (token: string, integration: Integration) => Promise<ChannelStats>;
   // oksocial 监控: read posts, accounts and keyword searches of this platform.
   monitor?: MonitorCapabilities;
+  // oksocial automations: like / bookmark / follow / reply to comments of other accounts
+  interact?: InteractCapabilities;
   // oksocial billing: credit price-table action charged for every write through this channel
   // (post, comment, reply); unset = writes are free.
   writeCreditAction?: CreditAction;

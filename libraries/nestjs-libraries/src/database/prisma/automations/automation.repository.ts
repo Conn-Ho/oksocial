@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AutomationActionStatus, AutomationType, InboxKind, Prisma } from '@prisma/client';
+import { AutomationActionStatus, AutomationType, InboxKind, MonitorItemKind, Prisma } from '@prisma/client';
 import dayjs from 'dayjs';
 import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 
@@ -14,8 +14,27 @@ export class AutomationRepository {
     private _slots: PrismaRepository<'browserSlot'>,
     private _integrations: PrismaRepository<'integration'>,
     private _inbox: PrismaRepository<'inboxItem'>,
-    private _posts: PrismaRepository<'post'>
+    private _posts: PrismaRepository<'post'>,
+    private _monitorTargets: PrismaRepository<'monitorTarget'>,
+    private _monitorItems: PrismaRepository<'monitorItem'>
   ) {}
+
+  /** 监控 targets of this organization an automation works from. */
+  monitorTargets(orgId: string, ids: string[]) {
+    return this._monitorTargets.model.monitorTarget.findMany({
+      where: { organizationId: orgId, id: { in: ids }, deletedAt: null },
+      select: { id: true, kind: true, platform: true, title: true, query: true },
+    });
+  }
+
+  /** What those targets found recently (hits, competitor posts, comments), newest first. */
+  monitorItems(targetIds: string[], kinds: MonitorItemKind[], since: Date) {
+    return this._monitorItems.model.monitorItem.findMany({
+      where: { targetId: { in: targetIds }, kind: { in: kinds }, createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
 
   list(orgId: string) {
     return this._automations.model.automation.findMany({
@@ -112,6 +131,7 @@ export class AutomationRepository {
     targetKey: string;
     targetLabel?: string | null;
     content?: string | null;
+    payload?: Prisma.InputJsonValue;
     status: AutomationActionStatus;
     error?: string | null;
   }) {

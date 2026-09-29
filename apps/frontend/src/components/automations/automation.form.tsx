@@ -12,14 +12,57 @@ import {
   AUTOMATION_META,
   AutomationType,
   INTENT_TEXT,
+  POST_ACTION_TEXT,
   SENTIMENT_TEXT,
   describeAutomation,
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
 import { Automation } from '@gitroom/frontend/components/automations/automations.hooks';
+import { useMonitorTargets } from '@gitroom/frontend/components/monitor/monitor.hooks';
 
 const field = 'bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[14px]';
 const INBOX_TYPES: AutomationType[] = ['COMMENT_ASSISTANT', 'DM_ASSISTANT', 'LEAD_COLLECTOR'];
+// work from 监控 targets instead of the inbox
+const MONITOR_TYPES: AutomationType[] = ['POST_ACTIONS', 'PROSPECTING'];
+// what the form starts from while the config is still incomplete (no monitor picked yet)
+const START_CONFIG: Partial<Record<AutomationType, Record<string, any>>> = {
+  POST_ACTIONS: { actions: ['like'], lookbackHours: 24, minLikes: 0, keywords: [] },
+  PROSPECTING: { lookbackDays: 3, keywords: [], leadPrompt: '', minScore: 70, replyWith: 'ai', templateMatch: 'ai', extraPrompt: '', saveLeads: true },
+};
+
+/** Which 监控 an automation works from: keyword + competitor monitors, or monitored posts. */
+const MonitorPicker: FC<{ type: AutomationType; value: string[]; onChange: (v: string[]) => void }> = ({ type, value, onChange }) => {
+  const t = useT();
+  const { data: keywords } = useMonitorTargets('KEYWORD');
+  const { data: accounts } = useMonitorTargets('ACCOUNT');
+  const { data: posts } = useMonitorTargets('POST');
+  const choices = type === 'PROSPECTING' ? posts || [] : [...(keywords || []), ...(accounts || [])];
+  return (
+    <Row
+      label={type === 'PROSPECTING' ? t('auto_monitor_posts', '在哪些监控帖子的评论区里找') : t('auto_monitor_sources', '对哪些监控里的新帖操作')}
+      hint={t('auto_monitor_hint', '在「监控」里添加关键词、竞品或帖子后可选；只有 X 支持这些操作，且账号要绑定出口代理。')}
+    >
+      {choices.length ? (
+        <div className="flex flex-wrap gap-[6px]">
+          {choices.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={value.includes(m.id)}
+              onClick={() => onChange(value.includes(m.id) ? value.filter((x) => x !== m.id) : [...value, m.id])}
+              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border max-w-full', value.includes(m.id) ? 'bg-btnPrimary text-white border-transparent' : 'border-newTableBorder')}
+            >
+              <img src={`/icons/platforms/${m.platform}.png`} alt="" className="w-[14px] h-[14px] rounded-full" />
+              <span className="truncate">{m.title || m.query}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span className="text-[13px] text-textColor/60">{t('auto_no_monitors', '还没有可选的监控。')}</span>
+      )}
+    </Row>
+  );
+};
 
 const Chips: FC<{ options: Record<string, string>; value: string[]; onChange: (v: string[]) => void; label: string }> = ({
   options,
@@ -73,7 +116,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       return parseAutomationConfig(type, existing?.config || (type === 'LEAD_COLLECTOR' ? { prompt: '对产品价格、购买方式或合作有明确兴趣的人' } : type === 'AUTO_POST' ? { topics: ['行业观察'] } : {})) as any;
     } catch {
       // incomplete (e.g. no source account yet): the 规则说明 says what is missing
-      return { ...(existing?.config || {}) };
+      return { ...(START_CONFIG[type] || {}), ...(existing?.config || {}) };
     }
   });
   const [sample, setSample] = useState('');
@@ -113,7 +156,11 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
     const res = await fetch('/automations/test', { method: 'POST', body: JSON.stringify({ type, config, sample }) });
     const body = await res.json().catch(() => ({}));
     setBusy('');
-    setTestOut(res.ok ? `${body.output}${body.passes === undefined ? '' : body.passes ? '（会进入线索库）' : '（分数不够，不入库）'}` : body?.message || '测试失败');
+    setTestOut(
+      res.ok
+        ? `${body.output}${type !== 'LEAD_COLLECTOR' || body.passes === undefined ? '' : body.passes ? '（会进入线索库）' : '（分数不够，不入库）'}`
+        : body?.message || '测试失败'
+    );
   }, [type, config, sample]);
 
   return (
@@ -122,7 +169,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       <Row label={t('name', '名称')}>
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} className={field} />
       </Row>
-      <Row label={INBOX_TYPES.includes(type) ? t('auto_watch_channels', '监控哪些账号') : type === 'REWRITE_SYNC' ? t('auto_targets', '同步到哪些账号') : t('auto_post_channels', '给哪些账号发帖')}>
+      <Row label={INBOX_TYPES.includes(type) ? t('auto_watch_channels', '监控哪些账号') : MONITOR_TYPES.includes(type) ? t('auto_act_channels', '用哪些账号操作') : type === 'REWRITE_SYNC' ? t('auto_targets', '同步到哪些账号') : t('auto_post_channels', '给哪些账号发帖')}>
         <div className="flex flex-wrap gap-[6px]">
           {channelChoices.map((i: any) => (
             <button
@@ -148,6 +195,41 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
           <Chips label={t('intent', '意向')} options={INTENT_TEXT} value={config.intents || []} onChange={(v) => set({ intents: v })} />
         </>
       )}
+      {MONITOR_TYPES.includes(type) && (
+        <MonitorPicker type={type} value={config.monitorTargetIds || []} onChange={(v) => set({ monitorTargetIds: v })} />
+      )}
+      {type === 'POST_ACTIONS' && (
+        <>
+          <Chips label={t('post_actions', '操作')} options={POST_ACTION_TEXT} value={config.actions || []} onChange={(v) => set({ actions: v })} />
+          <div className="flex flex-wrap gap-[16px]">
+            <Row label={t('lookback_hours', '只看最近几小时的新帖')}>
+              <input type="number" min={1} max={168} value={config.lookbackHours ?? 24} onChange={(e) => set({ lookbackHours: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
+            </Row>
+            <Row label={t('min_likes', '点赞至少')}>
+              <input type="number" min={0} value={config.minLikes ?? 0} onChange={(e) => set({ minLikes: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
+            </Row>
+          </div>
+        </>
+      )}
+      {type === 'PROSPECTING' && (
+        <>
+          <Row label={t('lookback', '只看最近几天')}>
+            <input type="number" min={1} max={30} value={config.lookbackDays ?? 3} onChange={(e) => set({ lookbackDays: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
+          </Row>
+          <Row label={t('prospect_prompt', '什么样的评论者值得回复（可选：留空则回复所有符合关键词的评论）')}>
+            <textarea value={config.leadPrompt || ''} maxLength={500} onChange={(e) => set({ leadPrompt: e.target.value })} className="bg-newTableHeader rounded-[4px] p-[8px] min-h-[60px] text-[14px]" placeholder="例如：正在找 AI 编程工具、问价格或问怎么用的人" />
+          </Row>
+          {!!config.leadPrompt && (
+            <Row label={t('min_score', '回复的最低分')} hint={`${config.minScore ?? 70} 分`}>
+              <input type="range" min={0} max={100} value={config.minScore ?? 70} onChange={(e) => set({ minScore: Number(e.target.value) })} />
+            </Row>
+          )}
+          <label className="flex items-center gap-[8px] text-[14px]">
+            <input type="checkbox" checked={!!config.saveLeads} onChange={(e) => set({ saveLeads: e.target.checked })} />
+            {t('save_leads', '回复过的人存入线索库')}
+          </label>
+        </>
+      )}
       {type === 'COMMENT_ASSISTANT' && (
         <>
           <Chips label={t('kinds', '类型')} options={{ COMMENT: '评论', MENTION: '@提及' }} value={config.kinds || []} onChange={(v) => set({ kinds: v })} />
@@ -160,11 +242,13 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       {type === 'DM_ASSISTANT' && (
         <Chips label={t('strategy', '回复策略')} options={{ once: '只回第一次', continuous: '持续回复' }} value={[config.strategy]} onChange={(v) => set({ strategy: v[v.length - 1] || 'once' })} />
       )}
-      {(type === 'COMMENT_ASSISTANT' || type === 'DM_ASSISTANT') && (
+      {(type === 'COMMENT_ASSISTANT' || type === 'DM_ASSISTANT' || MONITOR_TYPES.includes(type)) && (
+        <Row label={t('keywords', '关键词（可选，逗号分隔，命中任意一个即可）')}>
+          <input defaultValue={(config.keywords || []).join('，')} onBlur={(e) => set({ keywords: words(e.target.value) })} className={field} />
+        </Row>
+      )}
+      {(type === 'COMMENT_ASSISTANT' || type === 'DM_ASSISTANT' || type === 'PROSPECTING') && (
         <>
-          <Row label={t('keywords', '关键词（可选，逗号分隔，命中任意一个即可）')}>
-            <input defaultValue={(config.keywords || []).join('，')} onBlur={(e) => set({ keywords: words(e.target.value) })} className={field} />
-          </Row>
           <Chips label={t('reply_with', '回复内容')} options={{ ai: 'AI 回复', template: '话术库' }} value={[config.replyWith]} onChange={(v) => set({ replyWith: v[v.length - 1] || 'ai' })} />
           {config.replyWith === 'template' && (
             <Chips label={t('template_match', '话术匹配')} options={{ ai: 'AI 挑最合适的', random: '随机' }} value={[config.templateMatch]} onChange={(v) => set({ templateMatch: v[v.length - 1] || 'ai' })} />
@@ -230,7 +314,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
 
       <div className="flex flex-col gap-[6px]">
         <div className="flex gap-[8px]">
-          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' ? '粘贴一段帖子正文试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1')} />
+          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1')} />
           <Button secondary={true} loading={busy === 'test'} disabled={!sample.trim() && type !== 'AUTO_POST'} onClick={test}>
             {t('test', '测试')}
           </Button>

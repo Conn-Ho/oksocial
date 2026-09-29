@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Automation, InboxItem } from '@prisma/client';
+import { Automation, InboxItem, Integration, MonitorItem } from '@prisma/client';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
@@ -18,6 +18,9 @@ import {
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
 import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
+import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
+import { InteractCapabilities } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 dayjs.extend(utc);
 
 export { BRAKE_HOURS, CHALLENGE_RE };
@@ -25,6 +28,18 @@ export { BRAKE_HOURS, CHALLENGE_RE };
 export const PACE_MIN_MS = 20_000;
 export const PACE_MAX_MS = 60_000;
 const LEAD_BATCH = 20;
+
+// What a held like / bookmark / follow / comment reply needs to run later (AutomationAction.payload).
+export type InteractPayload = {
+  action: 'like' | 'bookmark' | 'follow' | 'comment_reply';
+  platform: string;
+  itemId: string;
+  externalId: string;
+  url: string | null;
+  authorName: string | null;
+};
+type MonitorTargetRow = { id: string; kind: string; platform: string; title: string | null; query: string };
+type Channel = Pick<Integration, 'id' | 'token' | 'providerIdentifier'>;
 
 export type RunResult = { done: number; held: number; failed: number; skipped: number; warning?: string };
 
@@ -70,7 +85,9 @@ export class AutomationRunner {
     private _postsService: PostsService,
     private _notificationService: NotificationService,
     private _ai: AutomationAiService,
-    private _brands: BrandService
+    private _brands: BrandService,
+    private _integrationManager: IntegrationManager,
+    private _credits: CreditsService
   ) {}
 
   async run(automation: Automation): Promise<RunResult> {
@@ -104,6 +121,12 @@ export class AutomationRunner {
       case 'AUTO_POST':
         await this.autoPost(ctx, config as AutomationConfig<'AUTO_POST'>);
         break;
+      case 'POST_ACTIONS':
+        await this.postActions(ctx, config as AutomationConfig<'POST_ACTIONS'>);
+        break;
+      case 'PROSPECTING':
+        await this.prospecting(ctx, config as AutomationConfig<'PROSPECTING'>);
+        break;
     }
     return ctx.result;
   }
@@ -116,7 +139,7 @@ export class AutomationRunner {
   /** Reply text: AI, or a template (random / AI-picked); AI when the library is empty. */
   private async compose(
     ctx: Context,
-    item: InboxItem,
+    item: Pick<InboxItem, 'content' | 'kind' | 'threadTitle'>,
     c: { replyWith: 'ai' | 'template'; templateMatch: 'random' | 'ai'; extraPrompt: string }
   ) {
     const orgId = ctx.automation.organizationId;
@@ -142,7 +165,7 @@ export class AutomationRunner {
   /** The write gate every automated platform action goes through. */
   private async act(
     ctx: Context,
-    a: { integrationId: string; targetKey: string; targetLabel?: string; kind: string; content: string },
+    a: { integrationId: string; targetKey: string; targetLabel?: string; kind: string; content: string; payload?: InteractPayload },
     execute: () => Promise<unknown>
   ) {
     if (ctx.remaining <= 0) {
@@ -350,5 +373,160 @@ export class AutomationRunner {
         );
       }
     }
+  }
+
+  /** Our channel on the monitored platform and what that platform can do there, or why not. */
+  private reach(ctx: Context, target: MonitorTargetRow, channels: Channel[], needs: keyof InteractCapabilities) {
+    const channel = channels.find((ch) => ch.providerIdentifier === target.platform);
+    const interact = this._integrationManager.getSocialIntegration(target.platform)?.interact;
+    if (!channel || !interact?.[needs]) {
+      ctx.result.skipped += 1;
+      ctx.result.warning = `「${target.title || target.query}」${channel ? '所在平台暂不支持这个操作' : '所在平台没有选中的账号'}，已跳过。`;
+      return null;
+    }
+    return channel;
+  }
+
+  private notOwn(ctx: Context, item: MonitorItem) {
+    return !ctx.own.has((item.authorName || '').toLowerCase());
+  }
+
+  /** 帖文操作助手: like / bookmark / follow the authors of new keyword hits and competitor posts. */
+  private async postActions(ctx: Context, c: AutomationConfig<'POST_ACTIONS'>) {
+    const org = ctx.automation.organizationId;
+    const since = dayjs().subtract(c.lookbackHours, 'hour').toDate();
+    const channels = await this._repository.channels(org, ctx.automation.integrationIds);
+    for (const target of await this._repository.monitorTargets(org, c.monitorTargetIds)) {
+      const channel = this.reach(ctx, target, channels, c.actions[0]);
+      if (!channel) {
+        continue;
+      }
+      const items = (await this._repository.monitorItems([target.id], ['HIT', 'POST'], since)).filter(
+        (i) =>
+          this.notOwn(ctx, i) &&
+          (i.likes ?? 0) >= c.minLikes &&
+          matchesTriggers({ content: i.content || i.title || '', sentiment: i.sentiment, intent: i.intent }, c)
+      );
+      const keyOf = (i: MonitorItem, action: string) =>
+        action === 'follow' ? `follow:${target.platform}:${(i.authorName || '').toLowerCase()}` : `${action}:${i.id}`;
+      const acted = await this._repository.actedTargets(
+        ctx.automation.id,
+        items.flatMap((i) => c.actions.map((a) => keyOf(i, a)))
+      );
+      for (const item of items) {
+        for (const action of c.actions) {
+          if (ctx.remaining <= 0) {
+            return;
+          }
+          const targetKey = keyOf(item, action);
+          if (acted.has(targetKey) || (action === 'follow' && !item.authorName)) {
+            continue;
+          }
+          acted.add(targetKey);
+          const payload = this.payload(action, target.platform, item);
+          await this.act(
+            ctx,
+            {
+              integrationId: channel.id,
+              targetKey,
+              targetLabel: action === 'follow' ? `@${item.authorName}` : (item.title || item.content || '').slice(0, 60),
+              kind: action,
+              content: '',
+              payload,
+            },
+            () => this.interact(org, channel, payload, '')
+          );
+        }
+      }
+    }
+  }
+
+  /** 帖文拓客助手: reply under promising comments of monitored posts, and keep them as leads. */
+  private async prospecting(ctx: Context, c: AutomationConfig<'PROSPECTING'>) {
+    const org = ctx.automation.organizationId;
+    const since = dayjs().subtract(c.lookbackDays, 'day').toDate();
+    const channels = await this._repository.channels(org, ctx.automation.integrationIds);
+    const targets = (await this._repository.monitorTargets(org, c.monitorTargetIds)).filter((t) => t.kind === 'POST');
+    for (const target of targets) {
+      const channel = this.reach(ctx, target, channels, 'replyToComment');
+      if (!channel) {
+        continue;
+      }
+      const comments = (await this._repository.monitorItems([target.id], ['COMMENT'], since)).filter(
+        (i) => this.notOwn(ctx, i) && !!i.content && matchesTriggers({ content: i.content || '', sentiment: i.sentiment, intent: i.intent }, c)
+      );
+      const acted = await this._repository.actedTargets(ctx.automation.id, comments.map((i) => `prospect:${i.id}`));
+      const fresh = comments.filter((i) => !acted.has(`prospect:${i.id}`)).slice(0, ctx.remaining);
+      const scores = new Map<string, { score: number; summary: string }>();
+      if (c.leadPrompt) {
+        for (let i = 0; i < fresh.length; i += LEAD_BATCH) {
+          const batch = fresh.slice(i, i + LEAD_BATCH).map((f) => ({ id: f.id, content: f.content || '' }));
+          for (const s of await this._ai.scoreLeads(c.leadPrompt, batch)) {
+            scores.set(s.id, s);
+          }
+        }
+      }
+      for (const item of fresh) {
+        if (ctx.remaining <= 0) {
+          return;
+        }
+        const score = scores.get(item.id);
+        if (c.leadPrompt && (!score || score.score < c.minScore)) {
+          // remembered, so the same comment is not scored again next run
+          await this._repository.recordAction({
+            automationId: ctx.automation.id,
+            integrationId: channel.id,
+            kind: 'prospect',
+            targetKey: `prospect:${item.id}`,
+            targetLabel: item.authorName,
+            content: score ? `${score.score} 分：${score.summary}` : '未评分',
+            status: 'SKIPPED',
+          });
+          ctx.result.skipped += 1;
+          continue;
+        }
+        const content = await this.compose(ctx, { content: item.content || '', kind: 'COMMENT', threadTitle: target.title }, c);
+        const payload = this.payload('comment_reply', target.platform, item);
+        const outcome = await this.act(
+          ctx,
+          { integrationId: channel.id, targetKey: `prospect:${item.id}`, targetLabel: item.authorName || '', kind: 'comment_reply', content, payload },
+          () => this.interact(org, channel, payload, content)
+        );
+        if (c.saveLeads && (outcome === 'done' || outcome === 'held')) {
+          await this._repository.addLead({
+            organizationId: org,
+            automationId: ctx.automation.id,
+            integrationId: channel.id,
+            source: 'monitor:COMMENT',
+            sourceId: item.id,
+            authorName: item.authorName || '',
+            authorUrl: item.authorUrl,
+            content: item.content || '',
+            score: score?.score ?? 0,
+            summary: score?.summary ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  private payload(action: InteractPayload['action'], platform: string, item: MonitorItem): InteractPayload {
+    return { action, platform, itemId: item.id, externalId: item.externalId, url: item.url, authorName: item.authorName };
+  }
+
+  /** One interaction through the channel's browser, charged as a browser write (refunded on failure). */
+  async interact(orgId: string, channel: Pick<Integration, 'token'>, p: InteractPayload, text: string) {
+    const interact = this._integrationManager.getSocialIntegration(p.platform)?.interact;
+    const post = { externalId: p.externalId, url: p.url, authorName: p.authorName };
+    const run = {
+      like: interact?.like && (() => interact.like!(channel.token, post)),
+      bookmark: interact?.bookmark && (() => interact.bookmark!(channel.token, post)),
+      follow: interact?.follow && p.authorName && (() => interact.follow!(channel.token, { name: p.authorName! })),
+      comment_reply: interact?.replyToComment && (() => interact.replyToComment!(channel.token, post, text)),
+    }[p.action];
+    if (!run) {
+      throw new Error('这个平台暂不支持这个操作');
+    }
+    await this._credits.withCredits(orgId, 'browser_write', p.itemId, run);
   }
 }
