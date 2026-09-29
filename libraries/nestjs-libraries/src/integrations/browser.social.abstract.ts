@@ -33,6 +33,8 @@ export abstract class BrowserSocialAbstract extends SocialAbstract {
   scopes: string[] = [];
   refreshCron = true;
   editor = 'normal' as const;
+  // Own Temporal task queue per platform (identifiers have no dash); the fleet also caps runs at 3.
+  override maxConcurrentJob = 3;
   protected fleet: BrowserFleetClient = browserFleet;
 
   async generateAuthUrl(): Promise<GenerateAuthUrlResponse> {

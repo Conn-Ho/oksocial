@@ -63,10 +63,10 @@ export type AllProvidersSettings =
   | ProviderExtension<'mewe', MeweDto>
   | ProviderExtension<'tumblr', TumblrDto>
   | ProviderExtension<'whop', WhopDto>
-  | ProviderExtension<'xiaohongshu-web', None>
-  | ProviderExtension<'douyin-web', None>
-  | ProviderExtension<'weibo-web', None>
-  | ProviderExtension<'x-web', None>;
+  | ProviderExtension<'xiaohongshu', None>
+  | ProviderExtension<'douyin', None>
+  | ProviderExtension<'weibo', None>
+  | ProviderExtension<'xweb', None>;
 
 type None = NonNullable<unknown>;
 
@@ -108,10 +108,10 @@ export const allProviders = (setEmpty?: any) => {
     { value: MeweDto, name: 'mewe' },
     { value: TumblrDto, name: 'tumblr' },
     // oksocial browser channel
-    { value: setEmpty, name: 'xiaohongshu-web' },
-    { value: setEmpty, name: 'douyin-web' },
-    { value: setEmpty, name: 'weibo-web' },
-    { value: setEmpty, name: 'x-web' },
+    { value: setEmpty, name: 'xiaohongshu' },
+    { value: setEmpty, name: 'douyin' },
+    { value: setEmpty, name: 'weibo' },
+    { value: setEmpty, name: 'xweb' },
   ].filter((f) => f.value);
 };
 

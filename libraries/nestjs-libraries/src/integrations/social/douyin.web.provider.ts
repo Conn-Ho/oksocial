@@ -20,7 +20,7 @@ export class DouyinWebProvider
   extends BrowserSocialAbstract
   implements SocialProvider
 {
-  identifier = 'douyin-web';
+  identifier = 'douyin';
   name = '抖音';
   toolTip =
     '扫码登录抖音创作者中心；发布 1 个视频。抖音只接受 2 小时后的定时发布，到点后会再排到 2 小时后上线';

@@ -7,11 +7,11 @@ import {
 } from '@gitroom/helpers/utils/bulk.posts';
 
 const channels = [
-  { id: 'i1', name: 'WenWen', identifier: 'xiaohongshu-web', internalId: 'u1', display: 'WenBuilds' },
-  { id: 'i2', name: '微博号', identifier: 'weibo-web', internalId: '9' },
-  { id: 'i3', name: 'Twin', identifier: 'x-web', internalId: 'twin' },
-  { id: 'i4', name: 'Twin', identifier: 'weibo-web', internalId: '10' },
-  { id: 'i5', name: 'Old', identifier: 'weibo-web', internalId: '11', disabled: true },
+  { id: 'i1', name: 'WenWen', identifier: 'xiaohongshu', internalId: 'u1', display: 'WenBuilds' },
+  { id: 'i2', name: '微博号', identifier: 'weibo', internalId: '9' },
+  { id: 'i3', name: 'Twin', identifier: 'xweb', internalId: 'twin' },
+  { id: 'i4', name: 'Twin', identifier: 'weibo', internalId: '10' },
+  { id: 'i5', name: 'Old', identifier: 'weibo', internalId: '11', disabled: true },
 ];
 const now = new Date('2026-10-01T00:00:00+08:00');
 const start = new Date('2026-10-02T09:00:00+08:00');
@@ -115,7 +115,7 @@ describe('toCreatePostBody', () => {
             { content: '正文', image: [{ id: 'm1', path: 'https://oksocial.online/uploads/a.jpg' }] },
             { content: '首评', image: [] },
           ],
-          settings: { __type: 'xiaohongshu-web' },
+          settings: { __type: 'xiaohongshu' },
         },
       ],
     });

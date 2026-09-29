@@ -19,7 +19,7 @@ export class XiaohongshuWebProvider
   extends BrowserSocialAbstract
   implements SocialProvider
 {
-  identifier = 'xiaohongshu-web';
+  identifier = 'xiaohongshu';
   name = '小红书';
   toolTip = '扫码登录小红书创作服务平台；发布图文笔记（1-9 张图），标题取正文第一行（最多 20 字）';
   browserSession = {

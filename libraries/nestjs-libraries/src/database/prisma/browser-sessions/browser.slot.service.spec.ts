@@ -17,7 +17,7 @@ import {
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 
 const provider = {
-  identifier: 'xiaohongshu-web',
+  identifier: 'xiaohongshu',
   browserSession: {
     loginUrl: 'https://creator.xiaohongshu.com/login',
     whoami: ['xhs2', 'me'],
@@ -83,7 +83,7 @@ describe('BrowserSlotService', () => {
 
   it('startLogin creates a pending browser, opens the login page and starts the screen', async () => {
     const { service, fleet, repo } = setup();
-    const res = await service.startLogin('org1', 'xiaohongshu-web');
+    const res = await service.startLogin('org1', 'xiaohongshu');
     const slot = repo.createPending.mock.calls[0][2];
     expect(fleet.ensureSlot).toHaveBeenCalledWith(slot, null);
     expect(fleet.open).toHaveBeenCalledWith(slot, 'https://creator.xiaohongshu.com/login');
@@ -92,11 +92,11 @@ describe('BrowserSlotService', () => {
 
   it('startLogin for a reconnect reuses the channel browser and its proxy', async () => {
     const slotRow = {
-      id: 'row7', slot: 'sreuse', status: 'ACTIVE', integrationId: 'int7', providerIdentifier: 'xiaohongshu-web',
+      id: 'row7', slot: 'sreuse', status: 'ACTIVE', integrationId: 'int7', providerIdentifier: 'xiaohongshu',
       proxy: { url: AuthService.fixedEncryption('http://u:pw@1.2.3.4:8000') },
     };
     const { service, fleet, repo } = setup({ slotRow });
-    await service.startLogin('org1', 'xiaohongshu-web', 'int7');
+    await service.startLogin('org1', 'xiaohongshu', 'int7');
     expect(repo.createPending).not.toHaveBeenCalled();
     expect(fleet.ensureSlot).toHaveBeenCalledWith('sreuse', 'http://u:pw@1.2.3.4:8000');
   });
@@ -105,11 +105,11 @@ describe('BrowserSlotService', () => {
     const { service, manager } = setup();
     manager.getSocialIntegration.mockReturnValueOnce({ identifier: 'x' } as any);
     await expect(service.startLogin('org1', 'x')).rejects.toMatchObject({ status: 400 });
-    await expect(service.startLogin('org1', 'xiaohongshu-web', 'missing')).rejects.toMatchObject({ status: 404 });
+    await expect(service.startLogin('org1', 'xiaohongshu', 'missing')).rejects.toMatchObject({ status: 404 });
   });
 
   it('checkLogin keeps waiting until the browser is logged in (also while Chrome is starting)', async () => {
-    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu-web', integrationId: null };
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
     const loggedOut = setup({ slotRow: pending });
     expect(await loggedOut.service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
     const starting = setup({ slotRow: pending, run: async () => { throw new Error('no profile id yet'); } });
@@ -117,7 +117,7 @@ describe('BrowserSlotService', () => {
   });
 
   it('checkLogin links the channel with the slot as its token and starts keep-alive', async () => {
-    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu-web', integrationId: null };
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
     const run = async () => ({ ok: true, data: [{ logged_in: true, user_id: 'u1', name: 'WenWen', red_id: 'WenBuilds' }] });
     const { service, integrationService, repo, refresh, fleet } = setup({ slotRow: pending, run });
 
@@ -126,7 +126,7 @@ describe('BrowserSlotService', () => {
     expect(res).toEqual({ status: 'connected', integrationId: 'int1' });
     const args = integrationService.createOrUpdateIntegration.mock.calls[0];
     expect(args.slice(2, 15)).toEqual([
-      'org1', 'WenWen', undefined, 'social', 'u1', 'xiaohongshu-web', 's1', 's1',
+      'org1', 'WenWen', undefined, 'social', 'u1', 'xiaohongshu', 's1', 's1',
       BROWSER_KEEPALIVE_SECONDS, 'WenBuilds', false, undefined, -480,
     ]);
     expect(repo.activate).toHaveBeenCalledWith('row1', 'int1');
@@ -135,7 +135,7 @@ describe('BrowserSlotService', () => {
   });
 
   it('checkLogin refuses a reconnect that logged into a different account', async () => {
-    const row = { id: 'row7', slot: 's7', status: 'ACTIVE', providerIdentifier: 'xiaohongshu-web', integrationId: 'int7' };
+    const row = { id: 'row7', slot: 's7', status: 'ACTIVE', providerIdentifier: 'xiaohongshu', integrationId: 'int7' };
     const run = async () => ({ ok: true, data: [{ logged_in: true, user_id: 'other', name: 'Other', red_id: 'o' }] });
     const { service, integrationService } = setup({
       slotRow: row, run, integration: { id: 'int7', internalId: 'u1', name: 'WenWen' },

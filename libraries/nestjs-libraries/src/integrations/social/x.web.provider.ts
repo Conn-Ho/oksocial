@@ -17,7 +17,7 @@ const statusId = (url = '') => url.match(/status\/(\d+)/)?.[1] || '';
 // Writes go through the x-quote plugin's composer (the path X accepts from a browser); the
 // official X API cannot reply to strangers, follow, like or quote on self-serve tiers.
 export class XWebProvider extends BrowserSocialAbstract implements SocialProvider {
-  identifier = 'x-web';
+  identifier = 'xweb';
   name = 'X（浏览器）';
   toolTip =
     '在托管浏览器里登录 X；适合需要主动互动的账号。写操作前请先给这个号绑定独立出口代理';

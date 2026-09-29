@@ -238,8 +238,23 @@ describe('post settings validation', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { allProviders, EmptySettings } = require('@gitroom/nestjs-libraries/dtos/posts/providers-settings/all.providers.settings');
     const names = allProviders(EmptySettings).map((p: { name: string }) => p.name);
-    for (const id of ['xiaohongshu-web', 'douyin-web', 'weibo-web', 'x-web']) {
+    for (const id of ['xiaohongshu', 'douyin', 'weibo', 'xweb']) {
       expect(names).toContain(id);
     }
+  });
+});
+
+describe('temporal task queues', () => {
+  it('browser providers have dashless identifiers so each gets its own worker queue', () => {
+    // temporal.module only creates workers for identifiers without "-", and routes posts to
+    // identifier.split('-')[0]; a dashed id would leave its posts without a worker.
+    const ids = [new XiaohongshuWebProvider(), new DouyinWebProvider(), new WeiboWebProvider(), new XWebProvider()].map(
+      (p) => p.identifier
+    );
+    for (const id of ids) {
+      expect(id).toMatch(/^[a-z]+$/);
+    }
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).not.toContain('x');
   });
 });

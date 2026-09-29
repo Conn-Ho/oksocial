@@ -17,7 +17,7 @@ export class WeiboWebProvider
   extends BrowserSocialAbstract
   implements SocialProvider
 {
-  identifier = 'weibo-web';
+  identifier = 'weibo';
   name = '微博';
   toolTip = '扫码登录微博；发布文字 + 最多 9 张图片';
   browserSession = {

@@ -46,10 +46,10 @@ import WeiboWebProvider from '@gitroom/frontend/components/new-launch/providers/
 import XWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/x.web.provider';
 
 export const Providers = [
-  { identifier: 'xiaohongshu-web', component: XiaohongshuWebProvider },
-  { identifier: 'douyin-web', component: DouyinWebProvider },
-  { identifier: 'weibo-web', component: WeiboWebProvider },
-  { identifier: 'x-web', component: XWebProvider },
+  { identifier: 'xiaohongshu', component: XiaohongshuWebProvider },
+  { identifier: 'douyin', component: DouyinWebProvider },
+  { identifier: 'weibo', component: WeiboWebProvider },
+  { identifier: 'xweb', component: XWebProvider },
   {
     identifier: 'devto',
     component: DevtoProvider,
