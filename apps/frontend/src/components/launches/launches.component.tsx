@@ -31,6 +31,8 @@ import useCookie from 'react-use-cookie';
 import { Onboarding } from '@gitroom/frontend/components/onboarding/onboarding';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
+import { BulkImportModal } from '@gitroom/frontend/components/launches/bulk.import.modal';
+import { useSWRConfig } from 'swr';
 
 export const SVGLine = () => {
   return (
@@ -364,6 +366,8 @@ export const LaunchesComponent = () => {
   const fireEvents = useFireEvents();
   const t = useT();
   const modal = useModals();
+  // after a bulk import every calendar view (week/month/list) must refetch
+  const { mutate: revalidateAll } = useSWRConfig();
   const [reload, setReload] = useState(false);
   const [collapseMenu, setCollapseMenu] = useCookie('collapseMenu', '0');
   const [mode] = useCookie('mode', 'dark');
@@ -593,6 +597,36 @@ export const LaunchesComponent = () => {
                   user?.tier?.ai &&
                   billingEnabled && <GeneratorComponent />}
               </div>
+              {sortedIntegrations?.length > 0 && (
+                <button
+                  type="button"
+                  className="text-[13px] text-textColor/70 hover:text-textColor underline-offset-4 hover:underline text-start group-[.sidebar]:hidden"
+                  onClick={() =>
+                    modal.openModal({
+                      title: t('bulk_import_title', 'Excel 批量发布'),
+                      withCloseButton: true,
+                      classNames: {
+                        modal: 'bg-transparent text-textColor w-[1000px] max-w-[95vw]',
+                      },
+                      children: (
+                        <BulkImportModal
+                          integrations={sortedIntegrations.map((i: any) => ({
+                            id: i.id,
+                            name: i.name,
+                            identifier: i.identifier,
+                            internalId: i.internalId,
+                            display: i.display,
+                            disabled: i.disabled,
+                          }))}
+                          onDone={() => revalidateAll(() => true)}
+                        />
+                      ),
+                    })
+                  }
+                >
+                  {t('bulk_import_entry', '批量导入（Excel）')}
+                </button>
+              )}
             </div>
             <div className="gap-[32px] flex flex-col select-none flex-1">
               {sortedIntegrations.length === 0 && collapseMenu === '0' && (
