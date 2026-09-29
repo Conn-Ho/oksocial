@@ -578,10 +578,13 @@ export const Calendar = () => {
         <ListView />
       ) : display === 'day' ? (
         <DayView />
-      ) : display === 'week' ? (
-        <WeekView />
       ) : (
-        <MonthView />
+        // the week and month grids need ~640px: on phones they scroll sideways inside the calendar
+        <div className="flex flex-1 min-w-0 overflow-x-auto md:contents">
+          <div className="flex flex-1 min-w-[640px] md:contents">
+            {display === 'week' ? <WeekView /> : <MonthView />}
+          </div>
+        </div>
       )}
     </>
   );

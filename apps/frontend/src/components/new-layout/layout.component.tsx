@@ -154,7 +154,8 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                           <NotificationComponent />
                         </div>
                       </div>
-                      <div className="flex flex-1 gap-[1px]">{children}</div>
+                      {/* phones stack a page's panes (e.g. channels over the calendar) instead of squeezing them side by side */}
+                      <div className="flex flex-1 flex-col md:flex-row gap-[1px]">{children}</div>
                     </div>
                   </div>
                   <MobileNav />
