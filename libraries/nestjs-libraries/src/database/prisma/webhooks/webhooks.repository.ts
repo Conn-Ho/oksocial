@@ -2,6 +2,7 @@ import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/pris
 import { Injectable } from '@nestjs/common';
 import { WebhooksDto } from '@gitroom/nestjs-libraries/dtos/webhooks/webhooks.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { AuthService } from '@gitroom/helpers/auth/auth.service';
 
 @Injectable()
 export class WebhooksRepository {
@@ -16,7 +17,14 @@ export class WebhooksRepository {
     });
   }
 
-  getWebhooks(orgId: string) {
+  /** For the settings page: the secret never leaves the server, only whether there is one. */
+  async getWebhooks(orgId: string) {
+    const rows = await this.getWebhooksWithSecrets(orgId);
+    return rows.map(({ secret, ...row }) => ({ ...row, hasSecret: !!secret }));
+  }
+
+  /** For delivery: secrets still encrypted. */
+  getWebhooksWithSecrets(orgId: string) {
     return this._webhooks.model.webhooks.findMany({
       where: {
         organizationId: orgId,
@@ -60,10 +68,21 @@ export class WebhooksRepository {
         organizationId: orgId,
         url: body.url,
         name: body.name,
+        format: body.format || 'GENERIC',
+        notifications: !!body.notifications,
+        secret: body.secret ? AuthService.fixedEncryption(body.secret) : null,
       },
       update: {
         url: body.url,
         name: body.name,
+        ...(body.format ? { format: body.format } : {}),
+        ...(body.notifications !== undefined ? { notifications: body.notifications } : {}),
+        // an empty secret on edit keeps the stored one; clearSecret removes it
+        ...(body.secret
+          ? { secret: AuthService.fixedEncryption(body.secret) }
+          : body.clearSecret
+            ? { secret: null }
+            : {}),
       },
     });
 
@@ -83,5 +102,20 @@ export class WebhooksRepository {
     });
 
     return { id };
+  }
+
+  /** Webhooks that asked for every in-app notification. */
+  notificationTargets(orgId: string) {
+    return this._webhooks.model.webhooks.findMany({
+      where: { organizationId: orgId, deletedAt: null, notifications: true },
+      select: { id: true, url: true, format: true, secret: true },
+    });
+  }
+
+  getWebhook(orgId: string, id: string) {
+    return this._webhooks.model.webhooks.findFirst({
+      where: { id, organizationId: orgId, deletedAt: null },
+      select: { id: true, url: true, format: true, secret: true },
+    });
   }
 }

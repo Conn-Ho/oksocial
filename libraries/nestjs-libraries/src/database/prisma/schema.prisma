@@ -681,11 +681,25 @@ model IntegrationsWebhooks {
   @@index([webhookId])
 }
 
+// oksocial: a webhook is also where chat group bots (飞书/企业微信/钉钉/Slack) get messages.
+enum WebhookFormat {
+  GENERIC
+  FEISHU
+  WECOM
+  DINGTALK
+  SLACK
+}
+
 model Webhooks {
   id             String                 @id @default(uuid())
   name           String
   organizationId String
   url            String
+  format         WebhookFormat          @default(GENERIC)
+  // bot signing secret (飞书/钉钉), encrypted
+  secret         String?
+  // also forward every in-app notification (掉线、风控、监控、审核…)
+  notifications  Boolean                @default(false)
   deletedAt      DateTime?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt

@@ -16,8 +16,7 @@ import { AuthTokenDetails } from '@gitroom/nestjs-libraries/integrations/social/
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
-import { WebhooksService } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhooks.service';
-import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
+import { WebhookSender } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhook.sender';
 import { TypedSearchAttributes } from '@temporalio/common';
 import {
   organizationId,
@@ -103,7 +102,7 @@ export class PostActivity {
     private _integrationManager: IntegrationManager,
     private _integrationService: IntegrationService,
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _webhookService: WebhooksService,
+    private _webhookSender: WebhookSender,
     private _temporalService: TemporalService,
     private _subscriptionService: SubscriptionService,
     private _creditsService: CreditsService
@@ -544,49 +543,10 @@ export class PostActivity {
 
   @ActivityMethod()
   async sendWebhooks(postId: string, orgId: string, integrationId: string) {
-    // Webhooks are best-effort and run after the post already published, so a
-    // failure here must not fail the workflow.
-    try {
-      const webhooks = (await this._webhookService.getWebhooks(orgId)).filter(
-        (f) => {
-          return (
-            f.integrations.length === 0 ||
-            f.integrations.some((i) => i.integration.id === integrationId)
-          );
-        }
-      );
-
-      if (webhooks.length === 0) {
-        return;
-      }
-
-      const post = await this._postService.getPostByForWebhookId(
-        postId,
-        integrationId
-      );
-      await Promise.all(
-        webhooks.map(async (webhook) => {
-          try {
-            // webhook.url is validated at save time, but DNS can change
-            // between then and now - pin resolution like every other
-            // user-influenced outbound request.
-            await fetch(webhook.url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(post),
-              // @ts-ignore — undici option, not in lib.dom fetch types
-              dispatcher: getSsrfSafeDispatcher(),
-            });
-          } catch (e) {
-            /**empty**/
-          }
-        })
-      );
-    } catch (err) {
-      /**empty**/
-    }
+    // Webhooks are best-effort and run after the post already published; the sender never throws.
+    await this._webhookSender.postPublished(orgId, integrationId, () =>
+      this._postService.getPostByForWebhookId(postId, integrationId)
+    );
   }
   @ActivityMethod()
   async processPlug(data: {

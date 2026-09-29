@@ -38,6 +38,7 @@ import { TrackService } from '@gitroom/nestjs-libraries/track/track.service';
 import { ShortLinkService } from '@gitroom/nestjs-libraries/short-linking/short.link.service';
 import { WebhooksRepository } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhooks.repository';
 import { WebhooksService } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhooks.service';
+import { WebhookSender } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhook.sender';
 import { SignatureRepository } from '@gitroom/nestjs-libraries/database/prisma/signatures/signature.repository';
 import { SignatureService } from '@gitroom/nestjs-libraries/database/prisma/signatures/signature.service';
 import { BrowserSlotRepository } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.repository';
@@ -91,6 +92,7 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     NotificationsRepository,
     WebhooksRepository,
     WebhooksService,
+    WebhookSender,
     IntegrationService,
     IntegrationRepository,
     PostsService,

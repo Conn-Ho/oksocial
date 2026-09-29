@@ -8,7 +8,7 @@ import { Button } from '@gitroom/react/form/button';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Input } from '@gitroom/react/form/input';
 import { FormProvider, useForm } from 'react-hook-form';
-import { array, object, string } from 'yup';
+import { array, boolean, object, string } from 'yup';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { Select } from '@gitroom/react/form/select';
 import { PickPlatforms } from '@gitroom/frontend/components/launches/helpers/pick.platform.component';
@@ -16,6 +16,20 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import clsx from 'clsx';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import {
+  WEBHOOK_FORMATS,
+  WEBHOOK_FORMAT_META,
+  WebhookFormat,
+} from '@gitroom/helpers/utils/webhook.formats';
+
+// The URL of a bot carries its token; the list shows only the host.
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+};
 
 export const Webhooks: FC = () => {
   const fetch = useFetch();
@@ -74,13 +88,19 @@ export const Webhooks: FC = () => {
           {!!data?.length && (
             <div className="grid grid-cols-[1fr,1fr,1fr,1fr] w-full gap-y-[10px]">
               <div>{t('name', 'Name')}</div>
-              <div>{t('url', 'URL')}</div>
+              <div>{t('webhook_target', '类型 / 地址')}</div>
               <div>{t('edit', 'Edit')}</div>
               <div>{t('delete', 'Delete')}</div>
               {data?.map((p: any) => (
                 <Fragment key={p.id}>
                   <div className="flex flex-col justify-center">{p.name}</div>
-                  <div className="flex flex-col justify-center">{p.url}</div>
+                  <div className="flex flex-col justify-center min-w-0">
+                    <span>
+                      {WEBHOOK_FORMAT_META[(p.format || 'GENERIC') as WebhookFormat].label}
+                      {p.notifications ? ` · ${t('webhook_with_notifications', '含站内通知')}` : ''}
+                    </span>
+                    <span className="text-textItemBlur text-[12px] truncate">{hostOf(p.url)}</span>
+                  </div>
                   <div className="flex flex-col justify-center">
                     <div>
                       <Button onClick={addWebhook(p)}>
@@ -115,6 +135,9 @@ export const Webhooks: FC = () => {
 const details = object().shape({
   name: string().required(),
   url: string().url().required(),
+  format: string().oneOf([...WEBHOOK_FORMATS]).required(),
+  secret: string(),
+  notifications: boolean(),
   integrations: array(),
 });
 const getWebhookOptions = (t: (key: string, fallback: string) => string) => [
@@ -145,10 +168,15 @@ export const AddOrEditWebhook: FC<{
     values: {
       name: data?.name || '',
       url: data?.url || '',
+      format: (data?.format || 'GENERIC') as WebhookFormat,
+      secret: '',
+      notifications: !!data?.notifications,
       integrations: data?.integrations?.map((p: any) => p.integration) || [],
     },
   });
   const integrations = form.watch('integrations');
+  const format = form.watch('format') as WebhookFormat;
+  const meta = WEBHOOK_FORMAT_META[format] || WEBHOOK_FORMAT_META.GENERIC;
   const integration = useCallback(async () => {
     return (await fetch('/integrations/list')).json();
   }, []);
@@ -198,6 +226,26 @@ export const AddOrEditWebhook: FC<{
   );
   const sendTest = useCallback(async () => {
     const url = form.getValues('url');
+    const chosen = form.getValues('format') as WebhookFormat;
+    if (chosen && chosen !== 'GENERIC') {
+      // chat bots: the server sends a signed test message and reports what the bot answered
+      const res = await fetch('/webhooks/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...(data?.id ? { id: data.id } : {}),
+          format: chosen,
+          url,
+          ...(form.getValues('secret') ? { secret: form.getValues('secret') } : {}),
+        }),
+      });
+      const out = await res.json().catch(() => null);
+      if (out?.ok) {
+        toast.show(t('webhook_test_ok', '测试消息已发到群里'), 'success');
+      } else {
+        toast.show(`${t('webhook_test_failed', '发送失败')}：${out?.error || out?.message || res.status}`, 'warning');
+      }
+      return;
+    }
     toast.show(t('webhook_sent', 'Webhook send'), 'success');
     try {
       await fetch(`/webhooks/send?url=${encodeURIComponent(url)}`, {
@@ -239,7 +287,7 @@ export const AddOrEditWebhook: FC<{
     } catch (e: any) {
       /** empty **/
     }
-  }, []);
+  }, [data]);
 
   return (
     <FormProvider {...form}>
@@ -251,11 +299,45 @@ export const AddOrEditWebhook: FC<{
               translationKey="label_name"
               {...form.register('name')}
             />
+            <Select label={t('webhook_format', '发送到')} name="format">
+              {WEBHOOK_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {WEBHOOK_FORMAT_META[f].label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-[12px] text-textItemBlur -mt-[4px] mb-[8px]">{meta.hint}</p>
             <Input
               label="URL"
               translationKey="label_url"
               {...form.register('url')}
             />
+            {meta.signed && (
+              <Input
+                label={t('webhook_secret', '签名密钥（可选）')}
+                placeholder={
+                  data?.hasSecret
+                    ? t('webhook_secret_kept', '已保存，留空则不修改')
+                    : t('webhook_secret_placeholder', '机器人开了签名校验时填写')
+                }
+                type="password"
+                autoComplete="off"
+                {...form.register('secret')}
+              />
+            )}
+            <label className="flex items-center gap-[10px] my-[12px] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-[18px] h-[18px] accent-[#612BD3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                {...form.register('notifications')}
+              />
+              <span>
+                {t(
+                  'webhook_forward_notifications',
+                  '同时推送站内通知（账号掉线、风控暂停、监控提醒、待审核等）'
+                )}
+              </span>
+            </label>
             <Select
               value={allIntegrations.value}
               name="integrations"

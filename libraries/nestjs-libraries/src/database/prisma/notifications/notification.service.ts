@@ -5,6 +5,7 @@ import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prism
 import { TemporalService } from 'nestjs-temporal-core';
 import { TypedSearchAttributes } from '@temporalio/common';
 import { organizationId } from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
+import { WebhookSender } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhook.sender';
 
 export type NotificationType = 'success' | 'fail' | 'info';
 
@@ -14,7 +15,8 @@ export class NotificationService {
     private _notificationRepository: NotificationsRepository,
     private _emailService: EmailService,
     private _organizationRepository: OrganizationRepository,
-    private _temporalService: TemporalService
+    private _temporalService: TemporalService,
+    private _webhookSender: WebhookSender
   ) {}
 
   getMainPageCount(organizationId: string, userId: string) {
@@ -47,6 +49,8 @@ export class NotificationService {
     type: NotificationType = 'success'
   ) {
     await this._notificationRepository.createNotification(orgId, message);
+    // chat group bots (飞书/企业微信/钉钉/Slack) that asked for notifications; best-effort, not awaited
+    void this._webhookSender.notify(orgId, subject, message);
     if (!sendEmail) {
       return;
     }
