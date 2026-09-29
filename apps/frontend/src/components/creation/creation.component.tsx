@@ -10,7 +10,7 @@ import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.role
 import {
   CreationResult,
   TEMPLATE_LABEL,
-  TemplateKey,
+  TEMPLATES,
   useBrands,
   useCreationPlatforms,
 } from '@gitroom/frontend/components/creation/creation.hooks';
@@ -33,7 +33,7 @@ export const CreationComponent: FC = () => {
   const user = useUser();
   const params = useSearchParams();
   const { mutate } = useSWRConfig();
-  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'desk');
+  const [tab, setTab] = useState<Tab>(TABS.find((x) => x.key === params.get('tab'))?.key || 'desk');
   const { data: brands } = useBrands();
   const { data: platforms } = useCreationPlatforms();
   const [result, setResult] = useState<CreationResult | null>(null);
@@ -42,7 +42,7 @@ export const CreationComponent: FC = () => {
   const canManage = canManageChannels(user?.role);
   // opened from 监控 with a post to remake
   const preset: DeskPreset = {
-    template: (params.get('template') as TemplateKey) || undefined,
+    template: TEMPLATES.find((x) => x.key === params.get('template'))?.key,
     itemId: params.get('itemId') || undefined,
     targetId: params.get('targetId') || undefined,
     title: params.get('title') || undefined,

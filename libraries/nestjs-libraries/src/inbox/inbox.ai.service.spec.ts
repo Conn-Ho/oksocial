@@ -26,6 +26,14 @@ describe('banned words', () => {
     expect(stripBanned('special (chars)', ['(chars)'])).toBe('special');
   });
 
+  it('matches Latin words only as whole words, Chinese anywhere', () => {
+    expect(bannedIn('we maintain it', ['AI'])).toEqual([]);
+    expect(bannedIn('this AI tool', ['ai'])).toEqual(['ai']);
+    expect(stripBanned('AI 助手 maintains，最便宜', ['AI', '便宜'])).toBe('助手 maintains，最');
+    expect(stripBanned({ platform: 'xiaohongshu' }, ['xiao'])).toEqual({ platform: 'xiaohongshu' });
+    expect(bannedIn('C++ 教程', ['C++'])).toEqual(['C++']);
+  });
+
   it('stripBanned walks objects and arrays, leaving keys and non-strings alone', () => {
     expect(stripBanned({ title: '最便宜', tags: ['a最便宜', 'b'], seconds: 3 }, ['最便宜'])).toEqual({ title: '', tags: ['a', 'b'], seconds: 3 });
   });
@@ -95,5 +103,30 @@ describe('InboxAiService writers pass the brand on', () => {
     expect((chat.mock.calls[0] as unknown as string[])[0]).toContain('品牌：小鹿咖啡');
     await ai.translate('你好', 'en');
     expect((chat.mock.calls[1] as unknown as string[])[0]).not.toContain('品牌');
+  });
+});
+
+describe('InboxAiService.chat (the relay call)', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  it('sends system + user to the configured model and trims the answer', async () => {
+    process.env.OKSOCIAL_AI_MODEL = 'gemini-3.8-flash';
+    const ai = new InboxAiService();
+    const create = jest.fn(async () => ({ choices: [{ message: { content: '  好的  ' } }] }));
+    (ai as any)._client = { chat: { completions: { create } } };
+    expect(await (ai as any).chat('系统', '用户', 0.4)).toBe('好的');
+    expect(create).toHaveBeenCalledWith({
+      model: 'gemini-3.8-flash',
+      temperature: 0.4,
+      messages: [
+        { role: 'system', content: '系统' },
+        { role: 'user', content: '用户' },
+      ],
+    });
+    create.mockResolvedValueOnce({ choices: [] } as any);
+    expect(await (ai as any).chat('s', 'u', 0)).toBe('');
   });
 });

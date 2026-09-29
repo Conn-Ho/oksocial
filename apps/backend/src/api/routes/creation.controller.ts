@@ -19,7 +19,10 @@ import {
   AuthorizationActions,
   Sections,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
-import { AiCreationService } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.service';
+import {
+  AiCreationService,
+  IMAGE_MAX_BYTES,
+} from '@gitroom/nestjs-libraries/database/prisma/creation/creation.service';
 import {
   AdaptDto,
   CoverDto,
@@ -30,8 +33,6 @@ import {
   TitlesDto,
   TranslateImageDto,
 } from '@gitroom/nestjs-libraries/dtos/creation/creation.dto';
-
-const IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
 // AI 创作 desk: templates that write in the chosen 品牌档案's voice, their history, and saving
 // results as drafts (per channel) or into the media library. Generation runs in the request;
@@ -72,7 +73,7 @@ export class CreationController {
   }
 
   @Post('/translate-image')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IMAGE_UPLOAD_MAX_BYTES }, defParamCharset: 'utf8' }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IMAGE_MAX_BYTES }, defParamCharset: 'utf8' }))
   translateImage(
     @GetOrgFromRequest() org: Organization,
     @GetUserFromRequest() user: User,

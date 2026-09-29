@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 
 // Aspect ratios the gemini image models accept in image_config.
@@ -63,7 +63,7 @@ export class RelayImageService {
     );
     const image = imageFromReply(res.choices[0]?.message?.content || '');
     if (!image) {
-      throw new Error('图片模型没有返回图片，请换个描述再试');
+      throw new HttpException('图片模型没有返回图片，请换个描述再试', 502);
     }
     return image;
   }

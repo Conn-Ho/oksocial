@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
+import { escapeRegExp } from 'lodash';
 
 export const SENTIMENTS = ['positive', 'negative', 'neutral'] as const;
 export const INTENTS = ['lead', 'complaint', 'question', 'suggestion', 'other'] as const;
@@ -23,7 +24,22 @@ export const parseJsonLoose = <T>(text: string): T | null => {
 /** What a writer gets from the organization's 品牌档案: a system-prompt block and words it must not use. */
 export type BrandPrompt = { system: string; banned: string[] };
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * One pattern for the banned words: a Latin word only as a whole word ("AI" is not in "maintain"),
+ * anything else (Chinese) wherever it occurs. Case-insensitive; null without words. Pure.
+ */
+const bannedPattern = (banned: string[]) => {
+  const words = banned.map((w) => w.trim()).filter(Boolean);
+  if (!words.length) {
+    return null;
+  }
+  const alternatives = words.map((w) =>
+    /^[a-z0-9]/i.test(w) || /[a-z0-9]$/i.test(w)
+      ? `${/^[a-z0-9]/i.test(w) ? '(?<![a-z0-9])' : ''}${escapeRegExp(w)}${/[a-z0-9]$/i.test(w) ? '(?![a-z0-9])' : ''}`
+      : escapeRegExp(w)
+  );
+  return new RegExp(alternatives.join('|'), 'gi');
+};
 
 /** Every string inside a value (the value itself, or the leaves of objects and arrays). Pure. */
 export const stringsOf = (value: unknown): string[] =>
@@ -35,22 +51,22 @@ export const stringsOf = (value: unknown): string[] =>
         ? Object.values(value).flatMap(stringsOf)
         : [];
 
-/** The banned words that occur in the text, case-insensitively. Pure. */
-export const bannedIn = (text: string, banned: string[]) => {
-  const lower = text.toLowerCase();
-  return banned.filter((word) => word.trim() && lower.includes(word.trim().toLowerCase()));
-};
+/** The banned words that occur in the text (see bannedPattern). Pure. */
+export const bannedIn = (text: string, banned: string[]) =>
+  banned.filter((word) => {
+    const pattern = bannedPattern([word]);
+    return !!pattern && pattern.test(text);
+  });
 
 /**
  * The value with every banned word cut out of its strings (keys and non-strings untouched); a
  * string that lost a word also loses the doubled punctuation and spaces left behind. Pure.
  */
 export const stripBanned = <T>(value: T, banned: string[]): T => {
-  const words = banned.map((w) => w.trim()).filter(Boolean);
-  if (!words.length) {
+  const pattern = bannedPattern(banned);
+  if (!pattern) {
     return value;
   }
-  const pattern = new RegExp(words.map(escapeRegExp).join('|'), 'gi');
   const cut = (text: string) => {
     const left = text.replace(pattern, '');
     return left === text
@@ -135,7 +151,7 @@ export class InboxAiService {
       value = await ask('\n\n严格按要求的格式输出，不要任何其他文字。');
     }
     if (value === null) {
-      throw new Error('AI 没有按要求的格式回答，请重试');
+      throw new HttpException('AI 没有按要求的格式回答，请重试', 502);
     }
     const hits = bannedIn(stringsOf(value).join('\n'), banned);
     if (hits.length) {

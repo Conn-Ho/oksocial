@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FC, useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useToaster } from '@gitroom/react/toaster/toaster';
@@ -105,7 +105,10 @@ export const CreationDesk: FC<{
   const [text, setText] = useState('');
   const [chosen, setChosen] = useState<string[]>([]);
   const [instruction, setInstruction] = useState('');
-  const [platform, setPlatform] = useState('');
+  // each template keeps its own platform choice ('' = any)
+  const [platformBy, setPlatformBy] = useState<Partial<Record<TemplateKey, string>>>({});
+  const platform = platformBy[template] ?? '';
+  const setPlatform = (value: string) => setPlatformBy((m) => ({ ...m, [template]: value }));
   const [count, setCount] = useState('5');
   const [remakeFrom, setRemakeFrom] = useState<'text' | 'url' | 'monitor'>(preset.itemId || preset.targetId ? 'monitor' : 'text');
   const [url, setUrl] = useState('');
@@ -117,19 +120,26 @@ export const CreationDesk: FC<{
   const [aspect, setAspect] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [target, setTarget] = useState('en');
-  const preview = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
+  const [preview, setPreview] = useState('');
 
-  useEffect(() => setBrandId((current) => current || defaultBrand), [defaultBrand]);
+  // a brand deleted on the 品牌档案 tab falls back to the default
+  useEffect(() => setBrandId((current) => (brands.some((b) => b.id === current) ? current : defaultBrand)), [brands, defaultBrand]);
   useEffect(() => setChosen((current) => (current.length ? current : platforms.map((p) => p.identifier))), [platforms]);
-  useEffect(() => () => (preview ? URL.revokeObjectURL(preview) : undefined), [preview]);
+  // remake needs a platform, a script is for a video platform when there is one
   useEffect(() => {
-    if (template === 'remake' && !platform && platforms[0]) {
-      setPlatform(platforms[0].identifier);
+    if (platforms.length) {
+      setPlatformBy((m) => ({ remake: platforms[0].identifier, script: video, ...m }));
     }
-    if (template === 'script' && !platform && video) {
-      setPlatform(video);
+  }, [platforms, video]);
+  useEffect(() => {
+    if (!file) {
+      setPreview('');
+      return;
     }
-  }, [template, platforms]);
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
   const pickFile = (f: File | null) => {
     if (f && f.size > IMAGE_MAX_MB * 1024 * 1024) {
@@ -174,6 +184,8 @@ export const CreationDesk: FC<{
         form.append('target', target);
         return { path: '/creation/translate-image', body: form };
       }
+      default:
+        return null;
     }
   };
 
@@ -181,7 +193,7 @@ export const CreationDesk: FC<{
     canWrite &&
     ((template === 'adapt' && !!text.trim() && !!chosen.length) ||
       (template === 'titles' && !!text.trim()) ||
-      (template === 'remake' && !!platform && (remakeFrom === 'monitor' || (remakeFrom === 'text' ? !!text.trim() : /^https?:\/\//i.test(url.trim()) || url.includes('http')))) ||
+      (template === 'remake' && !!platform && (remakeFrom === 'monitor' || (remakeFrom === 'text' ? !!text.trim() : /https?:\/\/\S+/i.test(url)))) ||
       (template === 'script' && !!text.trim()) ||
       (template === 'cover' && (!!title.trim() || !!text.trim())) ||
       (template === 'translate' && !!file));
@@ -201,7 +213,7 @@ export const CreationDesk: FC<{
     } finally {
       setBusy(false);
     }
-  }, [template, brandId, text, chosen, instruction, platform, count, remakeFrom, url, tone, length, seconds, title, style, aspect, file, target]);
+  }, [template, brandId, text, chosen, instruction, platformBy, count, remakeFrom, url, tone, length, seconds, title, style, aspect, file, target]);
 
   const current = TEMPLATES.find((x) => x.key === template)!;
 

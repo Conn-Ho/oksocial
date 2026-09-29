@@ -7,11 +7,13 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/media/media.service', () =>
 jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.service', () => ({ IntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/upload/upload.factory', () => ({ UploadFactory: { createStorage: () => ({}) } }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
+jest.mock('file-type', () => ({}));
 jest.mock('unpdf', () => ({}));
 jest.mock('mammoth', () => ({}));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
   IntegrationManager: class {},
   socialIntegrationList: [
+    { identifier: 'hidden', name: 'Hidden', maxLength: () => 100, creation: { format: 'post', coverAspect: '1:1', guide: 'g' } },
     {
       identifier: 'xiaohongshu', name: '小红书', maxLength: () => 1000,
       creation: { format: 'post', titleMax: 20, imagesMax: 2, coverAspect: '3:4', guide: 'g' },
@@ -70,10 +72,11 @@ const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<
   const images = { generate: jest.fn(async () => ({ mime: 'image/jpeg', base64: 'QUJD' })) };
   const monitor = { remake: jest.fn(async () => ({ source: { title: null, content: '原文', url: null }, text: '改写后' })) };
   const channels = opts.channels ?? {
-    c1: { id: 'c1', providerIdentifier: 'xiaohongshu', deletedAt: null, disabled: false },
-    c2: { id: 'c2', providerIdentifier: 'douyin', deletedAt: null, disabled: false },
-    c3: { id: 'c3', providerIdentifier: 'xweb', deletedAt: null, disabled: false },
-    off: { id: 'off', providerIdentifier: 'xweb', deletedAt: null, disabled: true },
+    c1: { id: 'c1', name: '小红书号', providerIdentifier: 'xiaohongshu', deletedAt: null, disabled: false },
+    c2: { id: 'c2', name: '抖音号', providerIdentifier: 'douyin', deletedAt: null, disabled: false },
+    c3: { id: 'c3', name: 'X 号', providerIdentifier: 'xweb', deletedAt: null, disabled: false },
+    off: { id: 'off', name: '停用', providerIdentifier: 'xweb', deletedAt: null, disabled: true },
+    li: { id: 'li', name: '领英', providerIdentifier: 'linkedin', deletedAt: null, disabled: false },
   };
   const integrations = { getIntegrationById: jest.fn(async (_o: string, id: string) => channels[id] ?? null) };
   const posts = {
@@ -94,7 +97,8 @@ const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<
     integrations as any,
     posts as any,
     media as any,
-    credits as any
+    credits as any,
+    { isHiddenProvider: (id: string) => id === 'hidden' } as any
   );
   (service as any)._storage = storage;
   return { service, repo, brands, ai, images, monitor, integrations, posts, media, storage, recorded, credits };
@@ -117,6 +121,12 @@ describe('AiCreationService.run (the one door every generation goes through)', (
     expect(credits.withCredits).toHaveBeenLastCalledWith('o1', 'ai_image', 'g2', expect.any(Function));
   });
 
+  it('still returns a charged result when the history write fails', async () => {
+    const { service, repo } = setup();
+    repo.finish.mockRejectedValueOnce(new Error('db down'));
+    expect(await service.run('o1', 'u1', 'titles', { input: {} }, async () => ({ titles: ['t'] }))).toEqual({ titles: ['t'], generationId: 'g1' });
+  });
+
   it('does not run the work when the credits do not cover it, and says so', async () => {
     const { service, recorded } = setup({ broke: true });
     const work = jest.fn();
@@ -131,13 +141,13 @@ describe('AiCreationService.run (the one door every generation goes through)', (
       throw new HttpException('品牌档案不存在', 404);
     })).rejects.toMatchObject({ status: 404 });
     await expect(service.run('o1', 'u1', 'titles', { input: {} }, async () => {
-      throw new Error('AI 没有按要求的格式回答，请重试');
+      throw new HttpException('AI 没有按要求的格式回答，请重试', 502);
     })).rejects.toMatchObject({ status: 502, message: 'AI 没有按要求的格式回答，请重试' });
     await expect(service.run('o1', 'u1', 'cover', { input: {} }, async () => {
       throw new Error('400 Your request was rejected by the safety system');
     })).rejects.toMatchObject({ status: 422 });
     await expect(service.run('o1', 'u1', 'cover', { input: {} }, async () => {
-      throw new Error('ECONNRESET');
+      throw new Error('上游网关 https://relay.internal/v1 超时');
     })).rejects.toMatchObject({ status: 502, message: 'AI 生成失败，请稍后重试' });
     expect(recorded.map((r) => r.error)).toEqual([
       '品牌档案不存在', 'AI 没有按要求的格式回答，请重试', expect.stringContaining('安全'), 'AI 生成失败，请稍后重试',
@@ -273,9 +283,9 @@ describe('history, media library and drafts', () => {
       imageGenerationIds: ['g9', 'g9', 'g9'],
     });
     expect(res.posts).toEqual([
-      { integrationId: 'c1', postId: 'p-c1' },
-      { integrationId: 'c2', postId: 'p-c2' },
-      { integrationId: 'c3', postId: 'p-c3' },
+      { integrationId: 'c1', postId: 'p-c1', error: null },
+      { integrationId: 'c2', postId: 'p-c2', error: null },
+      { integrationId: 'c3', postId: 'p-c3', error: null },
     ]);
     const bodies = posts.createPost.mock.calls.map((c: any[]) => c[1]);
     expect(bodies.every((b: any) => b.type === 'draft')).toBe(true);
@@ -292,7 +302,23 @@ describe('history, media library and drafts', () => {
       service.saveDrafts('o1', { posts: [{ integrationId: 'c1', texts: ['x'] }, { integrationId: 'off', texts: ['y'] }] })
     ).rejects.toMatchObject({ status: 404 });
     await expect(service.saveDrafts('o1', { posts: [{ integrationId: 'nope', texts: ['x'] }] })).rejects.toMatchObject({ status: 404 });
+    await expect(service.saveDrafts('o1', { posts: [{ integrationId: 'li', texts: ['x'] }] })).rejects.toMatchObject({ status: 400 });
     expect(posts.createPost).not.toHaveBeenCalled();
+  });
+
+  it('reports each draft on its own, and saves no images when no channel takes them', async () => {
+    const generation = { id: 'g9', template: 'cover', output: { image: { path: 'https://app/uploads/x.jpeg', name: 'x.jpeg' } } };
+    const { service, posts, media } = setup({ generation });
+    posts.createPost.mockRejectedValueOnce(new Error('validation'));
+    const res = await service.saveDrafts('o1', {
+      posts: [{ integrationId: 'c2', texts: ['a'] }, { integrationId: 'c2', texts: ['b'] }],
+      imageGenerationIds: ['g9'],
+    });
+    expect(media.saveFile).not.toHaveBeenCalled();
+    expect(res.posts).toEqual([
+      { integrationId: 'c2', postId: null, error: '保存失败' },
+      { integrationId: 'c2', postId: 'p-c2', error: null },
+    ]);
   });
 });
 

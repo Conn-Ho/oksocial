@@ -30,9 +30,13 @@ export const SaveDraftModal: FC<{
   const toaster = useToaster();
   const call = useCreationCall();
   const { data: integrations } = useIntegrationList();
+  // usable channels of the platforms AI 创作 writes for
   const channels: Channel[] = useMemo(
-    () => (integrations || []).filter((c: Channel) => !c.disabled && !c.refreshNeeded && !c.inBetweenSteps),
-    [integrations]
+    () =>
+      (integrations || []).filter(
+        (c: Channel) => !c.disabled && !c.refreshNeeded && !c.inBetweenSteps && platforms.some((p) => p.identifier === c.identifier)
+      ),
+    [integrations, platforms]
   );
   const channelsFor = useCallback(
     (d: DraftCandidate) => channels.filter((c) => !d.platform || c.identifier === d.platform),
@@ -52,15 +56,26 @@ export const SaveDraftModal: FC<{
   const save = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await call('/creation/drafts', 'POST', { posts, imageGenerationIds: imageIds.length ? imageIds : undefined });
-      toaster.show(
-        t('creation_drafts_saved', '已存为 {{n}} 条草稿（{{time}}），在日历里打开检查后再发布', {
-          n: res.posts.length,
-          time: dayjs(res.date).format('M月D日 HH:mm'),
-        }),
-        'success'
-      );
-      close();
+      const res: { date: string; posts: Array<{ postId: string | null; error: string | null }> } = await call('/creation/drafts', 'POST', {
+        posts,
+        imageGenerationIds: imageIds.length ? imageIds : undefined,
+      });
+      const saved = res.posts.filter((p) => p.postId).length;
+      const failed = res.posts.filter((p) => p.error);
+      if (saved) {
+        toaster.show(
+          t('creation_drafts_saved', '已存为 {{n}} 条草稿（{{time}}），在日历里打开检查后再发布', {
+            n: saved,
+            time: dayjs(res.date).format('M月D日 HH:mm'),
+          }),
+          failed.length ? 'warning' : 'success'
+        );
+      }
+      if (failed.length) {
+        toaster.show(t('creation_drafts_failed', '{{n}} 条没存上：{{e}}', { n: failed.length, e: failed[0].error }), 'warning');
+      } else {
+        close();
+      }
     } catch (e) {
       toaster.show((e as Error).message, 'warning');
     } finally {

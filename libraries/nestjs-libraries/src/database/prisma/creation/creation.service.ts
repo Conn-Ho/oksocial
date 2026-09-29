@@ -20,7 +20,10 @@ import { RemakeLength, RemakeTone } from '@gitroom/nestjs-libraries/monitor/moni
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { MediaService } from '@gitroom/nestjs-libraries/database/prisma/media/media.service';
-import { socialIntegrationList } from '@gitroom/nestjs-libraries/integrations/integration.manager';
+import {
+  IntegrationManager,
+  socialIntegrationList,
+} from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { IUploadProvider } from '@gitroom/nestjs-libraries/upload/upload.interface';
@@ -47,7 +50,7 @@ export type CreationAction = keyof typeof CREATION_ACTIONS;
 
 // What the 创作台 history lists (brand extraction lives on the 品牌档案 tab).
 const DESK_TEMPLATES: CreationAction[] = ['adapt', 'titles', 'remake', 'script', 'cover', 'translate'];
-const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_TITLES = 5;
 const DEFAULT_COVER_ASPECT: ImageAspect = '3:4';
 // Postiz's own SafetyViolation detection; anything else it logs and calls a generic failure.
@@ -69,14 +72,13 @@ export const imageMime = (buffer: Buffer) => {
   return null;
 };
 
-/** A failure as the user should read it: ours as they are, the relay's safety refusal, else generic. */
+/**
+ * A failure as the user should read it: our own HttpExceptions as they are, the relay's safety
+ * refusal, anything else generic (the provider's own message may carry internals; it is logged).
+ */
 const creationFailure = (err: unknown) => {
   if (err instanceof HttpException) {
     return err;
-  }
-  const message = (err as Error)?.message || '';
-  if (/[一-龥]/.test(message)) {
-    return new HttpException(message, 502);
   }
   return generationError(err).getStatus() === SAFETY_STATUS
     ? new HttpException('内容被 AI 安全审核拦下了，请调整描述后再试', SAFETY_STATUS)
@@ -102,7 +104,8 @@ export class AiCreationService {
     private _integrationService: IntegrationService,
     private _postsService: PostsService,
     private _mediaService: MediaService,
-    private _credits: CreditsService
+    private _credits: CreditsService,
+    private _integrationManager: IntegrationManager
   ) {}
 
   private get storage() {
@@ -142,14 +145,17 @@ export class AiCreationService {
         .catch((e) => console.log('creation history', (e as Error)?.message));
       throw failure;
     }
-    await this._repository.finish(orgId, id, { output: output as Prisma.InputJsonValue });
+    // it was charged and worked: a failed history write must not hide the result
+    await this._repository
+      .finish(orgId, id, { output: output as Prisma.InputJsonValue })
+      .catch((e) => console.log('creation history', (e as Error)?.message));
     return { ...output, generationId: id };
   }
 
-  /** Platforms whose provider says how to write for them. */
+  /** Platforms whose provider says how to write for them (and that this instance offers). */
   platforms(): CreationPlatform[] {
     return socialIntegrationList
-      .filter((p) => p.creation)
+      .filter((p) => p.creation && !this._integrationManager.isHiddenProvider(p.identifier))
       .map((p) => ({ identifier: p.identifier, name: p.name, maxLength: p.maxLength(), ...p.creation! }));
   }
 
@@ -298,8 +304,9 @@ export class AiCreationService {
   }
 
   /**
-   * 存为草稿: one draft per chosen channel (several texts make a thread), an hour from now. The
-   * chosen images go to the media library and ride along where the platform takes images.
+   * 存为草稿: one draft per chosen channel of an AI 创作 platform (several texts make a thread), an
+   * hour from now. The chosen images go to the media library, and ride along where the platform
+   * takes images. Every channel is checked first; each draft then succeeds or fails on its own.
    */
   async saveDrafts(
     orgId: string,
@@ -311,20 +318,29 @@ export class AiCreationService {
       if (!integration || integration.deletedAt || integration.disabled) {
         throw new HttpException('账号不存在或已停用', 404);
       }
-      channels.push({ integration, texts: post.texts });
+      const creation = this.platforms().find((p) => p.identifier === integration.providerIdentifier);
+      if (!creation) {
+        throw new HttpException(`「${integration.name}」所在的平台暂不支持 AI 创作草稿`, 400);
+      }
+      channels.push({ integration, creation, texts: post.texts });
     }
+    const takesImages = channels.some((c) => c.creation.format !== 'video');
     const images = [];
-    for (const id of body.imageGenerationIds ?? []) {
+    for (const id of takesImages ? body.imageGenerationIds ?? [] : []) {
       images.push(await this.saveToMedia(orgId, id));
     }
     const date = dayjs().add(1, 'hour').startOf('hour').toDate();
     const posts = [];
-    for (const { integration, texts } of channels) {
-      const creation = socialIntegrationList.find((p) => p.identifier === integration.providerIdentifier)?.creation;
-      const attach = creation?.format === 'video' ? [] : images.slice(0, creation?.imagesMax ?? images.length);
-      const draft = await this._postsService.mapTypeToPost(editorPostBody(integration, texts, date, { images: attach }), orgId);
-      const [created] = await this._postsService.createPost(orgId, draft, 'WEB');
-      posts.push({ integrationId: integration.id, postId: created?.postId ?? null });
+    for (const { integration, creation, texts } of channels) {
+      const attach = creation.format === 'video' ? [] : images.slice(0, creation.imagesMax ?? images.length);
+      try {
+        const draft = await this._postsService.mapTypeToPost(editorPostBody(integration, texts, date, { images: attach }), orgId);
+        const [created] = await this._postsService.createPost(orgId, draft, 'WEB');
+        posts.push({ integrationId: integration.id, postId: created?.postId ?? null, error: null as string | null });
+      } catch (err) {
+        console.log(`creation draft ${integration.id}`, (err as Error)?.message);
+        posts.push({ integrationId: integration.id, postId: null, error: err instanceof HttpException ? err.message : '保存失败' });
+      }
     }
     return { date, posts };
   }
