@@ -57,6 +57,7 @@ model Organization {
   reportShares        ReportShare[]
   automations         Automation[]
   leads               Lead[]
+  monitorTargets      MonitorTarget[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -409,6 +410,7 @@ model Integration {
   browserSlot           BrowserSlot?
   inboxItems            InboxItem[]
   channelSnapshots      ChannelSnapshot[]
+  monitorTargets        MonitorTarget[]
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -2102,4 +2104,101 @@ model Lead {
 
   @@unique([organizationId, source, sourceId])
   @@index([organizationId, createdAt])
+}
+
+// oksocial 监控: posts, competitor accounts and keywords read periodically through a browser channel.
+enum MonitorKind {
+  POST
+  ACCOUNT
+  KEYWORD
+}
+
+model MonitorTarget {
+  id              String            @id @default(uuid())
+  organizationId  String
+  kind            MonitorKind
+  // provider identifier of the platform (xiaohongshu, douyin, weibo, xweb)
+  platform        String
+  // post URL, account handle / id, or the keyword
+  query           String
+  url             String?
+  // platform id of the post or account
+  externalId      String?
+  // post title, account name, or empty for a keyword
+  title           String?
+  content         String?
+  authorName      String?
+  note            String?
+  // our browser channel that should do the reads (else the first usable one of that platform)
+  integrationId   String?
+  intervalMinutes Int               @default(60)
+  paused          Boolean           @default(false)
+  // latest metrics of a monitored post
+  latest          Json?
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  lastError       String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  integration     Integration?      @relation(fields: [integrationId], references: [id])
+  snapshots       MonitorSnapshot[]
+  items           MonitorItem[]
+
+  @@index([organizationId, kind])
+  @@index([nextRunAt])
+  @@index([deletedAt])
+}
+
+// One reading of a monitored post's metrics (the trend chart). Null = the platform does not show it.
+model MonitorSnapshot {
+  id        String        @id @default(uuid())
+  targetId  String
+  views     Int?
+  likes     Int?
+  comments  Int?
+  shares    Int?
+  collects  Int?
+  createdAt DateTime      @default(now())
+  target    MonitorTarget @relation(fields: [targetId], references: [id])
+
+  @@index([targetId, createdAt])
+}
+
+enum MonitorItemKind {
+  // a comment under a monitored post
+  COMMENT
+  // a post of a competitor account
+  POST
+  // a search result of a keyword
+  HIT
+}
+
+model MonitorItem {
+  id           String          @id @default(uuid())
+  targetId     String
+  kind         MonitorItemKind
+  // platform id, or a content hash when the platform exposes none
+  externalId   String
+  url          String?
+  title        String?
+  content      String?
+  authorName   String?
+  authorUrl    String?
+  publishedAt  DateTime?
+  platformTime String?
+  views        Int?
+  likes        Int?
+  comments     Int?
+  shares       Int?
+  collects     Int?
+  sentiment    String?
+  intent       String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  target       MonitorTarget   @relation(fields: [targetId], references: [id])
+
+  @@unique([targetId, kind, externalId])
+  @@index([targetId, kind, createdAt])
 }

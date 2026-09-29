@@ -2,6 +2,9 @@ import { Integration } from '@prisma/client';
 import {
   InboxCapabilities,
   InboxFetched,
+  MonitorAccountRef,
+  MonitorCapabilities,
+  MonitorPost,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -9,6 +12,9 @@ import {
 import {
   BrowserSocialAbstract,
   contentId,
+  countFrom,
+  dateFrom,
+  fieldsOf,
   firstRow,
   sumOf,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
@@ -18,6 +24,34 @@ const IMAGES_MAX = 9;
 // Own posts whose comments are read per sync.
 const POSTS_PER_SYNC = 5;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
+// weibo.com/<uid>/<mblogid>, m.weibo.cn/detail/<id>, m.weibo.cn/status/<id>
+const POST_LINK = /weibo\.(?:com|cn)\/(?:\d+|detail|status)\/([A-Za-z0-9]+)(?:[?#/]|$)/i;
+const PROFILE_LINK = /weibo\.(?:com|cn)\/(?:u\/|profile\/)?(\d{5,})(?:[?#/]|$)/i;
+
+type WeiboRow = {
+  id: string;
+  mblogid: string;
+  author: string;
+  text: string;
+  time: string;
+  reposts: number;
+  comments: number;
+  likes: number;
+  url: string;
+};
+
+const fromRow = (r: WeiboRow): MonitorPost => ({
+  externalId: r.mblogid || String(r.id),
+  url: r.url,
+  content: r.text || undefined,
+  title: r.text?.slice(0, 60) || undefined,
+  authorName: r.author || undefined,
+  likes: countFrom(r.likes),
+  comments: countFrom(r.comments),
+  shares: countFrom(r.reposts),
+  publishedAt: dateFrom(r.time),
+  platformTime: r.time || undefined,
+});
 
 export class WeiboWebProvider
   extends BrowserSocialAbstract
@@ -94,6 +128,85 @@ export class WeiboWebProvider
       return items;
     },
   };
+
+  // 监控: weibo.com's own JSON endpoints (no read counts: Weibo shows them only to the author).
+  monitor: MonitorCapabilities = {
+    parsePostUrl: (url) => {
+      const id = url.match(POST_LINK)?.[1];
+      return id ? { externalId: id, url } : null;
+    },
+    parseAccount: (input) => {
+      const uid = input.match(PROFILE_LINK)?.[1] || (/^\d{5,}$/.test(input) ? input : '');
+      return uid ? { handle: uid, url: `https://weibo.com/u/${uid}` } : null;
+    },
+    readPost: async (slot, ref, comments) => {
+      const f = fieldsOf(await this.exec(slot, ['weibo', 'post', ref.externalId], 90_000));
+      const post: MonitorPost = {
+        ...fromRow({
+          id: f.id,
+          mblogid: f.mblogid,
+          author: f.author,
+          text: f.text,
+          time: f.created_at,
+          reposts: Number(f.reposts),
+          comments: Number(f.comments),
+          likes: Number(f.likes),
+          url: f.url || ref.url,
+        }),
+        externalId: ref.externalId,
+      };
+      // comments are addressed by the numeric id, which only the post read tells
+      const rows =
+        comments && f.id
+          ? await this.list<{ author: string; text: string; likes: number; time: string }>(
+              slot,
+              ['weibo', 'comments', f.id, '--limit', String(comments)],
+              90_000
+            )
+          : [];
+      return {
+        post,
+        comments: rows
+          .filter((c) => c.author && c.text)
+          .map((c) => ({
+            externalId: contentId(f.id, c.author, c.text, c.time),
+            authorName: c.author,
+            content: c.text,
+            likes: countFrom(c.likes),
+            platformTime: c.time || undefined,
+          })),
+      };
+    },
+    readAccount: (slot, account, limit) => this.userPosts(slot, account, limit),
+    ownPosts: async (slot, integration, limit) =>
+      (await this.userPosts(slot, { handle: integration.internalId, url: '' }, limit)).posts,
+    search: async (slot, keyword, limit) => {
+      const rows = await this.list<{ id: string; title: string; author: string; time: string; url: string }>(
+        slot,
+        ['weibo', 'search', keyword, '--limit', String(limit)],
+        90_000
+      );
+      return rows
+        .filter((r) => r.url && r.title)
+        .map((r) => ({
+          externalId: r.id || contentId(r.url),
+          url: r.url,
+          title: r.title.slice(0, 60),
+          content: r.title,
+          authorName: r.author || undefined,
+          platformTime: r.time || undefined,
+        }));
+    },
+  };
+
+  private async userPosts(slot: string, account: MonitorAccountRef, limit: number) {
+    const rows = await this.list<WeiboRow>(
+      slot,
+      ['weibo', 'user-posts', account.handle, '--limit', String(limit)],
+      90_000
+    );
+    return { name: rows[0]?.author || undefined, posts: rows.map(fromRow) };
+  }
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {
     const first = posts?.[0] ?? [];

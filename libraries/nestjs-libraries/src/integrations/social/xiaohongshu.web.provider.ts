@@ -2,6 +2,8 @@ import { Integration } from '@prisma/client';
 import {
   InboxCapabilities,
   InboxFetched,
+  MonitorCapabilities,
+  MonitorPost,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -9,6 +11,9 @@ import {
 import {
   BrowserSocialAbstract,
   contentId,
+  countFrom,
+  dateFrom,
+  fieldsOf,
   firstRow,
   metricRowsToAnalytics,
   sumOf,
@@ -21,6 +26,13 @@ const IMAGES_MAX = 9;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 // DM conversations read per sync (unread first); each read is a page load in the account's browser.
 const DM_CONVERSATIONS_PER_SYNC = 5;
+// Xiaohongshu's risk control watches bursts of page reads: 8-15 s between two of them.
+const READ_GAP_MS: [number, number] = [8_000, 15_000];
+const NOTE_LINK = /xiaohongshu\.com\/(?:explore|discovery\/item|search_result|user\/profile\/[^/?#]+)\/([0-9a-f]{24})/i;
+const PROFILE_LINK = /xiaohongshu\.com\/user\/profile\/([0-9a-z]+)/i;
+/** Note ids are ObjectId-like: the first 8 hex digits are the creation time in unix seconds. */
+const noteTime = (id: string) => dateFrom(parseInt(id.slice(0, 8), 16));
+const noteUrl = (id: string) => `https://www.xiaohongshu.com/explore/${id}`;
 
 export class XiaohongshuWebProvider
   extends BrowserSocialAbstract
@@ -143,6 +155,121 @@ export class XiaohongshuWebProvider
     }
     return items;
   }
+
+  // 监控: note pages, profiles and search on www.xiaohongshu.com (need the signed xsec_token link),
+  // our own notes from the creator center.
+  monitor: MonitorCapabilities = {
+    readGapMs: READ_GAP_MS,
+    parsePostUrl: (url) => {
+      const id = url.match(NOTE_LINK)?.[1];
+      if (!id) {
+        return null;
+      }
+      if (!/[?&]xsec_token=/.test(url)) {
+        throw new Error('小红书笔记链接需要带 xsec_token：请在电脑网页版打开笔记，复制地址栏里的完整链接');
+      }
+      return { externalId: id, url };
+    },
+    parseAccount: (input) => {
+      const id = input.match(PROFILE_LINK)?.[1] || (/^[0-9a-f]{24}$/i.test(input) ? input : '');
+      return id ? { handle: id, url: `https://www.xiaohongshu.com/user/profile/${id}` } : null;
+    },
+    readPost: async (slot, ref, comments) => {
+      const f = fieldsOf(await this.exec(slot, ['xiaohongshu', 'note', ref.url], 120_000));
+      const post: MonitorPost = {
+        ...ref,
+        title: f.title || undefined,
+        content: f.content || undefined,
+        authorName: f.author || undefined,
+        likes: countFrom(f.likes),
+        collects: countFrom(f.collects),
+        comments: countFrom(f.comments),
+        publishedAt: noteTime(ref.externalId),
+      };
+      if (!comments) {
+        return { post, comments: [] };
+      }
+      await this.pause(READ_GAP_MS);
+      const rows = await this.list<{ author: string; text: string; likes: number; time: string }>(
+        slot,
+        ['xiaohongshu', 'comments', ref.url, '--limit', String(comments)],
+        120_000
+      );
+      return {
+        post,
+        comments: rows
+          .filter((r) => r.text)
+          .map((r) => ({
+            externalId: contentId(ref.externalId, r.author, r.text, r.time),
+            authorName: r.author || '',
+            content: r.text,
+            likes: countFrom(r.likes),
+            platformTime: r.time || undefined,
+          })),
+      };
+    },
+    readAccount: async (slot, account, limit) => {
+      const rows = await this.list<{ id: string; title: string; likes: string; url: string }>(
+        slot,
+        ['xiaohongshu', 'user', account.handle, '--limit', String(limit)],
+        120_000
+      );
+      return {
+        posts: rows
+          .filter((r) => r.id)
+          .map((r) => ({
+            externalId: r.id,
+            url: r.url || noteUrl(r.id),
+            title: r.title || undefined,
+            likes: countFrom(r.likes),
+            publishedAt: noteTime(r.id),
+          })),
+      };
+    },
+    ownPosts: async (slot, _integration, limit) => {
+      const rows = await this.list<Record<string, string>>(
+        slot,
+        ['xhs2', 'notes', '--limit', String(limit), '--timeout', '60'],
+        120_000
+      );
+      return rows
+        .filter((r) => r.id)
+        .map((r) => ({
+          externalId: r.id,
+          url: noteUrl(r.id),
+          title: r.title || undefined,
+          views: countFrom(r.views),
+          likes: countFrom(r.likes),
+          comments: countFrom(r.comments),
+          collects: countFrom(r.collects),
+          shares: countFrom(r.shares),
+          publishedAt: noteTime(r.id),
+          platformTime: r.time || undefined,
+        }));
+    },
+    search: async (slot, keyword, limit) => {
+      const rows = await this.list<{ title: string; author: string; likes: string; url: string }>(
+        slot,
+        ['xiaohongshu', 'search', keyword, '--limit', String(limit), '--sort', 'latest'],
+        150_000
+      );
+      return rows.flatMap((r) => {
+        const id = r.url?.match(NOTE_LINK)?.[1];
+        return id
+          ? [
+              {
+                externalId: id,
+                url: r.url,
+                title: r.title || undefined,
+                authorName: r.author || undefined,
+                likes: countFrom(r.likes),
+                publishedAt: noteTime(id),
+              },
+            ]
+          : [];
+      });
+    },
+  };
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {
     const first = posts?.[0] ?? [];

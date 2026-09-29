@@ -39,6 +39,7 @@ import { InboxController } from '@gitroom/backend/api/routes/inbox.controller';
 import { ReportsController } from '@gitroom/backend/api/routes/reports.controller';
 import { AutomationsController } from '@gitroom/backend/api/routes/automations.controller';
 import { PublicReportsController } from '@gitroom/backend/api/routes/public.reports.controller';
+import { MonitoringController } from '@gitroom/backend/api/routes/monitoring.controller';
 import { AutopostController } from '@gitroom/backend/api/routes/autopost.controller';
 import { SetsController } from '@gitroom/backend/api/routes/sets.controller';
 import { ThirdPartyController } from '@gitroom/backend/api/routes/third-party.controller';
@@ -79,6 +80,7 @@ const authenticatedController = [
   InboxController,
   ReportsController,
   AutomationsController,
+  MonitoringController,
   AutopostController,
   SetsController,
   ThirdPartyController,

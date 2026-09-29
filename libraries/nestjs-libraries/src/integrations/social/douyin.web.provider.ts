@@ -1,11 +1,15 @@
 import { Integration } from '@prisma/client';
 import {
+  MonitorCapabilities,
+  MonitorPost,
   PostDetails,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
   BrowserSocialAbstract,
+  countFrom,
+  dateFrom,
   firstRow,
   metricRowsToAnalytics,
   sumOf,
@@ -17,6 +21,45 @@ const TITLE_MAX = 30;
 // 抖音创作者平台只接受 2 小时到 14 天后的定时发布。
 const MIN_SCHEDULE_SECONDS = 2 * 60 * 60 + 5 * 60;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
+const VIDEO_LINK = /douyin\.com\/(?:video|note)\/(\d+)/i;
+const PROFILE_LINK = /douyin\.com\/user\/([A-Za-z0-9_-]+)/i;
+const SEC_UID = /^MS4wLjABAAAA[A-Za-z0-9_-]{8,}$/;
+// The creator center lists this many of our own works; a monitored video must be among them.
+const OWN_WORKS_SCANNED = 50;
+const videoUrl = (id: string) => `https://www.douyin.com/video/${id}`;
+/** aweme ids carry their creation time (unix seconds) in the high 32 bits. */
+const awemeTime = (id: string) => {
+  try {
+    return dateFrom(Number(BigInt(id) >> BigInt(32)));
+  } catch {
+    return undefined;
+  }
+};
+
+type DouyinWork = {
+  aweme_id: string;
+  title: string;
+  play_count: number;
+  digg_count: number;
+  comment_count: number;
+  collect_count: number;
+  share_count: number;
+  create_time: string;
+};
+
+const fromWork = (w: DouyinWork): MonitorPost => ({
+  externalId: String(w.aweme_id),
+  url: videoUrl(String(w.aweme_id)),
+  title: w.title || undefined,
+  content: w.title || undefined,
+  views: countFrom(w.play_count),
+  likes: countFrom(w.digg_count),
+  comments: countFrom(w.comment_count),
+  collects: countFrom(w.collect_count),
+  shares: countFrom(w.share_count),
+  publishedAt: awemeTime(String(w.aweme_id)),
+  platformTime: w.create_time || undefined,
+});
 
 export class DouyinWebProvider
   extends BrowserSocialAbstract
@@ -73,6 +116,81 @@ export class DouyinWebProvider
       shares: sumOf(videos, 'share_count'),
       collects: sumOf(videos, 'collect_count'),
     };
+  };
+
+  // 监控: our own works come with full stats from the creator center; other accounts' videos only
+  // through their profile (likes) or search (likes). opencli has no read of someone else's single
+  // video, nor of any video's comments.
+  monitor: MonitorCapabilities = {
+    parsePostUrl: (url) => {
+      const id = url.match(VIDEO_LINK)?.[1];
+      return id ? { externalId: id, url: videoUrl(id) } : null;
+    },
+    parseAccount: (input) => {
+      const secUid = input.match(PROFILE_LINK)?.[1] || (SEC_UID.test(input) ? input : '');
+      return secUid ? { handle: secUid, url: `https://www.douyin.com/user/${secUid}` } : null;
+    },
+    readPost: async (slot, ref) => {
+      const works = await this.list<DouyinWork>(
+        slot,
+        ['douyin', 'videos', '--limit', String(OWN_WORKS_SCANNED)],
+        120_000
+      );
+      const work = works.find((w) => String(w.aweme_id) === ref.externalId);
+      if (!work) {
+        throw new Error(
+          '抖音暂时只能监控读取账号自己发布的视频（在最近 50 条作品里找不到这条）；别人的视频请用竞品账号监控'
+        );
+      }
+      return { post: fromWork(work), comments: [] };
+    },
+    readAccount: async (slot, account, limit) => {
+      const rows = await this.list<{ aweme_id: string; title: string; digg_count: number }>(
+        slot,
+        ['douyin', 'user-videos', account.handle, '--limit', String(limit), '--with_comments', 'false'],
+        150_000
+      );
+      return {
+        posts: rows
+          .filter((r) => r.aweme_id)
+          .map((r) => ({
+            externalId: String(r.aweme_id),
+            url: videoUrl(String(r.aweme_id)),
+            title: r.title || undefined,
+            content: r.title || undefined,
+            likes: countFrom(r.digg_count),
+            publishedAt: awemeTime(String(r.aweme_id)),
+          })),
+      };
+    },
+    ownPosts: async (slot, _integration, limit) =>
+      (
+        await this.list<DouyinWork>(slot, ['douyin', 'videos', '--limit', String(limit)], 120_000)
+      ).map(fromWork),
+    search: async (slot, keyword, limit) => {
+      const rows = await this.list<{ desc: string; author: string; url: string; likes: string }>(
+        slot,
+        ['douyin', 'search', keyword, '--limit', String(limit)],
+        150_000
+      );
+      return rows.flatMap((r) => {
+        const id = r.url?.match(VIDEO_LINK)?.[1];
+        // search cards only show likes; plays / comments / shares come back as 0, not as data
+        return id
+          ? [
+              {
+                externalId: id,
+                url: videoUrl(id),
+                title: r.desc || undefined,
+                content: r.desc || undefined,
+                authorName: r.author || undefined,
+                likes: countFrom(r.likes),
+                publishedAt: awemeTime(id),
+              },
+            ]
+          : [];
+      });
+    },
   };
 
   override async checkValidity(posts: Array<ValidityMedia[]>): Promise<string | true> {

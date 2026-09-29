@@ -47,6 +47,14 @@ export class InfiniteWorkflowRegister implements OnModuleInit {
             taskQueue: 'main',
           });
       } catch (err) {}
+      try {
+        await this._temporalService.client
+          ?.getRawClient()
+          ?.workflow?.start('monitorWorkflow', {
+            workflowId: 'monitor-workflow',
+            taskQueue: 'main',
+          });
+      } catch (err) {}
     }
   }
 }

@@ -123,6 +123,72 @@ export const CHANNEL_STAT_KEYS = [
 export type ChannelStatKey = (typeof CHANNEL_STAT_KEYS)[number];
 // Current account totals; a platform fills what it exposes.
 export type ChannelStats = Partial<Record<ChannelStatKey, number>>;
+// oksocial 监控: what a platform shows about a post. null / undefined = the platform does not expose it.
+export type MonitorMetrics = {
+  views?: number | null;
+  likes?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  collects?: number | null;
+};
+
+export type MonitorPostRef = {
+  // platform id of the post
+  externalId: string;
+  // link that opens it again (keeps what the platform needs, e.g. Xiaohongshu's xsec_token)
+  url: string;
+};
+
+export type MonitorPost = MonitorPostRef &
+  MonitorMetrics & {
+    title?: string;
+    content?: string;
+    authorName?: string;
+    authorUrl?: string;
+    publishedAt?: Date;
+    // time as the platform printed it, when it cannot be parsed
+    platformTime?: string;
+  };
+
+export type MonitorComment = {
+  // platform id, or a stable content hash when the platform exposes none
+  externalId: string;
+  authorName: string;
+  content: string;
+  likes?: number | null;
+  platformTime?: string;
+};
+
+export type MonitorAccountRef = {
+  // what the platform's read command takes (user id, sec_uid, screen name)
+  handle: string;
+  url: string;
+};
+
+export type MonitorCapabilities = {
+  // This platform's post link as a ref, or null when the link belongs to another platform.
+  parsePostUrl(url: string): MonitorPostRef | null;
+  // A profile link, or a bare id / handle of this platform.
+  parseAccount(input: string): MonitorAccountRef | null;
+  // One post with its metrics, plus up to `comments` of its comments.
+  readPost(
+    token: string,
+    ref: MonitorPostRef,
+    comments: number
+  ): Promise<{ post: MonitorPost; comments: MonitorComment[] }>;
+  // Latest posts of an account, newest first.
+  readAccount(
+    token: string,
+    account: MonitorAccountRef,
+    limit: number
+  ): Promise<{ name?: string; posts: MonitorPost[] }>;
+  // Latest posts of the logged-in account itself (竞品 VS).
+  ownPosts?(token: string, integration: Integration, limit: number): Promise<MonitorPost[]>;
+  // Posts matching a keyword, newest first when the platform can sort.
+  search?(token: string, keyword: string, limit: number): Promise<MonitorPost[]>;
+  // Random pause between two reads on this platform, in ms (risk control).
+  readGapMs?: [number, number];
+};
 
 export type GenerateAuthUrlResponse = {
   url: string;
@@ -264,6 +330,8 @@ export interface SocialProvider
   inbox?: InboxCapabilities;
   // oksocial analytics: current account totals, sampled into a time series (ChannelSnapshot).
   stats?: (token: string, integration: Integration) => Promise<ChannelStats>;
+  // oksocial 监控: read posts, accounts and keyword searches of this platform.
+  monitor?: MonitorCapabilities;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

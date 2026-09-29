@@ -1,6 +1,9 @@
 import { Integration } from '@prisma/client';
 import {
   InboxCapabilities,
+  MonitorAccountRef,
+  MonitorCapabilities,
+  MonitorPost,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -8,6 +11,8 @@ import {
 import {
   BrowserSocialAbstract,
   contentId,
+  countFrom,
+  dateFrom,
   firstRow,
   metricRowsToAnalytics,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
@@ -16,6 +21,39 @@ import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abs
 const MEDIA_MAX = 4;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 const statusId = (url = '') => url.match(/status\/(\d+)/)?.[1] || '';
+const TWEET_LINK = /(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/i;
+const PROFILE_LINK = /(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})(?:[/?#]|$)/i;
+const HANDLE = /^@?([A-Za-z0-9_]{1,15})$/;
+// x.com paths that look like a handle but are pages
+const NOT_HANDLES = ['home', 'i', 'search', 'explore', 'notifications', 'messages', 'settings', 'intent', 'share'];
+
+type TweetRow = {
+  id: string;
+  author: string;
+  text: string;
+  likes: number;
+  retweets: number;
+  replies?: number;
+  views?: number;
+  created_at: string;
+  url: string;
+  is_retweet?: boolean;
+};
+
+const fromTweet = (t: TweetRow): MonitorPost => ({
+  externalId: String(t.id),
+  url: t.url,
+  content: t.text || undefined,
+  title: t.text?.slice(0, 60) || undefined,
+  authorName: t.author || undefined,
+  authorUrl: t.author ? `https://x.com/${t.author}` : undefined,
+  likes: countFrom(t.likes),
+  shares: countFrom(t.retweets),
+  comments: t.replies === undefined ? null : countFrom(t.replies),
+  views: t.views === undefined ? null : countFrom(t.views),
+  publishedAt: dateFrom(t.created_at),
+  platformTime: t.created_at || undefined,
+});
 
 // Writes go through the x-quote plugin's composer (the path X accepts from a browser); the
 // official X API cannot reply to strangers, follow, like or quote on self-serve tiers.
@@ -91,6 +129,66 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
       MENTION: (slot, _integration, item, text) => this.replyTo(slot, item.replyTarget, text),
     },
   };
+
+  // 监控: the thread read gives likes / reposts and the replies (no reply or view count); timelines
+  // and search give views too.
+  monitor: MonitorCapabilities = {
+    parsePostUrl: (url) => {
+      const match = url.match(TWEET_LINK);
+      return match ? { externalId: match[2], url: `https://x.com/${match[1]}/status/${match[2]}` } : null;
+    },
+    parseAccount: (input) => {
+      const handle = (input.match(PROFILE_LINK) || input.match(HANDLE))?.[1];
+      return handle && !NOT_HANDLES.includes(handle.toLowerCase())
+        ? { handle, url: `https://x.com/${handle}` }
+        : null;
+    },
+    readPost: async (slot, ref, comments) => {
+      const rows = await this.list<TweetRow>(
+        slot,
+        ['twitter', 'thread', ref.externalId, '--limit', String(comments + 1)],
+        120_000
+      );
+      const main = rows.find((r) => String(r.id) === ref.externalId);
+      if (!main) {
+        throw new Error('X 上找不到这条帖子（可能已删除或设为受保护）');
+      }
+      return {
+        post: { ...fromTweet(main), comments: null, views: null, url: ref.url },
+        comments: rows
+          .filter((r) => String(r.id) !== ref.externalId && r.text)
+          .slice(0, comments)
+          .map((r) => ({
+            externalId: String(r.id),
+            authorName: r.author,
+            content: r.text,
+            likes: countFrom(r.likes),
+            platformTime: r.created_at || undefined,
+          })),
+      };
+    },
+    readAccount: (slot, account, limit) => this.timeline(slot, account, limit),
+    ownPosts: async (slot, integration, limit) =>
+      (await this.timeline(slot, { handle: integration.internalId, url: '' }, limit)).posts,
+    search: async (slot, keyword, limit) =>
+      (
+        await this.list<TweetRow>(
+          slot,
+          ['twitter', 'search', keyword, '--product', 'live', '--limit', String(limit)],
+          120_000
+        )
+      ).map(fromTweet),
+  };
+
+  private async timeline(slot: string, account: MonitorAccountRef, limit: number) {
+    const rows = await this.list<TweetRow>(
+      slot,
+      ['twitter', 'tweets', account.handle, '--limit', String(limit)],
+      120_000
+    );
+    const own = rows.filter((r) => String(r.is_retweet) !== 'true');
+    return { name: own[0]?.author || undefined, posts: own.map(fromTweet) };
+  }
 
   private async replyTo(slot: string, url: string | null, text: string) {
     if (!url) {

@@ -45,6 +45,9 @@ import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/
 import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
 import { AutomationService } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.service';
 import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
+import { MonitorRepository } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository';
+import { MonitorService } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.service';
+import { MonitorAiService } from '@gitroom/nestjs-libraries/monitor/monitor.ai.service';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 import { SetsService } from '@gitroom/nestjs-libraries/database/prisma/sets/sets.service';
@@ -111,6 +114,9 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     AutomationRunner,
     AutomationService,
     AutomationAiService,
+    MonitorRepository,
+    MonitorService,
+    MonitorAiService,
     ExtractContentService,
     OpenaiService,
     DeepgramService,

@@ -13,6 +13,7 @@ import {
 import {
   browserFleet,
   BrowserFleetClient,
+  BrowserRunFailure,
   isRunFailure,
 } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 
@@ -82,6 +83,26 @@ export abstract class BrowserSocialAbstract extends SocialAbstract {
     if (!isRunFailure(res)) {
       return res.data as T;
     }
+    this.fail(res);
+  }
+
+  /** exec for commands that list rows: finding nothing (EMPTY) is no rows, not an error. */
+  protected async list<T = Record<string, any>>(
+    slot: string,
+    args: string[],
+    timeoutMs = 180_000
+  ): Promise<T[]> {
+    const res = await this.fleet.run<T[] | T>(slot, args, timeoutMs);
+    if (!isRunFailure(res)) {
+      return Array.isArray(res.data) ? res.data : res.data ? [res.data as T] : [];
+    }
+    if (res.code === 'EMPTY') {
+      return [];
+    }
+    this.fail(res);
+  }
+
+  private fail(res: BrowserRunFailure): never {
     const detail = JSON.stringify({ code: res.code, exitCode: res.exitCode });
     switch (res.code) {
       case 'NOT_LOGGED_IN':
@@ -101,6 +122,13 @@ export abstract class BrowserSocialAbstract extends SocialAbstract {
         // TIMEOUT, BRIDGE_DOWN, FAILED: plain errors so the activity retries.
         throw new Error(`${this.identifier} ${res.code}: ${res.message}`);
     }
+  }
+
+  /** Random wait between two reads of the same platform (risk control). */
+  protected pause([min, max]: [number, number]) {
+    return new Promise<void>((resolve) =>
+      setTimeout(resolve, min + Math.random() * (max - min))
+    );
   }
 
   /** Downloads post media onto the fleet host; publish commands take local file paths. */
@@ -156,3 +184,43 @@ export const titleFrom = (text: string, max: number) =>
   )
     .slice(0, max)
     .join('');
+
+/** Field/value rows (opencli detail commands) as one object. */
+export const fieldsOf = (rows: unknown): Record<string, string> =>
+  Object.fromEntries(
+    (Array.isArray(rows) ? rows : [])
+      .filter((r) => r && typeof r === 'object' && 'field' in r)
+      .map((r) => [String(r.field), String(r.value ?? '')])
+  );
+
+const COUNT_UNITS: Record<string, number> = { 万: 1e4, w: 1e4, 亿: 1e8, k: 1e3, m: 1e6 };
+
+/** A count as platforms print it ("1.2万", "3w+", "1,234", 56); null when there is none. */
+export const countFrom = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.round(value) : null;
+  }
+  const match = String(value ?? '')
+    .replace(/[,，\s]/g, '')
+    .match(/^(\d+(?:\.\d+)?)(万|亿|w|k|m)?\+?$/i);
+  if (!match) {
+    return null;
+  }
+  return Math.round(Number(match[1]) * (COUNT_UNITS[(match[2] || '').toLowerCase()] ?? 1));
+};
+
+// Every supported platform launched after this; an earlier date is a parse accident.
+const EARLIEST_POST = Date.UTC(2005, 0, 1);
+
+/** A platform time (date string, unix seconds or ms) as a Date; undefined when it is not one. */
+export const dateFrom = (value: unknown): Date | undefined => {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const n = Number(value);
+  const date = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(String(value));
+  const time = date.getTime();
+  return Number.isFinite(time) && time > EARLIEST_POST && time < Date.now() + 86_400_000
+    ? date
+    : undefined;
+};
