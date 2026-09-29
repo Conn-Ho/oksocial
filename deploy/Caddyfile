@@ -1,0 +1,12 @@
+{
+	email {$ACME_EMAIL:ops@oksocial.online}
+}
+
+www.oksocial.online {
+	redir https://oksocial.online{uri} permanent
+}
+
+oksocial.online {
+	encode zstd gzip
+	reverse_proxy oksocial:5000
+}

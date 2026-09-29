@@ -1,0 +1,141 @@
+# oksocial production stack on social-ops-1. Secrets live in ./.env on the host (never committed).
+# The browser fleet (Chrome per account, opencli daemon, browser-worker) runs on the host, not here;
+# it reaches Temporal on 127.0.0.1:7233.
+name: oksocial
+
+services:
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [web]
+    depends_on: [oksocial]
+
+  oksocial:
+    image: ${OKSOCIAL_IMAGE:-ghcr.io/conn-ho/oksocial:latest}
+    restart: always
+    env_file: .env
+    environment:
+      BACKEND_INTERNAL_URL: 'http://localhost:3000'
+      TEMPORAL_ADDRESS: 'temporal:7233'
+      DATABASE_URL: 'postgresql://oksocial:${POSTGRES_PASSWORD}@postgres:5432/oksocial'
+      REDIS_URL: 'redis://redis:6379'
+      STORAGE_PROVIDER: 'local'
+      UPLOAD_DIRECTORY: '/uploads'
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: '/uploads'
+      TZ: 'Asia/Shanghai'
+    volumes:
+      - uploads:/uploads
+      - app-config:/config
+    networks: [web, data, temporal]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: oksocial
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: oksocial
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: pg_isready -U oksocial -d oksocial
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7.2
+    restart: always
+    volumes:
+      - redis:/data
+    networks: [data]
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Temporal. Postiz registers more Text search attributes than SQL visibility allows (max 3),
+  # so visibility goes to a small single-node Elasticsearch like upstream's compose.
+  temporal-elasticsearch:
+    image: elasticsearch:7.17.27
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - xpack.security.enabled=false
+      - cluster.routing.allocation.disk.threshold_enabled=true
+      - cluster.routing.allocation.disk.watermark.low=512mb
+      - cluster.routing.allocation.disk.watermark.high=256mb
+      - cluster.routing.allocation.disk.watermark.flood_stage=128mb
+    volumes:
+      - temporal-es:/usr/share/elasticsearch/data
+    networks: [temporal]
+
+  temporal-postgresql:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD}
+    volumes:
+      - temporal-postgres:/var/lib/postgresql/data
+    networks: [temporal]
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    restart: always
+    depends_on: [temporal-postgresql, temporal-elasticsearch]
+    environment:
+      ENABLE_ES: 'true'
+      ES_SEEDS: temporal-elasticsearch
+      ES_VERSION: v7
+      DB: postgres12
+      DB_PORT: '5432'
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD}
+      POSTGRES_SEEDS: temporal-postgresql
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+      TEMPORAL_NAMESPACE: default
+    ports:
+      - '127.0.0.1:7233:7233'
+    volumes:
+      - ../dynamicconfig:/etc/temporal/config/dynamicconfig
+    networks: [temporal]
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    restart: always
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - '127.0.0.1:8088:8080'
+    networks: [temporal]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  uploads:
+  app-config:
+  postgres:
+  redis:
+  temporal-postgres:
+  temporal-es:
+
+networks:
+  web:
+  data:
+  temporal:
