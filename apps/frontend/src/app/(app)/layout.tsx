@@ -1,6 +1,8 @@
 import { SentryComponent } from '@gitroom/frontend/components/layout/sentry.component';
 
 export const dynamic = 'force-dynamic';
+// the page reaches under the iPhone home indicator; the phone bottom bar pads itself with safe-area-inset-bottom
+export const viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover' };
 import '../global.scss';
 import 'react-tooltip/dist/react-tooltip.css';
 import '@copilotkit/react-ui/styles.css';
