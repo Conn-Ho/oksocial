@@ -37,6 +37,7 @@ import { SignatureController } from '@gitroom/backend/api/routes/signature.contr
 import { BrowserSessionsController } from '@gitroom/backend/api/routes/browser.sessions.controller';
 import { InboxController } from '@gitroom/backend/api/routes/inbox.controller';
 import { ReportsController } from '@gitroom/backend/api/routes/reports.controller';
+import { AutomationsController } from '@gitroom/backend/api/routes/automations.controller';
 import { PublicReportsController } from '@gitroom/backend/api/routes/public.reports.controller';
 import { AutopostController } from '@gitroom/backend/api/routes/autopost.controller';
 import { SetsController } from '@gitroom/backend/api/routes/sets.controller';
@@ -77,6 +78,7 @@ const authenticatedController = [
   BrowserSessionsController,
   InboxController,
   ReportsController,
+  AutomationsController,
   AutopostController,
   SetsController,
   ThirdPartyController,

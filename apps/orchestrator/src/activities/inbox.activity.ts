@@ -4,6 +4,7 @@ import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/in
 import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+import { AutomationService } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.service';
 
 @Injectable()
 @Activity()
@@ -12,7 +13,8 @@ export class InboxActivity {
     private _inboxService: InboxService,
     private _browserSlotService: BrowserSlotService,
     private _channelStatsService: ChannelStatsService,
-    private _reportService: ReportService
+    private _reportService: ReportService,
+    private _automationService: AutomationService
   ) {}
 
   @ActivityMethod()
@@ -24,6 +26,11 @@ export class InboxActivity {
   @ActivityMethod()
   async collectChannelStats() {
     return this._channelStatsService.collectAll();
+  }
+
+  @ActivityMethod()
+  async runDueAutomations() {
+    return this._automationService.runDue();
   }
 
   @ActivityMethod()

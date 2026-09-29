@@ -55,6 +55,8 @@ model Organization {
   replyTemplates      ReplyTemplate[]
   channelSnapshots    ChannelSnapshot[]
   reportShares        ReportShare[]
+  automations         Automation[]
+  leads               Lead[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -1820,6 +1822,7 @@ enum CreationMethod {
   API
   AUTOPOST
   CLI
+  AUTOMATION
 }
 
 enum ShortLinkPreference {
@@ -1860,6 +1863,9 @@ model BrowserSlot {
   proxyId            String?
   lastCheckAt        DateTime?
   lastError          String?
+  // automation brake: set when the platform pushes back (risk control); no automated writes until then
+  brakeUntil         DateTime?
+  brakeReason        String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   deletedAt          DateTime?
@@ -2012,4 +2018,88 @@ model ReportShare {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
+}
+
+// oksocial automations: named objects (monitor -> trigger -> action) run by automationWorkflow.
+enum AutomationType {
+  COMMENT_ASSISTANT
+  DM_ASSISTANT
+  LEAD_COLLECTOR
+  REWRITE_SYNC
+  AUTO_POST
+}
+
+model Automation {
+  id             String             @id @default(uuid())
+  organizationId String
+  type           AutomationType
+  name           String
+  enabled        Boolean            @default(false)
+  // actions wait in 待确认 instead of executing
+  reviewMode     Boolean            @default(false)
+  integrationIds String[]
+  config         Json
+  dailyCap       Int                @default(50)
+  lastRunAt      DateTime?
+  lastError      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id])
+  actions        AutomationAction[]
+  leads          Lead[]
+
+  @@index([organizationId])
+  @@index([enabled, deletedAt])
+}
+
+enum AutomationActionStatus {
+  HELD
+  DONE
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+// One thing an automation did (or wants to do in review mode). Also the de-duplication record.
+model AutomationAction {
+  id            String                 @id @default(uuid())
+  automationId  String
+  integrationId String?
+  kind          String
+  // what it acted on (inbox item id, post id, ...) — unique per automation so nothing is done twice
+  targetKey     String
+  targetLabel   String?
+  content       String?
+  status        AutomationActionStatus
+  error         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  automation    Automation             @relation(fields: [automationId], references: [id])
+
+  @@unique([automationId, targetKey])
+  @@index([automationId, createdAt])
+  @@index([status])
+}
+
+// 线索库: people an automation scored as likely customers.
+model Lead {
+  id             String       @id @default(uuid())
+  organizationId String
+  automationId   String?
+  integrationId  String?
+  source         String
+  sourceId       String
+  authorName     String
+  authorUrl      String?
+  content        String
+  score          Int
+  summary        String?
+  createdAt      DateTime     @default(now())
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  automation     Automation?  @relation(fields: [automationId], references: [id])
+
+  @@unique([organizationId, source, sourceId])
+  @@index([organizationId, createdAt])
 }

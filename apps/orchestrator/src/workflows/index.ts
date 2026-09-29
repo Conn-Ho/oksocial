@@ -22,3 +22,4 @@ export * from './clipping.workflow';
 export * from './inbox.sync.workflow';
 export * from './channel.stats.workflow';
 export * from './weekly.report.workflow';
+export * from './automation.workflow';

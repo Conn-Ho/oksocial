@@ -41,6 +41,10 @@ import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
 import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
+import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
+import { AutomationService } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.service';
+import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 import { SetsService } from '@gitroom/nestjs-libraries/database/prisma/sets/sets.service';
@@ -103,6 +107,10 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     ChannelStatsRepository,
     ChannelStatsService,
     ReportService,
+    AutomationRepository,
+    AutomationRunner,
+    AutomationService,
+    AutomationAiService,
     ExtractContentService,
     OpenaiService,
     DeepgramService,
