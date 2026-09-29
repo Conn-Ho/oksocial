@@ -10,7 +10,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Organization } from '@prisma/client';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
@@ -35,6 +35,7 @@ export class BrowserSessionsController {
   constructor(private _browserSlotService: BrowserSlotService) {}
 
   @Post('/')
+  @ApiOperation({ summary: '开始浏览器账号登录', description: '为新账号（或 integrationId 指定的重连）在浏览器集群开一个浏览器并打开平台登录页，返回可嵌入的画面地址；新账号计入套餐账号数。' })
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   startLogin(
     @GetOrgFromRequest() org: Organization,
@@ -49,6 +50,7 @@ export class BrowserSessionsController {
 
   // Caddy forward_auth for /screen/<slot>/...; the original path arrives in X-Forwarded-Uri.
   @Get('/screen-auth')
+  @ApiOperation({ summary: '浏览器画面鉴权（Caddy forward_auth）', description: '只有所属团队的成员能看 /screen/<slot>/ 画面。' })
   async screenAuth(
     @GetOrgFromRequest() org: Organization,
     @Headers('x-forwarded-uri') uri = ''
@@ -61,11 +63,13 @@ export class BrowserSessionsController {
   }
 
   @Get('/proxies')
+  @ApiOperation({ summary: '出口代理列表', description: '团队的静态出口 IP，不含账号密码。' })
   listProxies(@GetOrgFromRequest() org: Organization) {
     return this._browserSlotService.listProxies(org.id);
   }
 
   @Post('/proxies')
+  @ApiOperation({ summary: '新增出口代理' })
   createProxy(
     @GetOrgFromRequest() org: Organization,
     @Body() body: CreateBrowserProxyDto
@@ -79,11 +83,13 @@ export class BrowserSessionsController {
   }
 
   @Delete('/proxies/:id')
+  @ApiOperation({ summary: '删除出口代理' })
   deleteProxy(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
     return this._browserSlotService.deleteProxy(org.id, id);
   }
 
   @Put('/channels/:integrationId/proxy')
+  @ApiOperation({ summary: '给浏览器账号绑定 / 解绑出口代理', description: '浏览器会带着新的出口重启。' })
   setChannelProxy(
     @GetOrgFromRequest() org: Organization,
     @Param('integrationId') integrationId: string,
@@ -97,6 +103,7 @@ export class BrowserSessionsController {
   }
 
   @Get('/:id')
+  @ApiOperation({ summary: '轮询登录状态', description: 'waiting / mismatch（扫了别的账号）/ connected（已创建账号）。' })
   checkLogin(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
@@ -110,6 +117,7 @@ export class BrowserSessionsController {
   }
 
   @Delete('/:id')
+  @ApiOperation({ summary: '取消登录', description: '新账号的浏览器会被回收，重连的保留。' })
   cancelLogin(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
     return this._browserSlotService.cancelLogin(org.id, id);
   }

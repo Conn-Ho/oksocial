@@ -16,7 +16,7 @@ import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/o
 import { AddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/add.team.member.dto';
 import { AdminAddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/admin.add.team.member.dto';
 import { ShortlinkPreferenceDto } from '@gitroom/nestjs-libraries/dtos/settings/shortlink-preference.dto';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import {
   PostApprovalSettingDto,
@@ -82,6 +82,7 @@ export class SettingsController {
   }
 
   @Put('/team/:id/role')
+  @ApiOperation({ summary: '修改成员角色', description: '管理员 / 运营主管 / 内容运营 / 只读成员。' })
   @RequireRoles('ADMIN')
   updateTeamMemberRole(
     @GetOrgFromRequest() org: Organization,
@@ -97,11 +98,13 @@ export class SettingsController {
 
   // Readable by every member so the UI can show whether posts need review.
   @Get('/approval')
+  @ApiOperation({ summary: '发帖审核开关' })
   getPostApproval(@GetOrgFromRequest() org: Organization) {
     return this._organizationService.getPostApproval(org.id);
   }
 
   @Put('/approval')
+  @ApiOperation({ summary: '开关发帖审核', description: '需要套餐包含「发帖审核流程」。' })
   @RequireRoles('ADMIN')
   setPostApproval(
     @GetOrgFromRequest() org: Organization,

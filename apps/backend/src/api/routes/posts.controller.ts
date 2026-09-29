@@ -16,7 +16,7 @@ import { Organization, User } from '@prisma/client';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
 import { GetPostsListDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.list.dto';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GeneratorDto } from '@gitroom/nestjs-libraries/dtos/generator/generator.dto';
 import { CreateGeneratedPostsDto } from '@gitroom/nestjs-libraries/dtos/generator/create.generated.posts.dto';
 import { AgentGraphService } from '@gitroom/nestjs-libraries/agent/agent.graph.service';
@@ -51,12 +51,14 @@ export class PostsController {
 
   // Declared first so "/approvals" is not captured by the "/:id" routes below.
   @Get('/approvals')
+  @ApiOperation({ summary: '待审核的帖子', description: '开启审核后，内容运营排期的帖子在这里等运营主管或管理员审核。' })
   @RequireRoles('ADMIN', 'MANAGER')
   listApprovals(@GetOrgFromRequest() org: Organization) {
     return this._postsService.listPendingApprovals(org.id);
   }
 
   @Post('/approvals/:group')
+  @ApiOperation({ summary: '审核通过 / 驳回' })
   @RequireRoles('ADMIN', 'MANAGER')
   async reviewPosts(
     @GetOrgFromRequest() org: Organization,

@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { streamUploadOptions } from '@gitroom/nestjs-libraries/upload/multer.stream.engine';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
 import { GetIncludeDeletedFromRequest } from '@gitroom/nestjs-libraries/user/include.deleted.from.request';
 import { Organization } from '@prisma/client';
@@ -56,6 +56,7 @@ import { GetOrgActivityDto } from '@gitroom/nestjs-libraries/dtos/analytics/get.
 import dayjs from 'dayjs';
 
 @ApiTags('Public API')
+@ApiSecurity('api-key')
 @Controller('/public/v1')
 export class PublicIntegrationsController {
   constructor(
