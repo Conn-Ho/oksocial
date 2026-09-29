@@ -57,6 +57,22 @@ export interface AnalyticsData {
 }
 
 
+export type BrowserSessionIdentity = {
+  id: string;
+  name: string;
+  username: string;
+  picture?: string;
+};
+
+export type BrowserSession = {
+  // Page opened in the account's browser for the user to log in (QR code or password).
+  loginUrl: string;
+  // opencli command (without -f json) whose output identifies the logged-in account.
+  whoami: string[];
+  // Maps the whoami rows to an identity, or null when the browser is not logged in.
+  identity(rows: unknown): BrowserSessionIdentity | null;
+};
+
 export type GenerateAuthUrlResponse = {
   url: string;
   codeVerifier: string;
@@ -190,6 +206,9 @@ export interface SocialProvider
   ): Promise<PendingCheckResponse>;
   isWeb3?: boolean;
   isChromeExtension?: boolean;
+  // oksocial browser channel: the account logs in by scanning the platform's QR code inside its own
+  // Chrome on the browser fleet, and every action runs as an opencli command in that browser.
+  browserSession?: BrowserSession;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

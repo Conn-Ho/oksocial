@@ -40,8 +40,16 @@ import SkoolProvider from '@gitroom/frontend/components/new-launch/providers/sko
 import WhopProvider from '@gitroom/frontend/components/new-launch/providers/whop/whop.provider';
 import MeweProvider from '@gitroom/frontend/components/new-launch/providers/mewe/mewe.provider';
 import TumblrProvider from '@gitroom/frontend/components/new-launch/providers/tumblr/tumblr.provider';
+import XiaohongshuWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/xiaohongshu.web.provider';
+import DouyinWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/douyin.web.provider';
+import WeiboWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/weibo.web.provider';
+import XWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/x.web.provider';
 
 export const Providers = [
+  { identifier: 'xiaohongshu-web', component: XiaohongshuWebProvider },
+  { identifier: 'douyin-web', component: DouyinWebProvider },
+  { identifier: 'weibo-web', component: WeiboWebProvider },
+  { identifier: 'x-web', component: XWebProvider },
   {
     identifier: 'devto',
     component: DevtoProvider,

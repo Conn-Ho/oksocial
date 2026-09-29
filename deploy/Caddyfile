@@ -7,6 +7,20 @@ www.oksocial.online {
 }
 
 oksocial.online {
-	encode zstd gzip
-	reverse_proxy oksocial:5000
+	# Live screens of browser-channel accounts (noVNC over HTTP + WebSocket). The backend checks the
+	# session cookie and that the slot belongs to the user's organization; the host worker requires
+	# its token, which only Caddy adds.
+	handle /screen/* {
+		forward_auth oksocial:5000 {
+			uri /api/browser-sessions/screen-auth
+		}
+		reverse_proxy host.docker.internal:7788 {
+			header_up x-worker-token {env.BROWSER_WORKER_TOKEN}
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy oksocial:5000
+	}
 }

@@ -19,6 +19,7 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import clsx from 'clsx';
 import copy from 'copy-to-clipboard';
 import { capitalize } from 'lodash';
+import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 const resolver = classValidatorResolver(ApiKeyDto);
 
 export const useAddProvider = (update?: () => void, invite?: boolean) => {
@@ -386,6 +387,7 @@ export const AddProviderComponent: FC<{
     isExternal: boolean;
     isWeb3: boolean;
     isChromeExtension?: boolean;
+    isBrowserSession?: boolean;
     extensionCookies?: Array<{
       name: string;
       domain: string;
@@ -427,10 +429,33 @@ export const AddProviderComponent: FC<{
           defaultValue?: string;
           type: 'text' | 'password';
           hint?: string;
-        }>
+        }>,
+        isBrowserSession?: boolean,
+        name?: string
       ) =>
       async () => {
         const onboardingParam = onboarding ? 'onboarding=true' : '';
+        if (isBrowserSession) {
+          modal.openModal({
+            title: t('browser_login_title', '连接 {{name}}', { name }),
+            withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
+            classNames: {
+              modal: 'bg-transparent text-textColor w-[980px] max-w-[95vw]',
+            },
+            children: (
+              <BrowserLoginModal
+                identifier={identifier}
+                name={name || identifier}
+                onConnected={() => {
+                  update?.();
+                  router.refresh();
+                }}
+              />
+            ),
+          });
+          return;
+        }
         const openWeb3 = async () => {
           const { component: Web3Providers } = web3List.find(
             (item) => item.identifier === identifier
@@ -702,6 +727,7 @@ export const AddProviderComponent: FC<{
                 !item.isExternal &&
                 !item.isWeb3 &&
                 !item.isChromeExtension &&
+                !item.isBrowserSession &&
                 !item.customFields
               );
             })
@@ -714,7 +740,9 @@ export const AddProviderComponent: FC<{
                   item.isExternal,
                   item.isWeb3,
                   item.isChromeExtension,
-                  item.customFields
+                  item.customFields,
+                  item.isBrowserSession,
+                  item.name
                 )}
                 {...(!!item.toolTip
                   ? {

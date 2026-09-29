@@ -45,6 +45,8 @@ model Organization {
   webhooks            Webhooks[]
   oauthApp            OAuthApp[]
   oauthAuthorizations OAuthAuthorization[]
+  browserSlots        BrowserSlot[]
+  browserProxies      BrowserProxy[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -394,6 +396,7 @@ model Integration {
   orderItems            OrderItems[]
   plugs                 Plugs[]
   posts                 Post[]
+  browserSlot           BrowserSlot?
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -1811,4 +1814,52 @@ model Announcement {
   description String
   color       AnnouncementColor @default(INFO)
   createdAt   DateTime          @default(now())
+}
+
+// oksocial browser channel: one Chrome instance on the browser fleet per connected account.
+// PENDING while the user scans the login QR code, ACTIVE once linked to an Integration.
+enum BrowserSlotStatus {
+  PENDING
+  ACTIVE
+  RELEASED
+}
+
+model BrowserSlot {
+  id                 String            @id @default(uuid())
+  organizationId     String
+  slot               String            @unique
+  providerIdentifier String
+  status             BrowserSlotStatus @default(PENDING)
+  integrationId      String?           @unique
+  proxyId            String?
+  lastCheckAt        DateTime?
+  lastError          String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  deletedAt          DateTime?
+  organization       Organization      @relation(fields: [organizationId], references: [id])
+  integration        Integration?      @relation(fields: [integrationId], references: [id])
+  proxy              BrowserProxy?     @relation(fields: [proxyId], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// Outbound proxy (static residential/ISP IP) that browser slots of an organization can use.
+// url is stored encrypted (AuthService.fixedEncryption).
+model BrowserProxy {
+  id             String        @id @default(uuid())
+  organizationId String
+  name           String
+  url            String
+  region         String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  slots          BrowserSlot[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
 }

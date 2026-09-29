@@ -30,6 +30,7 @@ import { useIntegrationList } from '@gitroom/frontend/components/launches/helper
 import useCookie from 'react-use-cookie';
 import { Onboarding } from '@gitroom/frontend/components/onboarding/onboarding';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
+import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 
 export const SVGLine = () => {
   return (
@@ -448,9 +449,31 @@ export const LaunchesComponent = () => {
           identifier: string;
           isCustomFields?: boolean;
           customFields?: any[];
+          isBrowserSession?: boolean;
         }
       ) =>
       async () => {
+        // Browser channels reconnect by logging in again inside the channel's own browser.
+        if (integration.isBrowserSession) {
+          modal.openModal({
+            title: t('browser_login_reconnect', '重新登录 {{name}}', {
+              name: integration.name,
+            }),
+            withCloseButton: true,
+            classNames: {
+              modal: 'bg-transparent text-textColor w-[980px] max-w-[95vw]',
+            },
+            children: (
+              <BrowserLoginModal
+                identifier={integration.identifier}
+                name={integration.name}
+                integrationId={integration.id}
+                onConnected={() => router.refresh()}
+              />
+            ),
+          });
+          return;
+        }
         // Custom-fields providers (Bluesky, etc.) have no OAuth URL to redirect
         // to: reconnect by re-entering the credentials, like the menu does.
         if (integration.isCustomFields) {

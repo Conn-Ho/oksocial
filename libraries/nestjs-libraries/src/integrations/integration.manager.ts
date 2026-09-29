@@ -38,8 +38,17 @@ import { SkoolProvider } from '@gitroom/nestjs-libraries/integrations/social/sko
 import { WhopProvider } from '@gitroom/nestjs-libraries/integrations/social/whop.provider';
 import { MeweProvider } from '@gitroom/nestjs-libraries/integrations/social/mewe.provider';
 import { TumblrProvider } from '@gitroom/nestjs-libraries/integrations/social/tumblr.provider';
+import { XiaohongshuWebProvider } from '@gitroom/nestjs-libraries/integrations/social/xiaohongshu.web.provider';
+import { DouyinWebProvider } from '@gitroom/nestjs-libraries/integrations/social/douyin.web.provider';
+import { WeiboWebProvider } from '@gitroom/nestjs-libraries/integrations/social/weibo.web.provider';
+import { XWebProvider } from '@gitroom/nestjs-libraries/integrations/social/x.web.provider';
 
 export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
+  // oksocial browser channel (logged-in browser on the fleet, no official API needed)
+  new XiaohongshuWebProvider(),
+  new DouyinWebProvider(),
+  new WeiboWebProvider(),
+  new XWebProvider(),
   new XProvider(),
   new LinkedinProvider(),
   new LinkedinPageProvider(),
@@ -138,6 +147,7 @@ export class IntegrationManager {
             isExternal: !!p.externalUrl,
             isWeb3: !!p.isWeb3,
             isChromeExtension: !!p.isChromeExtension,
+            isBrowserSession: !!p.browserSession,
             ...(p.extensionCookies
               ? { extensionCookies: p.extensionCookies }
               : {}),

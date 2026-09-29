@@ -14,6 +14,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    environment:
+      BROWSER_WORKER_TOKEN: ${BROWSER_WORKER_TOKEN}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [web]
@@ -35,6 +37,9 @@ services:
     volumes:
       - uploads:/uploads
       - app-config:/config
+    # the browser worker (browser channel) runs on the host
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks: [web, data, temporal]
     depends_on:
       postgres: { condition: service_healthy }

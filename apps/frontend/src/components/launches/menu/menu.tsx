@@ -31,6 +31,7 @@ import { AddEditModal } from '@gitroom/frontend/components/new-launch/add.edit.m
 import dayjs from 'dayjs';
 import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/modal.wrapper.component';
 import copy from 'copy-to-clipboard';
+import { BrowserProxyModal } from '@gitroom/frontend/components/launches/browser.proxy.modal';
 
 export const Menu: FC<{
   canEnable: boolean;
@@ -316,6 +317,14 @@ export const Menu: FC<{
     });
     setShow(false);
   }, [integrations, t]);
+  const browserProxy = useCallback(() => {
+    modal.openModal({
+      title: t('browser_proxies', '出口代理'),
+      withCloseButton: true,
+      children: <BrowserProxyModal integrationId={findIntegration.id} />,
+    });
+  }, [t, findIntegration]);
+
   const updateCredentials = useCallback(() => {
     modal.openModal({
       title: t('custom_url', 'Custom URL'),
@@ -440,6 +449,26 @@ export const Menu: FC<{
                 </div>
               </div>
             )}
+          {!!findIntegration?.isBrowserSession && (
+            <>
+              <div
+                className="flex gap-[12px] items-center py-[8px] px-[10px]"
+                onClick={refreshChannel(findIntegration!)}
+              >
+                <div className="w-[18px] text-center">⌁</div>
+                <div className="text-[14px]">
+                  {t('browser_login_open', '在浏览器中登录 / 查看')}
+                </div>
+              </div>
+              <div
+                className="flex gap-[12px] items-center py-[8px] px-[10px]"
+                onClick={browserProxy}
+              >
+                <div className="w-[18px] text-center">⇄</div>
+                <div className="text-[14px]">{t('browser_proxies', '出口代理')}</div>
+              </div>
+            </>
+          )}
           {!!findIntegration?.isCustomFields && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
