@@ -61,8 +61,8 @@ export class AutomationsController {
 
   @Post('/test')
   @RequireRoles('ADMIN', 'MANAGER')
-  test(@Body() body: TestAutomationDto) {
-    return this._automationService.test(body.type, body.config, body.sample);
+  test(@GetOrgFromRequest() org: Organization, @Body() body: TestAutomationDto) {
+    return this._automationService.test(org.id, body.type, body.config, body.sample);
   }
 
   @Post('/')

@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
 import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
 import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
+import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
 import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
@@ -46,7 +47,8 @@ export class AutomationService {
     private _runner: AutomationRunner,
     private _inboxService: InboxService,
     private _postsService: PostsService,
-    private _ai: AutomationAiService
+    private _ai: AutomationAiService,
+    private _brands: BrandService
   ) {}
 
   private validate(type: AutomationType, config: unknown) {
@@ -178,24 +180,30 @@ export class AutomationService {
   }
 
   /** 测试: what the automation would answer / write for a sample, without doing anything. */
-  async test(type: AutomationType, config: unknown, sample: string) {
+  async test(orgId: string, type: AutomationType, config: unknown, sample: string) {
     const c = this.validate(type, config) as any;
+    const brand = await this._brands.promptFor(orgId);
     switch (type) {
       case 'LEAD_COLLECTOR': {
         const [score] = await this._ai.scoreLeads(c.prompt, [{ id: 'sample', content: sample }]);
         return { output: score ? `${score.score} 分：${score.summary}` : '模型没有给出分数', passes: !!score && score.score >= c.minScore };
       }
       case 'REWRITE_SYNC':
-        return { output: await this._ai.rewrite(sample, c) };
+        return { output: await this._ai.rewrite(sample, c, brand) };
       case 'AUTO_POST':
-        return { output: await this._ai.generatePost(sample || c.topics[0], { tone: c.tone, extraPrompt: c.extraPrompt, avoid: [] }) };
+        return {
+          output: await this._ai.generatePost(sample || c.topics[0], { tone: c.tone, extraPrompt: c.extraPrompt, avoid: [] }, brand),
+        };
       default:
         return {
-          output: await this._ai.suggestReply({
-            content: sample,
-            kind: type === 'DM_ASSISTANT' ? 'DM' : 'COMMENT',
-            templates: c.extraPrompt ? [`（运营要求）${c.extraPrompt}`] : [],
-          }),
+          output: await this._ai.suggestReply(
+            {
+              content: sample,
+              kind: type === 'DM_ASSISTANT' ? 'DM' : 'COMMENT',
+              templates: c.extraPrompt ? [`（运营要求）${c.extraPrompt}`] : [],
+            },
+            brand
+          ),
         };
     }
   }

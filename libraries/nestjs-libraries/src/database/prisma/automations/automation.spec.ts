@@ -9,6 +9,7 @@ jest.mock('@gitroom/nestjs-libraries/automations/automation.ai.service', () => (
 jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.service', () => ({ IntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/inbox/inbox.repository', () => ({ InboxRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({ IntegrationManager: class {}, socialIntegrationList: [] }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/brands/brand.service', () => ({ BrandService: class {} }));
 jest.mock('isomorphic-dompurify', () => ({ __esModule: true, default: { sanitize: (s: string) => s } }));
 
 import {
@@ -32,6 +33,8 @@ const item = (over: Record<string, any> = {}) => ({
   threadTitle: '第一篇',
   ...over,
 });
+
+const BRAND = { system: '品牌：小鹿咖啡', banned: ['最便宜'] };
 
 const automation = (over: Record<string, any> = {}) => ({
   id: 'a1',
@@ -76,10 +79,11 @@ const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?:
     rewrite: jest.fn(async () => '改写后的正文'),
     generatePost: jest.fn(async (topic: string) => `关于${topic}的原创`),
   };
-  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any);
+  const brands = { promptFor: jest.fn(async () => BRAND) };
+  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any, brands as any);
   (runner as any).sleep = jest.fn(async () => undefined);
   (runner as any).random = () => 0.5;
-  return { runner, repo, inbox, posts, notifications, ai, recorded };
+  return { runner, repo, inbox, posts, notifications, ai, recorded, brands };
 };
 
 describe('helpers', () => {
@@ -109,6 +113,7 @@ describe('comment assistant', () => {
     const result = await s.runner.run(automation({ config: { intents: ['question'] } }) as any);
     expect(result).toEqual({ done: 1, held: 0, failed: 0, skipped: 0 });
     expect(s.inbox.reply).toHaveBeenCalledWith('o1', null, 'it1', 'AI 回复', 'AUTOMATION');
+    expect(s.ai.suggestReply).toHaveBeenCalledWith(expect.objectContaining({ content: '请问多少钱' }), BRAND);
     expect((s.runner as any).sleep).toHaveBeenCalledTimes(1);
     expect(s.recorded[0]).toEqual(expect.objectContaining({ targetKey: 'it1', status: 'DONE', kind: 'reply' }));
   });
@@ -207,7 +212,8 @@ describe('rewrite & sync and auto post', () => {
       channels: [{ id: 'ch1', name: '源', providerIdentifier: 'xiaohongshu' }, { id: 'ch2', name: '目标', providerIdentifier: 'weibo' }],
     });
     await s.runner.run(automation({ type: 'REWRITE_SYNC', integrationIds: ['ch1', 'ch2'], config: { sourceIntegrationIds: ['ch1'], publish: 'draft' } }) as any);
-    expect(s.ai.rewrite).toHaveBeenCalledWith('原文', expect.objectContaining({ tone: 'keep' }));
+    expect(s.ai.rewrite).toHaveBeenCalledWith('原文', expect.objectContaining({ tone: 'keep' }), BRAND);
+    expect(s.brands.promptFor).toHaveBeenCalledWith('o1');
     expect(s.posts.createPost).toHaveBeenCalledTimes(1);
     expect(s.posts.createPost.mock.calls[0][1]).toEqual(expect.objectContaining({ type: 'draft', posts: [expect.objectContaining({ integration: { id: 'ch2' } })] }));
     expect(s.recorded[0].targetKey).toBe('sync:p1:ch2');
@@ -218,6 +224,7 @@ describe('rewrite & sync and auto post', () => {
     await s.runner.run(automation({ type: 'AUTO_POST', integrationIds: ['ch2'], config: { topics: ['A', 'B'], postsPerDay: 2, publish: 'schedule' } }) as any);
     expect(s.posts.createPost).toHaveBeenCalledTimes(2);
     expect(s.ai.generatePost.mock.calls.map((c: any[]) => c[0]).sort()).toEqual(['A', 'B']);
+    expect(s.ai.generatePost.mock.calls[0][2]).toBe(BRAND);
     expect(s.posts.createPost.mock.calls[0][1].type).toBe('schedule');
   });
 });
@@ -237,8 +244,15 @@ describe('AutomationService', () => {
     const runner = { run: jest.fn(async () => ({ done: 1, held: 0, failed: 0, skipped: 0 })) };
     const inbox = { reply: jest.fn(async () => ({ ok: true })) };
     const posts = { createPost: jest.fn(async () => []) };
-    const ai = { scoreLeads: jest.fn(async () => [{ id: 'sample', score: 85, summary: '想买' }]) };
-    return { service: new AutomationService(repo as any, runner as any, inbox as any, posts as any, ai as any), repo, runner, inbox, posts };
+    const ai = {
+      scoreLeads: jest.fn(async () => [{ id: 'sample', score: 85, summary: '想买' }]),
+      suggestReply: jest.fn(async () => '试一下的回复'),
+    };
+    const brands = { promptFor: jest.fn(async () => BRAND) };
+    return {
+      service: new AutomationService(repo as any, runner as any, inbox as any, posts as any, ai as any, brands as any),
+      repo, runner, inbox, posts, ai, brands,
+    };
   };
 
   it('validates config and applies the type default cap', async () => {
@@ -269,6 +283,13 @@ describe('AutomationService', () => {
 
   it('test scores a sample lead against the threshold', async () => {
     const { service } = makeService();
-    expect(await service.test('LEAD_COLLECTOR', { prompt: '想买课程的人', minScore: 80 }, '课程多少钱')).toEqual({ output: '85 分：想买', passes: true });
+    expect(await service.test('o1', 'LEAD_COLLECTOR', { prompt: '想买课程的人', minScore: 80 }, '课程多少钱')).toEqual({ output: '85 分：想买', passes: true });
+  });
+
+  it('test writes a sample reply in the organization\'s brand voice', async () => {
+    const { service, ai, brands } = makeService();
+    expect(await service.test('o1', 'COMMENT_ASSISTANT', {}, '好喝吗')).toEqual({ output: '试一下的回复' });
+    expect(brands.promptFor).toHaveBeenCalledWith('o1');
+    expect(ai.suggestReply).toHaveBeenCalledWith(expect.objectContaining({ content: '好喝吗', kind: 'COMMENT' }), BRAND);
   });
 });

@@ -56,7 +56,11 @@ export function isBlockedIp(ip: string): boolean {
   return true;
 }
 
-export async function isSafePublicHttpsUrl(value: unknown): Promise<boolean> {
+// oksocial: `allowHttp` also accepts plain http (a brand's website); the address checks are the same.
+export async function isSafePublicHttpsUrl(
+  value: unknown,
+  options: { allowHttp?: boolean } = {}
+): Promise<boolean> {
   if (typeof value !== 'string' || !value.trim()) {
     return false;
   }
@@ -68,7 +72,7 @@ export async function isSafePublicHttpsUrl(value: unknown): Promise<boolean> {
     return false;
   }
 
-  if (parsed.protocol !== 'https:') {
+  if (parsed.protocol !== 'https:' && !(options.allowHttp && parsed.protocol === 'http:')) {
     return false;
   }
 

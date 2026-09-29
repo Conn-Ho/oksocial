@@ -8,6 +8,8 @@ import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/po
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
 import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
+import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
+import { BrandPrompt } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
 import {
   AutomationConfig,
@@ -28,6 +30,8 @@ export type RunResult = { done: number; held: number; failed: number; skipped: n
 
 type Context = {
   automation: Automation;
+  // the organization's default 品牌档案, for everything this run writes
+  brand: BrandPrompt;
   remaining: number;
   braked: Set<string>;
   own: Set<string>;
@@ -58,12 +62,14 @@ export class AutomationRunner {
     private _inboxService: InboxService,
     private _postsService: PostsService,
     private _notificationService: NotificationService,
-    private _ai: AutomationAiService
+    private _ai: AutomationAiService,
+    private _brands: BrandService
   ) {}
 
   async run(automation: Automation): Promise<RunResult> {
     const ctx: Context = {
       automation,
+      brand: await this._brands.promptFor(automation.organizationId),
       remaining: Math.max(0, automation.dailyCap - (await this._repository.countToday(automation.id))),
       braked: new Set((await this._repository.brakeFor(automation.integrationIds)).map((b) => b.integrationId!)),
       own: ownKeys(await this._repository.ownIdentities(automation.organizationId)),
@@ -101,10 +107,11 @@ export class AutomationRunner {
 
   /** Reply text: AI, or a template (random / AI-picked); AI when the library is empty. */
   private async compose(
-    orgId: string,
+    ctx: Context,
     item: InboxItem,
     c: { replyWith: 'ai' | 'template'; templateMatch: 'random' | 'ai'; extraPrompt: string }
   ) {
+    const orgId = ctx.automation.organizationId;
     const templates = (await this._inboxService.listTemplates(orgId, item.kind === 'DM' ? 'DM' : 'COMMENT')).map((t) => t.content);
     if (c.replyWith === 'template' && templates.length) {
       const index =
@@ -113,12 +120,15 @@ export class AutomationRunner {
           : await this._ai.pickTemplate(item.content, templates);
       return templates[index];
     }
-    return this._ai.suggestReply({
-      content: item.content,
-      kind: item.kind,
-      threadTitle: item.threadTitle,
-      templates: c.extraPrompt ? [...templates.slice(0, 7), `（运营要求）${c.extraPrompt}`] : templates.slice(0, 8),
-    });
+    return this._ai.suggestReply(
+      {
+        content: item.content,
+        kind: item.kind,
+        threadTitle: item.threadTitle,
+        templates: c.extraPrompt ? [...templates.slice(0, 7), `（运营要求）${c.extraPrompt}`] : templates.slice(0, 8),
+      },
+      ctx.brand
+    );
   }
 
   /** The write gate every automated platform action goes through. */
@@ -185,7 +195,7 @@ export class AutomationRunner {
       if (c.oncePerAuthor && onceDone.has(onceKey(item))) {
         continue;
       }
-      const content = await this.compose(org, item, c);
+      const content = await this.compose(ctx, item, c);
       const outcome = await this.act(
         ctx,
         { integrationId: item.integrationId, targetKey: item.id, targetLabel: item.authorName, kind: 'reply', content },
@@ -221,7 +231,7 @@ export class AutomationRunner {
       if (answered.has(threadKey(item))) {
         continue;
       }
-      const content = await this.compose(org, item, c);
+      const content = await this.compose(ctx, item, c);
       const outcome = await this.act(
         ctx,
         { integrationId: item.integrationId, targetKey: item.id, targetLabel: item.threadTitle || item.authorName, kind: 'dm', content },
@@ -293,7 +303,7 @@ export class AutomationRunner {
         if ((await this._repository.actedTargets(ctx.automation.id, [targetKey])).size) {
           continue;
         }
-        const text = await this._ai.rewrite(stripHtmlValidation('none', post.content), c);
+        const text = await this._ai.rewrite(stripHtmlValidation('none', post.content), c, ctx.brand);
         await this.act(ctx, { integrationId: target.id, targetKey, targetLabel: target.name, kind: 'post', content: text }, () =>
           this._postsService.createPost(org, editorPostBody(target, [text], new Date(), { type: c.publish }), 'AUTOMATION')
         );
@@ -312,11 +322,11 @@ export class AutomationRunner {
       const already = await this._repository.countTodayForChannel(ctx.automation.id, target.id);
       for (let n = already; n < c.postsPerDay && ctx.remaining > 0; n += 1) {
         const topic = c.topics[(dayIndex + n) % c.topics.length];
-        const text = await this._ai.generatePost(topic, {
-          tone: c.tone,
-          extraPrompt: c.extraPrompt,
-          avoid: await this._repository.recentPostTexts(org, target.id),
-        });
+        const text = await this._ai.generatePost(
+          topic,
+          { tone: c.tone, extraPrompt: c.extraPrompt, avoid: await this._repository.recentPostTexts(org, target.id) },
+          ctx.brand
+        );
         const date = c.publish === 'schedule' ? slotInWindow(new Date(), c.hours, this.random) : new Date();
         await this.act(
           ctx,

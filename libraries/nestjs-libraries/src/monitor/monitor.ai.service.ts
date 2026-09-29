@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { BrandPrompt, InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 
 export type RemakeTone = 'keep' | 'casual' | 'professional';
 export type RemakeLength = 'keep' | 'shorter' | 'longer';
@@ -23,15 +23,18 @@ const LENGTHS: Record<RemakeLength, string> = {
  */
 @Injectable()
 export class MonitorAiService extends InboxAiService {
-  async rewrite(input: {
-    title?: string | null;
-    content: string;
-    platform: string;
-    maxLength: number;
-    tone: RemakeTone;
-    length: RemakeLength;
-    instruction?: string;
-  }) {
+  async rewrite(
+    input: {
+      title?: string | null;
+      content: string;
+      platform: string;
+      maxLength: number;
+      tone: RemakeTone;
+      length: RemakeLength;
+      instruction?: string;
+    },
+    brand?: BrandPrompt
+  ) {
     return this.complete(
       `你是社交媒体内容编辑。把用户给的帖子改写成一篇新的原创帖子，发在${input.platform}。` +
         '保留有价值的信息和结构，换掉原句的说法，不照抄；不提原作者、不写“转载”；不编造原文没有的数字和事实。' +
@@ -39,7 +42,8 @@ export class MonitorAiService extends InboxAiService {
         '原文有标题时，第一行写新标题，空一行再写正文。只输出帖子本身。',
       `${input.title ? `标题：${input.title}\n` : ''}正文：${input.content.slice(0, 6000)}` +
         (input.instruction ? `\n\n额外要求：${input.instruction}` : ''),
-      0.8
+      0.8,
+      brand
     );
   }
 }

@@ -3,6 +3,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/notifications/notification.
 jest.mock('@gitroom/nestjs-libraries/database/prisma/posts/posts.service', () => ({ PostsService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository', () => ({ MonitorRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/monitor/monitor.ai.service', () => ({ MonitorAiService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/brands/brand.service', () => ({ BrandService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => {
   // Two fake monitor platforms: "xhs" (paced, full capability) and "wb" (no search, no own posts).
   const monitor = (site: string, extra: Record<string, unknown> = {}) => ({
@@ -45,6 +46,8 @@ import {
 const providers = socialIntegrationList as any[];
 const xhs = providers[0].monitor;
 const wb = providers[1].monitor;
+
+const BRAND = { system: '品牌：小鹿咖啡', banned: ['最便宜'] };
 
 const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean; affordable?: number } = {}) => {
   const repo = {
@@ -104,6 +107,7 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean;
     affordable: jest.fn(async (_o: string, _a: string) => opts.affordable ?? Infinity),
     withCredits: jest.fn(async (_o: string, _a: string, _r: string | undefined, work: () => Promise<any>, _q?: number) => work()),
   };
+  const brands = { promptFor: jest.fn(async () => BRAND) };
   const service = new MonitorService(
     repo as any,
     integrationService as any,
@@ -112,7 +116,8 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean;
     notifications as any,
     posts as any,
     plan as any,
-    credits as any
+    credits as any,
+    brands as any
   );
   const sleep = jest.fn(async (_ms: number) => undefined);
   (service as any).sleep = sleep;
@@ -475,11 +480,23 @@ describe('一键复刻', () => {
     const { service, repo, ai } = setup();
     repo.getItem.mockResolvedValueOnce({ kind: 'POST', title: '标题', content: '很长的正文内容', url: 'u', target: {} });
     const res = await service.remakeRewrite('o1', { ...options, itemId: 'i1' });
-    expect(ai.rewrite).toHaveBeenCalledWith({
-      title: '标题', content: '很长的正文内容', platform: '小红书', maxLength: 1000,
-      tone: 'casual', length: 'shorter', instruction: '加一句结尾提问',
-    });
+    expect(ai.rewrite).toHaveBeenCalledWith(
+      {
+        title: '标题', content: '很长的正文内容', platform: '小红书', maxLength: 1000,
+        tone: 'casual', length: 'shorter', instruction: '加一句结尾提问',
+      },
+      BRAND
+    );
     expect(res).toEqual({ source: { title: '标题', content: '很长的正文内容', url: 'u' }, text: '改写后的正文' });
+  });
+
+  it('remake (shared with AI 创作) rewrites pasted text for a platform with the given brand', async () => {
+    const { service, ai, repo } = setup();
+    const brand = { system: '品牌：另一个', banned: [] as string[] };
+    const res = await service.remake('o1', { text: '  粘贴的爆款原文  ', platform: 'wb', tone: 'keep', length: 'keep' }, brand);
+    expect(repo.getItem).not.toHaveBeenCalled();
+    expect(ai.rewrite).toHaveBeenCalledWith(expect.objectContaining({ content: '粘贴的爆款原文', platform: '微博', maxLength: 2000 }), brand);
+    expect(res.source).toEqual({ title: null, content: '粘贴的爆款原文', url: null });
   });
 
   it('a rewrite is charged ai_rewrite', async () => {

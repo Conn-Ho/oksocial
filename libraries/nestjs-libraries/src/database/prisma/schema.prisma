@@ -34,6 +34,7 @@ model Organization {
   github              GitHub[]
   Integration         Integration[]
   media               Media[]
+  brandProfiles       BrandProfile[]
   buyerOrganization   MessagesGroup[]
   notifications       Notifications[]
   plugs               Plugs[]
@@ -2311,4 +2312,38 @@ model ApiKey {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
+}
+
+// oksocial 品牌档案: what every AI writer knows about a brand (inbox replies, automations, 监控
+// 复刻, AI 创作). An organization keeps any number; the default one is used where none is chosen.
+model BrandProfile {
+  id             String       @id @default(uuid())
+  organizationId String
+  // 品牌名
+  name           String
+  // 一句话介绍
+  tagline        String?
+  // 产品/服务
+  products       String?
+  // 目标人群
+  audience       String?
+  // 语气风格
+  tone           String?
+  // 常用关键词
+  keywords       String[]
+  // 禁用词: never left in generated text
+  bannedWords    String[]
+  // 行动引导 (CTA)
+  cta            String?
+  // 示例文案
+  examples       String?
+  // what it was built from: the website URL or the file name (empty for pasted text / by hand)
+  source         String?
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, deletedAt])
 }

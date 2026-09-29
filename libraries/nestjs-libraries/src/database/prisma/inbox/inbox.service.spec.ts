@@ -1,6 +1,7 @@
 jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.service', () => ({ IntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/inbox/inbox.repository', () => ({ InboxRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/brands/brand.service', () => ({ BrandService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
   IntegrationManager: class {},
   socialIntegrationList: [
@@ -52,8 +53,9 @@ const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: 
       return work();
     }),
   };
-  const service = new InboxService(repo as any, integrationService as any, manager as any, ai as any, credits as any);
-  return { service, repo, ai, manager, integrationService, credits };
+  const brands = { promptFor: jest.fn(async () => ({ system: '品牌：小鹿', banned: [] as string[] })) };
+  const service = new InboxService(repo as any, integrationService as any, manager as any, ai as any, credits as any, brands as any);
+  return { service, repo, ai, manager, integrationService, credits, brands };
 };
 
 describe('InboxService', () => {
@@ -183,10 +185,14 @@ describe('InboxService', () => {
 
   it('suggestReply uses the DM templates for a DM', async () => {
     const item = { id: 'it3', kind: 'DM', content: '多少钱', threadTitle: null, integration: {} };
-    const { service, repo, ai } = setup({ item });
+    const { service, repo, ai, brands } = setup({ item });
     expect(await service.suggestReply('o1', 'it3')).toEqual({ text: '谢谢！' });
     expect(repo.listTemplates).toHaveBeenCalledWith('o1', 'DM');
-    expect(ai.suggestReply).toHaveBeenCalledWith(expect.objectContaining({ content: '多少钱', templates: ['感谢关注'] }));
+    expect(brands.promptFor).toHaveBeenCalledWith('o1');
+    expect(ai.suggestReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: '多少钱', templates: ['感谢关注'] }),
+      { system: '品牌：小鹿', banned: [] }
+    );
   });
 });
 

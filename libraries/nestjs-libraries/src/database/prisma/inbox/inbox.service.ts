@@ -11,6 +11,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
+import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
 
 const TAG_BATCH = 20;
 const KIND_LABEL: Record<InboxKind, string> = { COMMENT: '评论', DM: '私信', MENTION: '@提及' };
@@ -29,7 +30,8 @@ export class InboxService {
     private _integrationService: IntegrationService,
     private _integrationManager: IntegrationManager,
     private _ai: InboxAiService,
-    private _credits: CreditsService
+    private _credits: CreditsService,
+    private _brands: BrandService
   ) {}
 
   /** Providers that implement an inbox (identifiers). */
@@ -170,13 +172,17 @@ export class InboxService {
       orgId,
       item.kind === 'DM' ? 'DM' : 'COMMENT'
     );
+    const brand = await this._brands.promptFor(orgId);
     const text = await this._credits.withCredits(orgId, 'ai_reply', item.id, () =>
-      this._ai.suggestReply({
-        content: item.content,
-        kind: item.kind,
-        threadTitle: item.threadTitle,
-        templates: templates.slice(0, 8).map((t) => t.content),
-      })
+      this._ai.suggestReply(
+        {
+          content: item.content,
+          kind: item.kind,
+          threadTitle: item.threadTitle,
+          templates: templates.slice(0, 8).map((t) => t.content),
+        },
+        brand
+      )
     );
     return { text };
   }

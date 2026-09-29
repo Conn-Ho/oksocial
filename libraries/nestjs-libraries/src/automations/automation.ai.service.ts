@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { InboxAiService, parseJsonLoose } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { BrandPrompt, InboxAiService, parseJsonLoose } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 
 const TONE: Record<string, string> = { keep: '保持原来的语气', casual: '更口语、更像真人随手写的', professional: '更专业、更克制' };
 const LENGTH: Record<string, string> = { keep: '长度和原文差不多', shorter: '比原文更短', longer: '比原文更充实' };
@@ -37,25 +37,31 @@ export class AutomationAiService extends InboxAiService {
     return Number.isInteger(index) && index >= 0 && index < templates.length ? index : 0;
   }
 
-  async rewrite(text: string, o: { tone: string; length: string; language: string; extraPrompt?: string }) {
+  async rewrite(
+    text: string,
+    o: { tone: string; length: string; language: string; extraPrompt?: string },
+    brand?: BrandPrompt
+  ) {
     return this.complete(
       `改写用户给的社交媒体帖子：${TONE[o.tone] ?? TONE.keep}，${LENGTH[o.length] ?? LENGTH.keep}，${LANGUAGE[o.language] ?? LANGUAGE.keep}。` +
         '意思不变，不要照抄原句，不要加标签和表情堆砌。' +
         (o.extraPrompt ? `额外要求：${o.extraPrompt}` : '') +
         '只输出改写后的正文。',
       text,
-      0.8
+      0.8,
+      brand
     );
   }
 
-  async generatePost(topic: string, o: { tone: string; extraPrompt?: string; avoid: string[] }) {
+  async generatePost(topic: string, o: { tone: string; extraPrompt?: string; avoid: string[] }, brand?: BrandPrompt) {
     return this.complete(
       `你是这个账号的运营，围绕主题写一条原创社交媒体帖子，${TONE[o.tone] ?? TONE.keep}，150 字以内，第一行是能单独成立的标题句。` +
         (o.extraPrompt ? `额外要求：${o.extraPrompt}` : '') +
         (o.avoid.length ? `不要和这些已发内容重复：\n${o.avoid.slice(0, 10).join('\n')}` : '') +
         '只输出正文。',
       `主题：${topic}`,
-      0.9
+      0.9,
+      brand
     );
   }
 }

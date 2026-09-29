@@ -29,6 +29,8 @@ import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/ris
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 import { LimitKey } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
+import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
+import { BrandPrompt } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 
 dayjs.extend(utc);
 
@@ -132,7 +134,8 @@ export class MonitorService implements OnModuleInit {
     private _notificationService: NotificationService,
     private _postsService: PostsService,
     private _planService: PlanService,
-    private _credits: CreditsService
+    private _credits: CreditsService,
+    private _brands: BrandService
   ) {}
 
   onModuleInit() {
@@ -588,6 +591,43 @@ export class MonitorService implements OnModuleInit {
     return integration;
   }
 
+  /**
+   * 复刻 for a platform: pasted text, a monitored post / competitor post / hit, or a post link,
+   * rewritten as an original post in the brand's voice. Shared by 一键复刻 and AI 创作.
+   */
+  async remake(
+    orgId: string,
+    input: {
+      text?: string;
+      targetId?: string;
+      itemId?: string;
+      url?: string;
+      platform: string;
+      tone: RemakeTone;
+      length: RemakeLength;
+      instruction?: string;
+    },
+    brand: BrandPrompt
+  ) {
+    const provider = this._integrationManager.getSocialIntegration(input.platform) as SocialProvider & { name: string };
+    const source = input.text?.trim()
+      ? { title: null as string | null, content: input.text.trim(), url: null as string | null }
+      : await this.remakeSource(orgId, input);
+    const text = await this._ai.rewrite(
+      {
+        title: source.title,
+        content: source.content,
+        platform: provider?.name || input.platform,
+        maxLength: provider?.maxLength?.() || 1000,
+        tone: input.tone,
+        length: input.length,
+        instruction: input.instruction,
+      },
+      brand
+    );
+    return { source, text };
+  }
+
   async remakeRewrite(
     orgId: string,
     input: {
@@ -604,20 +644,9 @@ export class MonitorService implements OnModuleInit {
       throw new HttpException('AI is not configured', 503);
     }
     const integration = await this.channelFor(orgId, input.integrationId);
-    const provider = this._integrationManager.getSocialIntegration(integration.providerIdentifier) as SocialProvider & { name: string };
-    const source = await this.remakeSource(orgId, input);
-    const text = await this._credits.withCredits(orgId, 'ai_rewrite', input.itemId || input.targetId, () =>
-      this._ai.rewrite({
-        title: source.title,
-        content: source.content,
-        platform: provider?.name || integration.providerIdentifier,
-        maxLength: provider?.maxLength?.() || 1000,
-        tone: input.tone,
-        length: input.length,
-        instruction: input.instruction,
-      })
+    return this._credits.withCredits(orgId, 'ai_rewrite', input.itemId || input.targetId, async () =>
+      this.remake(orgId, { ...input, platform: integration.providerIdentifier }, await this._brands.promptFor(orgId))
     );
-    return { source, text };
   }
 
   /** Saves the (edited) rewrite as a draft of that channel; media is left for the user to add. */
