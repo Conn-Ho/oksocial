@@ -1,4 +1,5 @@
 'use client';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 import React, { FC, useEffect, useImperativeHandle, useState } from 'react';
 import { computePosition, flip, shift } from '@floating-ui/dom';
@@ -27,6 +28,7 @@ const debounce = <T extends any[]>(
 };
 
 const MentionList: FC = (props: any) => {
+  const t = useT();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const selectItem = (index: number) => {
@@ -82,15 +84,15 @@ const MentionList: FC = (props: any) => {
     <div className="dropdown-menu bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto p-2">
       {props?.items?.none ? (
         <div className="flex items-center justify-center p-2 text-gray-500">
-          We don't have autocomplete for this social media
+          {t('mention_no_autocomplete', "We don't have autocomplete for this social media")}
         </div>
       ) : props?.loading ? (
         <div className="flex items-center justify-center p-2 text-gray-500">
-          Loading...
+          {t('loading', 'Loading')}...
         </div>
       ) : props?.items ? (
         props.items.length === 0 ? (
-          <div className="p-2 text-gray-500 text-center">No results found</div>
+          <div className="p-2 text-gray-500 text-center">{t('no_results_found', 'No results found')}</div>
         ) : (
           props?.items?.map((item: any, index: any) => (
             <button

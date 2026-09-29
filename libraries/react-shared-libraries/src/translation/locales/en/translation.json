@@ -789,5 +789,13 @@
   "preview_comment_detach_hint": "Comments on selected text lose their highlight if the text is edited later.",
   "preview_comment_text_changed": "Text changed",
   "preview_no_comments_yet": "No comments yet. Select some text in the post to comment on it, or add a general comment.",
-  "some_files_failed_to_upload": "Some files failed to upload, please try again"
+  "some_files_failed_to_upload": "Some files failed to upload, please try again",
+  "date_metrics": "Date Metrics",
+  "hours_24": "24 hours",
+  "mention_no_autocomplete": "We don't have autocomplete for this social media",
+  "no_results_found": "No results found",
+  "add_thread_finisher": "Add a thread finisher",
+  "custom_minutes": "Custom min",
+  "set_name_placeholder": "Enter a name for this set",
+  "no_integrations_yet": "No Integrations Yet"
 }
