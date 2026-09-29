@@ -232,3 +232,14 @@ describe('identity from whoami rows', () => {
     );
   });
 });
+
+describe('post settings validation', () => {
+  it('accepts every browser provider as a settings __type', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { allProviders, EmptySettings } = require('@gitroom/nestjs-libraries/dtos/posts/providers-settings/all.providers.settings');
+    const names = allProviders(EmptySettings).map((p: { name: string }) => p.name);
+    for (const id of ['xiaohongshu-web', 'douyin-web', 'weibo-web', 'x-web']) {
+      expect(names).toContain(id);
+    }
+  });
+});
