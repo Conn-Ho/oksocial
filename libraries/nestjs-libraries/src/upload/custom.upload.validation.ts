@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { pipeline, Readable, Transform } from 'stream';
+import { text } from 'stream/consumers';
 import { IUploadProvider } from './upload.interface';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { fileTypeStream } = require('file-type');
@@ -40,6 +41,19 @@ export function maxSizeStream(maxSize: number) {
       callback(null, chunk);
     },
   });
+}
+
+// oksocial: a fetched page as text, failing past maxSize instead of buffering whatever the server
+// sends (a missing or lying Content-Length included)
+export async function readTextCapped(res: Response, maxSize: number) {
+  if (!res.body) {
+    return '';
+  }
+  const source = Readable.fromWeb(res.body as any);
+  const capped = maxSizeStream(maxSize);
+  source.on('error', (err) => capped.destroy(err));
+  capped.on('error', () => source.destroy());
+  return text(source.pipe(capped));
 }
 
 // Sniffs the real type from the first bytes, applies the per-type size cap

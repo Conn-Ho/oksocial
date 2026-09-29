@@ -168,6 +168,7 @@
     "exceljs": "^4.4.0",
     "facebook-nodejs-business-sdk": "^21.0.5",
     "fast-xml-parser": "^5.11.0",
+    "fflate": "^0.8.2",
     "file-type": "^22.0.2",
     "google-auth-library": "^9.11.0",
     "googleapis": "^137.1.0",

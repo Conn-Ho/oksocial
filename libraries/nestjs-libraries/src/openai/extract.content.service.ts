@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { JSDOM } from 'jsdom';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
+import { readTextCapped } from '@gitroom/nestjs-libraries/upload/custom.upload.validation';
+
+// oksocial: user URLs (brand import) must not hang a request or fill the memory
+const PAGE_TIMEOUT_MS = 30_000;
+const PAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 function findDepth(element: Element) {
   let depth = 0;
@@ -16,13 +21,15 @@ function findDepth(element: Element) {
 @Injectable()
 export class ExtractContentService {
   async extractContent(url: string) {
-    // oksocial: the URL comes from a user (brand import), so the connection is pinned to public IPs
-    const load = await (
+    // oksocial: the URL comes from a user (brand import): pinned to public IPs, bounded in time and size
+    const load = await readTextCapped(
       await fetch(url, {
         // @ts-ignore — undici option, not in lib.dom fetch types
         dispatcher: getSsrfSafeDispatcher(),
-      })
-    ).text();
+        signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+      }),
+      PAGE_MAX_BYTES
+    );
     const dom = new JSDOM(load);
 
     // only element that has a title

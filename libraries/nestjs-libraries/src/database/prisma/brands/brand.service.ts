@@ -1,6 +1,7 @@
 import { HttpException, Injectable } from '@nestjs/common';
 import { extractText, getDocumentProxy } from 'unpdf';
 import mammoth from 'mammoth';
+import { unzipSync } from 'fflate';
 import {
   BrandFields,
   BrandRepository,
@@ -8,6 +9,7 @@ import {
 import { ExtractContentService } from '@gitroom/nestjs-libraries/openai/extract.content.service';
 import { isSafePublicHttpsUrl } from '@gitroom/nestjs-libraries/dtos/webhooks/webhook.url.validator';
 import { BrandPrompt } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { readTextCapped } from '@gitroom/nestjs-libraries/upload/custom.upload.validation';
 
 const MAX_BRANDS = 20;
 const MAX_WORDS = 30;
@@ -16,7 +18,22 @@ const SOURCE_MAX_CHARS = 20_000;
 const SOURCE_MIN_CHARS = 10;
 export const BRAND_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const READ_TIMEOUT_MS = 30_000;
+const JINA_MAX_BYTES = 2 * 1024 * 1024;
+// a brand introduction is short; longer documents (and zip bombs) are refused before parsing
+const PDF_MAX_PAGES = 100;
+const DOCX_MAX_UNZIPPED_BYTES = 50 * 1024 * 1024;
 const EXAMPLES_IN_PROMPT = 1500;
+// the longest each field may be (the DTO's limits), so AI-filled fields always save
+const FIELD_MAX: Record<string, number> = {
+  name: 60,
+  tagline: 200,
+  products: 2000,
+  audience: 1000,
+  tone: 500,
+  cta: 300,
+  examples: 3000,
+};
+const WORD_MAX_CHARS = 40;
 
 export type BrandInput = BrandFields & { source?: string | null };
 export type BrandSourceInput = {
@@ -26,24 +43,38 @@ export type BrandSourceInput = {
 };
 
 const words = (list: unknown) =>
-  [...new Set((Array.isArray(list) ? list : []).map((w) => String(w ?? '').trim()).filter(Boolean))].slice(
-    0,
-    MAX_WORDS
-  );
-const textOrNull = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  [
+    ...new Set(
+      (Array.isArray(list) ? list : []).map((w) => String(w ?? '').trim().slice(0, WORD_MAX_CHARS)).filter(Boolean)
+    ),
+  ].slice(0, MAX_WORDS);
+const textOrNull = (value: unknown, max: number) =>
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
 
-/** Brand fields as stored: trimmed, empty text as null, word lists de-duplicated and capped. Pure. */
+/** Brand fields as stored: trimmed and within their limits, empty text as null, word lists de-duplicated. Pure. */
 export const cleanBrandFields = (raw: Partial<Record<keyof BrandFields, unknown>>): BrandFields => ({
-  name: String(raw.name ?? '').trim(),
-  tagline: textOrNull(raw.tagline),
-  products: textOrNull(raw.products),
-  audience: textOrNull(raw.audience),
-  tone: textOrNull(raw.tone),
+  name: String(raw.name ?? '').trim().slice(0, FIELD_MAX.name),
+  tagline: textOrNull(raw.tagline, FIELD_MAX.tagline),
+  products: textOrNull(raw.products, FIELD_MAX.products),
+  audience: textOrNull(raw.audience, FIELD_MAX.audience),
+  tone: textOrNull(raw.tone, FIELD_MAX.tone),
   keywords: words(raw.keywords),
   bannedWords: words(raw.bannedWords),
-  cta: textOrNull(raw.cta),
-  examples: textOrNull(raw.examples),
+  cta: textOrNull(raw.cta, FIELD_MAX.cta),
+  examples: textOrNull(raw.examples, FIELD_MAX.examples),
 });
+
+/** The uncompressed size a zip declares for its entries (read from its directory, nothing inflated). */
+const declaredUnzippedSize = (buffer: Buffer) => {
+  let total = 0;
+  unzipSync(new Uint8Array(buffer), {
+    filter: (entry) => {
+      total += entry.originalSize;
+      return false;
+    },
+  });
+  return total;
+};
 
 /**
  * The system-prompt block every AI writer gets for a brand: the filled fields, how to use the
@@ -106,7 +137,7 @@ export class BrandService {
     }
     return this._repository.create(orgId, {
       ...cleanBrandFields(data),
-      source: textOrNull(data.source),
+      source: textOrNull(data.source, 1000),
       isDefault: !(await this._repository.getDefault(orgId)),
     });
   }
@@ -173,7 +204,7 @@ export class BrandService {
         },
         signal: AbortSignal.timeout(READ_TIMEOUT_MS),
       });
-      const text = res.ok ? readableMarkdown(await res.text()) : '';
+      const text = res.ok ? readableMarkdown(await readTextCapped(res, JINA_MAX_BYTES)) : '';
       if (text.length >= SOURCE_MIN_CHARS) {
         return text;
       }
@@ -197,10 +228,22 @@ export class BrandService {
     const name = file.originalname.toLowerCase();
     const head = file.buffer.subarray(0, 5).toString('latin1');
     if (head === '%PDF-') {
-      const { text } = await extractText(await getDocumentProxy(new Uint8Array(file.buffer)), { mergePages: true });
-      return text;
+      const pdf = await getDocumentProxy(new Uint8Array(file.buffer));
+      if (pdf.numPages > PDF_MAX_PAGES) {
+        throw new HttpException(`文档超过 ${PDF_MAX_PAGES} 页，请上传品牌介绍部分`, 400);
+      }
+      return (await extractText(pdf, { mergePages: true })).text;
     }
     if (head.startsWith('PK\u0003\u0004') && name.endsWith('.docx')) {
+      let size: number;
+      try {
+        size = declaredUnzippedSize(file.buffer);
+      } catch {
+        throw new HttpException('Word 文件已损坏，打不开', 400);
+      }
+      if (size > DOCX_MAX_UNZIPPED_BYTES) {
+        throw new HttpException('Word 文件解压后太大，请上传品牌介绍部分', 400);
+      }
       return (await mammoth.extractRawText({ buffer: file.buffer })).value;
     }
     if (/\.(txt|md|markdown)$/.test(name) && !file.buffer.includes(0)) {

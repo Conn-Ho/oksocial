@@ -5,14 +5,16 @@ jest.mock('@gitroom/nestjs-libraries/dtos/webhooks/webhook.url.validator', () =>
     /^https?:\/\/(www\.)?example\.com/.test(url) && (o?.allowHttp || url.startsWith('https:'))
   ),
 }));
+jest.mock('file-type', () => ({}));
 jest.mock('unpdf', () => ({
-  getDocumentProxy: jest.fn(async () => ({ pdf: true })),
+  getDocumentProxy: jest.fn(async (data: Uint8Array) => ({ numPages: data.length > 100 ? 500 : 3 })),
   extractText: jest.fn(async () => ({ text: '⼩⿅咖啡是一家精品咖啡品牌，面向城市白领' })),
 }));
 jest.mock('mammoth', () => ({
   extractRawText: jest.fn(async () => ({ value: 'Word 文档里的品牌介绍，写得足够长了' })),
 }));
 
+import { zipSync, strToU8 } from 'fflate';
 import {
   BrandService,
   brandPromptBlock,
@@ -91,6 +93,10 @@ describe('cleanBrandFields / readableMarkdown', () => {
     expect(clean.keywords[0]).toBe('手冲');
     expect(clean.keywords).toHaveLength(30);
     expect(clean.bannedWords).toEqual(['第一']);
+    const long = cleanBrandFields({ name: '名'.repeat(80), tone: '语'.repeat(900), keywords: ['k'.repeat(60)], bannedWords: [] });
+    expect(long.name).toHaveLength(60);
+    expect(long.tone).toHaveLength(500);
+    expect(long.keywords[0]).toHaveLength(40);
   });
 
   it('readableMarkdown drops images and link targets, keeps the words', () => {
@@ -203,7 +209,8 @@ describe('BrandService.readSource', () => {
     const { service } = setup();
     const pdf = await service.readSource({ file: { buffer: Buffer.from('%PDF-1.4 ...'), originalname: 'brand.pdf' } });
     expect(pdf).toEqual({ text: '小鹿咖啡是一家精品咖啡品牌，面向城市白领', source: 'brand.pdf' });
-    const docx = await service.readSource({ file: { buffer: Buffer.from('PK\u0003\u0004rest'), originalname: '介绍.DOCX' } });
+    const docxZip = Buffer.from(zipSync({ 'word/document.xml': strToU8('<w:document/>') }));
+    const docx = await service.readSource({ file: { buffer: docxZip, originalname: '介绍.DOCX' } });
     expect(docx.text).toContain('Word 文档');
     const md = await service.readSource({ file: { buffer: Buffer.from('# 小鹿咖啡\n精品咖啡，面向城市白领的品牌'), originalname: 'a.md' } });
     expect(md.text).toContain('# 小鹿咖啡');
@@ -218,7 +225,27 @@ describe('BrandService.readSource', () => {
     await expect(service.readSource({ file: { buffer: Buffer.from('a\u0000b 很长很长的文本内容在这里'), originalname: 'a.txt' } })).rejects.toMatchObject({ status: 400 });
     await expect(service.readSource({ file: { buffer: Buffer.alloc(11 * 1024 * 1024, 'a'), originalname: 'a.txt' } })).rejects.toMatchObject({ status: 400 });
     await expect(service.readSource({ text: '太短' })).rejects.toMatchObject({ status: 400 });
+    await expect(service.readSource({ file: { buffer: Buffer.from('PK\u0003\u0004broken'), originalname: 'a.docx' } })).rejects.toMatchObject({ status: 400 });
+    const longPdf = Buffer.concat([Buffer.from('%PDF-1.7'), Buffer.alloc(200)]);
+    await expect(service.readSource({ file: { buffer: longPdf, originalname: 'book.pdf' } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('100 页') });
     await expect(service.readSource({})).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('refuses a Word file that would unpack to more than 50 MB, before parsing it', async () => {
+    const mammoth = jest.requireMock('mammoth');
+    mammoth.extractRawText.mockClear();
+    const bomb = Buffer.from(zipSync({ 'word/document.xml': [new Uint8Array(51 * 1024 * 1024), { level: 1 }] }));
+    expect(bomb.length).toBeLessThan(1024 * 1024);
+    const { service } = setup();
+    await expect(service.readSource({ file: { buffer: bomb, originalname: 'bomb.docx' } })).rejects.toMatchObject({ status: 400 });
+    expect(mammoth.extractRawText).not.toHaveBeenCalled();
+  });
+
+  it('stops reading a Jina page past its size limit and falls back', async () => {
+    fetchSpy.mockResolvedValueOnce(new Response('字'.repeat(1024 * 1024), { status: 200 }));
+    const { service, extract } = setup();
+    await service.readSource({ url: 'https://example.com' });
+    expect(extract.extractContent).toHaveBeenCalled();
   });
 
   it('takes pasted text as it is and caps what goes to the model', async () => {

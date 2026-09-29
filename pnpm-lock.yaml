@@ -400,6 +400,9 @@ importers:
       fast-xml-parser:
         specifier: ^5.11.0
         version: 5.11.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       file-type:
         specifier: ^22.0.2
         version: 22.0.2
