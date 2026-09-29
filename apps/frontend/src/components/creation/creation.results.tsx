@@ -308,7 +308,7 @@ export const CreationResults: FC<Shared & { result: CreationResult }> = ({ resul
     case 'translate':
       return (
         <div className="flex flex-col gap-[12px]">
-          <div className="grid grid-cols-2 gap-[12px] max-md:grid-cols-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-[12px]">
             <figure className="flex flex-col gap-[6px]">
               <img src={result.output.source.path} alt="" className="w-full rounded-[10px] border border-newTableBorder" />
               <figcaption className="text-[12px] text-textColor/50">{t('creation_original_image', '原图')}</figcaption>

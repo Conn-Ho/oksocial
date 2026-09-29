@@ -224,7 +224,7 @@ export const BrandForm: FC<{ existing?: Brand; close: () => void; onSaved: () =>
       )}
 
       {filled && (
-        <div key={version} className="grid grid-cols-2 gap-[12px] max-md:grid-cols-1">
+        <div key={version} className="grid grid-cols-1 md:grid-cols-2 gap-[12px]">
           <Field label={t('brand_name', '品牌名')}>
             <input value={fields.name} onChange={(e) => set('name', e.target.value)} maxLength={60} className={fieldClass} />
           </Field>
@@ -256,7 +256,7 @@ export const BrandForm: FC<{ existing?: Brand; close: () => void; onSaved: () =>
             danger={true}
             onChange={(v) => set('bannedWords', v)}
           />
-          <div className="col-span-2 max-md:col-span-1">
+          <div className="md:col-span-2">
             <Field label={t('brand_examples', '示例文案')} hint={t('brand_examples_hint', 'AI 学它的语气和用词，不会照抄')}>
               <textarea value={fields.examples || ''} onChange={(e) => set('examples', e.target.value)} maxLength={3000} className={clsx(areaClass, 'min-h-[110px]')} />
             </Field>

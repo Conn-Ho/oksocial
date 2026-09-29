@@ -61,10 +61,10 @@ export const CreationComponent: FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col gap-[16px] p-[24px] flex-1 overflow-y-auto max-sm:p-[16px]">
+    <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
-        <h2 className="text-[24px] font-semibold">{t('creation', 'AI 创作')}</h2>
-        <nav className="flex gap-[4px]" role="tablist">
+        <h2 className="hidden md:block text-[24px] font-semibold">{t('creation', 'AI 创作')}</h2>
+        <nav className="flex gap-[4px] max-w-full overflow-x-auto" role="tablist">
           {TABS.map((x) => (
             <button
               key={x.key}
@@ -72,7 +72,7 @@ export const CreationComponent: FC = () => {
               role="tab"
               aria-selected={tab === x.key}
               onClick={() => setTab(x.key)}
-              className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px]', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
+              className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
             >
               {t(`creation_tab_${x.key}`, x.label)}
             </button>
@@ -80,7 +80,7 @@ export const CreationComponent: FC = () => {
         </nav>
       </header>
 
-      <div className={clsx('grid gap-[24px] grid-cols-[minmax(0,440px)_minmax(0,1fr)] max-lg:grid-cols-1', tab !== 'desk' && 'hidden')}>
+      <div className={clsx('grid gap-[24px] grid-cols-1 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]', tab !== 'desk' && 'hidden')}>
         <div>
           {platforms && brands && (
             <CreationDesk brands={brands} platforms={platforms} canWrite={canWrite} preset={preset} onResult={(r) => show(r, true)} />

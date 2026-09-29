@@ -335,7 +335,7 @@ export const CreationDesk: FC<{
               <span className="text-textColor">{preset.title || t('remake_untitled', '（无标题）')}</span>
             </p>
           )}
-          <div className="grid grid-cols-2 gap-[12px] max-sm:grid-cols-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
             <Label text={t('creation_remake_platform', '改写成哪个平台的帖子')}>
               <PlatformSelect platforms={platforms} value={platform} onChange={setPlatform} />
             </Label>

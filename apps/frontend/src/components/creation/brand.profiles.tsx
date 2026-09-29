@@ -82,7 +82,7 @@ export const BrandProfiles: FC<{ canManage: boolean }> = ({ canManage }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-[12px] max-lg:grid-cols-1">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-[12px]">
         {(brands || []).map((b) => (
           <section key={b.id} className="rounded-[10px] border border-newTableBorder p-[16px] flex flex-col gap-[10px]">
             <header className="flex items-start gap-[10px]">
