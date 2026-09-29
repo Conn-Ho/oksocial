@@ -129,7 +129,7 @@ const Manage: FC = () => {
             <div className="flex items-center gap-[14px] text-[12px] text-textColor/50 flex-wrap">
               <span>近 30 天：执行 {s.DONE || 0} · 待确认 {s.HELD || 0} · 失败 {s.FAILED || 0}</span>
               <span>{a.lastRunAt ? `上次运行 ${dayjs(a.lastRunAt).format('MM-DD HH:mm')}` : '还没运行过'}</span>
-              {a.lastError && <span className="text-red-400 truncate max-w-[360px]">错误：{a.lastError}</span>}
+              {a.lastError && <span className="text-red-400 truncate max-w-full md:max-w-[360px]">错误：{a.lastError}</span>}
               {canManage && (
                 <span className="ms-auto flex gap-[12px] text-[13px] text-textColor/80">
                   <button type="button" className="hover:underline" onClick={() => runNow(a)}>{t('run_now', '立即运行')}</button>
@@ -271,12 +271,12 @@ export const AutomationsComponent: FC = () => {
   const t = useT();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('manage');
   return (
-    <div className="flex flex-col gap-[16px] p-[24px] flex-1 overflow-y-auto">
+    <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
-        <h2 className="text-[24px] font-semibold">{t('automations', '自动化')}</h2>
-        <nav className="flex gap-[4px]" role="tablist">
+        <h2 className="hidden md:block text-[24px] font-semibold">{t('automations', '自动化')}</h2>
+        <nav className="flex gap-[4px] max-w-full overflow-x-auto" role="tablist">
           {TABS.map((x) => (
-            <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => setTab(x.key)} className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px]', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}>
+            <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => setTab(x.key)} className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}>
               {t(`automations_tab_${x.key}`, x.label)}
             </button>
           ))}

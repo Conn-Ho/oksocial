@@ -82,10 +82,10 @@ export const ReportsComponent: FC = () => {
   }, [weekly]);
 
   return (
-    <div className="flex flex-col gap-[20px] p-[24px] flex-1 overflow-y-auto">
+    <div className="flex flex-col gap-[20px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
-        <h2 className="text-[24px] font-semibold">{t('reports', '报告')}</h2>
-        <div className="flex gap-[4px] ms-auto" role="tablist" aria-label={t('period', '周期')}>
+        <h2 className="hidden md:block text-[24px] font-semibold">{t('reports', '报告')}</h2>
+        <div className="flex gap-[4px] md:ms-auto max-w-full overflow-x-auto" role="tablist" aria-label={t('period', '周期')}>
           {PERIODS.map((p) => (
             <button
               key={p}
@@ -93,7 +93,7 @@ export const ReportsComponent: FC = () => {
               role="tab"
               aria-selected={days === p}
               onClick={() => setDays(p)}
-              className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px]', days === p ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
+              className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', days === p ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
             >
               {t('last_n_days', '近 {{n}} 天', { n: p })}
             </button>
@@ -126,15 +126,15 @@ export const ReportsComponent: FC = () => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('share_password', '访问密码（可选）')}
               autoComplete="new-password"
-              className="bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[13px] w-[180px]"
+              className="bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[13px] w-[180px] min-w-0 flex-1 sm:flex-initial"
             />
             <Button onClick={createShare}>{t('create_share', '生成并复制链接')}</Button>
           </div>
         )}
         <ul className="flex flex-col gap-[6px]">
           {(shares || []).map((s) => (
-            <li key={s.id} className="flex items-center gap-[10px] text-[13px] bg-newTableHeader rounded-[6px] px-[10px] py-[8px]">
-              <span className="truncate font-mono">{s.url}</span>
+            <li key={s.id} className="flex items-center flex-wrap md:flex-nowrap gap-x-[10px] gap-y-[4px] text-[13px] bg-newTableHeader rounded-[6px] px-[10px] py-[8px]">
+              <span className="truncate font-mono min-w-0 max-w-full">{s.url}</span>
               <span className="text-textColor/50 shrink-0">
                 {t('last_n_days', '近 {{n}} 天', { n: s.days })} · {s.expiresAt ? `${dayjs(s.expiresAt).format('MM-DD')} 到期` : '永久'}
                 {s.hasPassword ? ' · 有密码' : ''}

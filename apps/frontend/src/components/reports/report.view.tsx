@@ -28,9 +28,9 @@ export type ChannelReport = {
 const fmt = (v: number | null) => (v === null ? '—' : v.toLocaleString('zh-CN'));
 
 const Kpi: FC<{ label: string; kpi: KpiValue; hint: string }> = ({ label, kpi, hint }) => (
-  <div className="rounded-[10px] bg-newTableHeader p-[18px] flex flex-col gap-[6px] min-w-0">
+  <div className="rounded-[10px] bg-newTableHeader p-[14px] sm:p-[18px] flex flex-col gap-[6px] min-w-0">
     <span className="text-[13px] text-textColor/60">{label}</span>
-    <span className="text-[28px] font-semibold leading-none tabular-nums">{fmt(kpi.value)}</span>
+    <span className="text-[22px] sm:text-[28px] font-semibold leading-none tabular-nums">{fmt(kpi.value)}</span>
     <span className="text-[12px] text-textColor/50">
       {kpi.change === null ? (
         hint

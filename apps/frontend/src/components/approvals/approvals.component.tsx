@@ -32,7 +32,7 @@ const RejectReason: FC<{ onSubmit: (note: string) => void }> = ({ onSubmit }) =>
   const t = useT();
   const [note, setNote] = useState('');
   return (
-    <div className="flex flex-col gap-[12px] min-w-[360px]">
+    <div className="flex flex-col gap-[12px] w-full md:min-w-[360px]">
       <textarea
         autoFocus
         value={note}
@@ -99,10 +99,10 @@ export const ApprovalsComponent: FC = () => {
   );
 
   return (
-    <div className="flex flex-col gap-[16px] p-[24px] flex-1">
+    <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0">
       <div>
-        <h2 className="text-[24px] font-semibold">{t('approvals', '审核')}</h2>
-        <p className="text-[14px] text-textColor/60 mt-[4px]">
+        <h2 className="hidden md:block text-[24px] font-semibold">{t('approvals', '审核')}</h2>
+        <p className="text-[14px] text-textColor/60 md:mt-[4px]">
           {t(
             'approvals_intro',
             '内容运营提交的定时帖子在这里等待审核，通过后按原定时间发布；退回的帖子会变回草稿。'

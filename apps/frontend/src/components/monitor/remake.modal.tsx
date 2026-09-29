@@ -149,7 +149,7 @@ export const RemakeModal: FC<{
         <Segmented label={t('remake_length', '篇幅')} value={length} onChange={setLength} options={LENGTHS} />
       </div>
 
-      <div className="grid grid-cols-2 gap-[12px] max-sm:grid-cols-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
         <label className="flex flex-col gap-[6px] text-[13px]">
           <span className="text-textColor/70">{t('remake_channel', '发到哪个账号')}</span>
           <select value={integrationId} onChange={(e) => setIntegrationId(e.target.value)} className={fieldClass}>
@@ -186,7 +186,7 @@ export const RemakeModal: FC<{
       </p>
 
       {original && (
-        <div className="grid grid-cols-2 gap-[12px] max-md:grid-cols-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-[12px]">
           <details className="bg-newTableHeader/60 rounded-[8px] p-[10px] text-[13px] max-h-[260px] overflow-y-auto" open={true}>
             <summary className="cursor-pointer text-textColor/70 mb-[6px]">{t('remake_original', '原文')}</summary>
             {original.title && <p className="font-semibold mb-[4px]">{original.title}</p>}

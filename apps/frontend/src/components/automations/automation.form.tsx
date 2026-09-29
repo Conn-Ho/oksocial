@@ -330,7 +330,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
 
       <div className="flex flex-col gap-[6px]">
         <div className="flex gap-[8px]">
-          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : type === 'FOLLOW_BACK' ? '粘贴一个人的名字或简介试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1')} />
+          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : type === 'FOLLOW_BACK' ? '粘贴一个人的名字或简介试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1 min-w-0')} />
           <Button secondary={true} loading={busy === 'test'} disabled={!sample.trim() && type !== 'AUTO_POST'} onClick={test}>
             {t('test', '测试')}
           </Button>

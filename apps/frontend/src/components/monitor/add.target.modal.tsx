@@ -109,7 +109,7 @@ export const AddTargetModal: FC<{
         <span className="text-[12px] text-textColor/50 leading-[1.5]">{copy.hint}</span>
       </label>
 
-      <div className="grid grid-cols-2 gap-[12px] max-sm:grid-cols-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
         {kind !== 'POST' && (
           <label className="flex flex-col gap-[6px] text-[13px]">
             <span className="text-textColor/70">{t('platform', '平台')}</span>
