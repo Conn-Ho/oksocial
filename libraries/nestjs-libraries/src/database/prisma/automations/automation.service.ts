@@ -2,10 +2,8 @@ import { HttpException, Injectable } from '@nestjs/common';
 import { Automation, AutomationActionStatus } from '@prisma/client';
 import dayjs from 'dayjs';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
-import {
-  AutomationRunner,
-  automationPostBody,
-} from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
+import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
+import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
@@ -169,7 +167,7 @@ export class AutomationService {
         if (!target) {
           throw new Error('账号已不存在');
         }
-        await this._postsService.createPost(orgId, automationPostBody(target, text, 'draft', new Date()) as any, 'AUTOMATION' as any);
+        await this._postsService.createPost(orgId, editorPostBody(target, [text], new Date()), 'AUTOMATION');
       }
       await this._repository.setActionStatus(action.id, 'DONE');
       return { ok: true };

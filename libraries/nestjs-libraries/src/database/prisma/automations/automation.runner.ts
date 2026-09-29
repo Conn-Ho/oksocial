@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Automation, InboxItem, Integration } from '@prisma/client';
+import { Automation, InboxItem } from '@prisma/client';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
@@ -7,6 +7,7 @@ import { InboxService } from '@gitroom/nestjs-libraries/database/prisma/inbox/in
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/automation.ai.service';
+import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
 import {
   AutomationConfig,
@@ -36,26 +37,6 @@ type Context = {
 /** Lower-cased names/handles/ids of the organization's own accounts. Pure. */
 export const ownKeys = (rows: Array<{ internalId: string; name: string; profile: string | null }>) =>
   new Set(rows.flatMap((r) => [r.internalId, r.name, r.profile].filter(Boolean).map((v) => String(v).toLowerCase())));
-
-/** Create-post request for automations (same shape as the editor). Pure. */
-export const automationPostBody = (
-  integration: Pick<Integration, 'id' | 'providerIdentifier'>,
-  content: string,
-  type: 'draft' | 'now' | 'schedule',
-  date: Date
-) => ({
-  type,
-  shortLink: false,
-  date: dayjs(date).utc().format('YYYY-MM-DDTHH:mm:ss'),
-  tags: [] as Array<{ value: string; label: string }>,
-  posts: [
-    {
-      integration: { id: integration.id },
-      value: [{ content, image: [] as Array<{ id: string; path: string }> }],
-      settings: { __type: integration.providerIdentifier } as any,
-    },
-  ],
-});
 
 /** A random time inside [startHour, endHour) today if it is still ahead, else tomorrow. Pure. */
 export const slotInWindow = (now: Date, hours: [number, number], random = Math.random) => {
@@ -314,7 +295,7 @@ export class AutomationRunner {
         }
         const text = await this._ai.rewrite(stripHtmlValidation('none', post.content), c);
         await this.act(ctx, { integrationId: target.id, targetKey, targetLabel: target.name, kind: 'post', content: text }, () =>
-          this._postsService.createPost(org, automationPostBody(target, text, c.publish, new Date()) as any, 'AUTOMATION' as any)
+          this._postsService.createPost(org, editorPostBody(target, [text], new Date(), { type: c.publish }), 'AUTOMATION')
         );
         if (ctx.remaining <= 0) {
           return;
@@ -340,7 +321,7 @@ export class AutomationRunner {
         await this.act(
           ctx,
           { integrationId: target.id, targetKey: `auto:${target.id}:${day}:${n}`, targetLabel: topic, kind: 'post', content: text },
-          () => this._postsService.createPost(org, automationPostBody(target, text, c.publish, date) as any, 'AUTOMATION' as any)
+          () => this._postsService.createPost(org, editorPostBody(target, [text], date, { type: c.publish }), 'AUTOMATION')
         );
       }
     }

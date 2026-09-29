@@ -39,7 +39,6 @@ import {
   extractUrl,
   freshPosts,
   metricsOf,
-  remakePostBody,
   summarizePosts,
 } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.service';
 
@@ -589,23 +588,5 @@ describe('helpers', () => {
     expect(s.daily[6]).toEqual({ date: '2026-09-29', posts: 1, engagement: 12 });
     expect(s.daily[4]).toEqual({ date: '2026-09-27', posts: 1, engagement: 20 });
     expect(summarizePosts([], 30, now)).toEqual(expect.objectContaining({ posts: 0, engagementPerPost: 0, avgLikes: null }));
-  });
-
-  it('remakePostBody is a text-only draft in editor paragraphs', () => {
-    const body = remakePostBody({ id: 'c1', providerIdentifier: 'xiaohongshu' }, '标题\n\n第一段 <b>&\n', new Date('2026-10-01T12:00:00Z'));
-    expect(body).toEqual({
-      type: 'draft',
-      shortLink: false,
-      date: '2026-10-01T12:00:00',
-      tags: [],
-      posts: [
-        {
-          group: expect.any(String),
-          integration: { id: 'c1' },
-          value: [{ id: '', delay: 0, content: '<p>标题</p><p></p><p>第一段 &lt;b&gt;&amp;</p>', image: [] }],
-          settings: { __type: 'xiaohongshu' },
-        },
-      ],
-    });
   });
 });

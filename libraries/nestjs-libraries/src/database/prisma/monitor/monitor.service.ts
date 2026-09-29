@@ -24,8 +24,7 @@ import {
   RemakeLength,
   RemakeTone,
 } from '@gitroom/nestjs-libraries/monitor/monitor.ai.service';
-import { CreatePostDto } from '@gitroom/nestjs-libraries/dtos/posts/create.post.dto';
-import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
+import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
@@ -122,43 +121,6 @@ export const summarizePosts = (posts: Countable[], days: number, now = new Date(
     daily,
   };
 };
-
-const escapeHtml = (text: string) =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/**
- * The create-post request of a 复刻 draft (the same shape the editor sends): the text as editor
- * paragraphs so line breaks survive opening it in the editor, and no media. Pure.
- */
-export const remakePostBody = (
-  integration: { id: string; providerIdentifier: string },
-  text: string,
-  date: Date
-): CreatePostDto => ({
-  type: 'draft',
-  shortLink: false,
-  date: dayjs(date).utc().format('YYYY-MM-DDTHH:mm:ss'),
-  tags: [],
-  posts: [
-    {
-      group: makeId(10),
-      integration: { id: integration.id },
-      value: [
-        {
-          id: '',
-          delay: 0,
-          content: text
-            .trim()
-            .split('\n')
-            .map((line) => `<p>${escapeHtml(line.trim())}</p>`)
-            .join(''),
-          image: [],
-        },
-      ],
-      settings: { __type: integration.providerIdentifier as any },
-    },
-  ],
-});
 
 @Injectable()
 export class MonitorService implements OnModuleInit {
@@ -663,7 +625,7 @@ export class MonitorService implements OnModuleInit {
     const integration = await this.channelFor(orgId, integrationId);
     const date = dayjs().add(1, 'hour').startOf('hour').toDate();
     const body = await this._postsService.mapTypeToPost(
-      remakePostBody(integration, content, date),
+      editorPostBody(integration, [content], date),
       orgId
     );
     const [created] = await this._postsService.createPost(orgId, body, 'WEB');

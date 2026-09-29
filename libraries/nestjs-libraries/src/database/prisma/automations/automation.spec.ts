@@ -13,7 +13,6 @@ jest.mock('isomorphic-dompurify', () => ({ __esModule: true, default: { sanitize
 
 import {
   AutomationRunner,
-  automationPostBody,
   ownKeys,
   slotInWindow,
 } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
@@ -93,11 +92,6 @@ describe('helpers', () => {
     expect(slotInWindow(morning, [9, 22], () => 0).toISOString()).toBe(new Date('2026-10-01T09:00:00+08:00').toISOString());
     const late = new Date('2026-10-01T23:00:00+08:00');
     expect(slotInWindow(late, [9, 22], () => 0).toISOString()).toBe(new Date('2026-10-02T09:00:00+08:00').toISOString());
-  });
-
-  it('automationPostBody matches the editor request', () => {
-    const body = automationPostBody({ id: 'ch1', providerIdentifier: 'xiaohongshu' }, 'hi', 'draft', new Date('2026-10-01T00:00:00Z'));
-    expect(body).toEqual(expect.objectContaining({ type: 'draft', date: '2026-10-01T00:00:00', posts: [expect.objectContaining({ settings: { __type: 'xiaohongshu' } })] }));
   });
 
   it('isDue respects the per-type interval', () => {
