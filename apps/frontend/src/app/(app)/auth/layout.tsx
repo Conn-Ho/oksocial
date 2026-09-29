@@ -25,6 +25,18 @@ export default async function AuthLayout({
             <LogoTextComponent />
             <div className="flex">{children}</div>
           </div>
+          <p className="mt-[24px] text-center text-[12px] text-white/50">
+            {t('auth_agpl_notice', 'oksocial 基于开源项目 Postiz，按 AGPL-3.0 协议开源')}
+            {' · '}
+            <a
+              href="https://github.com/Conn-Ho/oksocial"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-white focus-visible:text-white"
+            >
+              {t('source_code', '源代码')}
+            </a>
+          </p>
         </div>
         <div className="flex-1 hidden lg:flex flex-col justify-center px-[72px]">
           <h2 className="text-[40px] font-semibold leading-[1.25] max-w-[560px]">
@@ -34,6 +46,8 @@ export default async function AuthLayout({
             {[
               t('auth_pitch_1', '小红书、抖音、微博、X 扫码接入，每个账号独立浏览器与出口 IP'),
               t('auth_pitch_2', '定时发布、日历、草稿、Excel 批量导入'),
+              t('auth_pitch_5', '互动收件箱：评论、私信、@ 集中处理，AI 建议回复'),
+              t('auth_pitch_6', '监控竞品、帖子与关键词，一键复刻爆款'),
               t('auth_pitch_3', '团队角色与发布审核，内容运营提交、主管把关'),
               t('auth_pitch_4', '登录保活：账号掉线自动提醒，一键重新扫码'),
             ].map((line) => (
