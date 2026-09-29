@@ -44,8 +44,29 @@ type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '');
 const strList = (v: unknown) => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
-const chars = (text: string, max?: number) => (max ? Array.from(text).slice(0, max).join('') : text);
+// where a too-long title may be cut without breaking a word
+const TITLE_BREAK = /[\s，。！？、：；,.!?:;｜|·—-]/;
+const COUNTING = '（按字符数算：中文、英文字母、数字、标点、空格、emoji 各算 1 个）';
 const tagsOf = (v: unknown) => [...new Set(strList(v).map((t) => t.replace(/^#+|#+$/g, '').trim()).filter(Boolean))].slice(0, MAX_TAGS);
+
+/**
+ * A title within `max` characters (code points, as the providers take titles): cut at the last
+ * space or punctuation in the second half when there is one, so no word is broken. Pure.
+ */
+export const fitTitle = (text: string, max?: number) => {
+  const title = text.trim();
+  const chars = Array.from(title);
+  if (!max || chars.length <= max) {
+    return title;
+  }
+  const cut = chars.slice(0, max);
+  for (let i = cut.length - 1; i >= Math.ceil(max / 2); i--) {
+    if (TITLE_BREAK.test(cut[i])) {
+      return cut.slice(0, i).join('').trim();
+    }
+  }
+  return cut.join('');
+};
 
 /** Length as the platform counts it: X-style weights, else Postiz's own counting. */
 const measure = (p: CreationPlatform) => (text: string) =>
@@ -125,7 +146,7 @@ export const readVersions = (reply: string, platforms: CreationPlatform[]): Plat
     }
     const version: PlatformVersion = {
       platform: p.identifier,
-      title: p.titleMax ? chars(str(found.title), p.titleMax) : '',
+      title: p.titleMax ? fitTitle(str(found.title), p.titleMax) : '',
       body: str(found.body),
       tags: tagsOf(found.tags),
       script: p.format === 'video' ? str(found.script) : '',
@@ -139,13 +160,18 @@ export const readVersions = (reply: string, platforms: CreationPlatform[]): Plat
   return versions.length ? versions : null;
 };
 
-/** 标题与标签 reply: distinct titles within the platform's title length, topics without #. Pure. */
+/**
+ * 标题与标签 reply: distinct titles within the platform's title length (those that fit as written
+ * come first, the others are cut at a natural break), topics without #. Pure.
+ */
 export const readTitles = (reply: string, count: number, titleMax?: number): TitlesResult | null => {
   const raw = parseJsonLoose<unknown>(reply);
   if (!isObject(raw)) {
     return null;
   }
-  const titles = [...new Set(strList(raw.titles).map((t) => chars(t, titleMax)))].slice(0, count);
+  const all = strList(raw.titles);
+  const fits = (t: string) => !titleMax || Array.from(t).length <= titleMax;
+  const titles = [...new Set([...all.filter(fits), ...all.filter((t) => !fits(t))].map((t) => fitTitle(t, titleMax)))].slice(0, count);
   return titles.length ? { titles, hashtags: tagsOf(raw.hashtags) } : null;
 };
 
@@ -166,7 +192,7 @@ export const readScript = (reply: string, seconds: number, titleMax?: number): S
     .filter((s) => s.visual || s.voiceover)
     .slice(0, MAX_SHOTS);
   return shots.length
-    ? { title: chars(str(raw.title), titleMax), hook: str(raw.hook), shots, tags: tagsOf(raw.tags) }
+    ? { title: fitTitle(str(raw.title), titleMax), hook: str(raw.hook), shots, tags: tagsOf(raw.tags) }
     : null;
 };
 
@@ -197,7 +223,7 @@ const platformLine = (p: CreationPlatform) =>
   [
     p.format === 'video' && '视频平台，写 script（真人对着镜头说的口播稿）和 body（发布时的视频描述）',
     p.format === 'thread' && `串推平台，把内容写成 parts 数组，每条不超过 ${p.maxLength} 字符`,
-    p.titleMax && `标题不超过 ${p.titleMax} 字`,
+    p.titleMax && `标题不超过 ${p.titleMax} 个字符${COUNTING}`,
     p.format !== 'thread' && `全文不超过 ${p.maxLength} 字`,
     p.guide,
   ]
@@ -244,7 +270,7 @@ export class CreationAiService extends InboxAiService {
   titles(text: string, count: number, platform: CreationPlatform | undefined, brand: BrandPrompt) {
     return this.generate(
       `你是爆款标题写手。为用户的草稿写 ${count} 个不同角度的标题` +
-        (platform ? `（发在${platform.name}${platform.titleMax ? `，每个不超过 ${platform.titleMax} 字` : ''}）` : '') +
+        (platform ? `（发在${platform.name}${platform.titleMax ? `，每个不超过 ${platform.titleMax} 个字符${COUNTING}` : ''}）` : '') +
         '，再给 5-10 个相关的话题标签（不带 #）。不要标题党式的夸大和虚假承诺。' +
         '只输出 JSON：{"titles":["标题"],"hashtags":["话题"]}',
       `草稿：\n${text.slice(0, SOURCE_MAX_CHARS)}`,
@@ -260,7 +286,7 @@ export class CreationAiService extends InboxAiService {
       `你是短视频编导。根据用户的需求写一个约 ${seconds} 秒的竖屏短视频脚本${platform ? `，发在${platform.name}` : ''}：` +
         '先写开头 3 秒抓人的钩子（hook），再按镜头拆分，每个镜头写画面（visual）、口播（voiceover）、字幕（caption）' +
         `和时长（seconds，整数），所有镜头加起来约 ${seconds} 秒；再给一个标题` +
-        (platform?.titleMax ? `（不超过 ${platform.titleMax} 字）` : '') +
+        (platform?.titleMax ? `（不超过 ${platform.titleMax} 个字符${COUNTING}）` : '') +
         '和 3-5 个话题标签（不带 #）。只输出 JSON：' +
         '{"title":"","hook":"","shots":[{"visual":"","voiceover":"","caption":"","seconds":3}],"tags":[]}',
       `需求：\n${brief.slice(0, SOURCE_MAX_CHARS)}`,

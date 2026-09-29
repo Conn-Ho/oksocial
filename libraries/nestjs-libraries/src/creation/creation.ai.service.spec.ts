@@ -3,6 +3,7 @@ import {
   CreationPlatform,
   composeParts,
   coverPrompt,
+  fitTitle,
   readBrand,
   readScript,
   readTitles,
@@ -49,6 +50,17 @@ describe('splitToFit', () => {
   it('counts with the given measure (X weighs CJK double)', () => {
     const weighted = (s: string) => Array.from(s).reduce((n, c) => n + (c.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
     expect(splitToFit('中文中文中文', 6, weighted)).toEqual(['中文中', '文中文']);
+  });
+});
+
+describe('fitTitle', () => {
+  it('keeps titles that fit and cuts others at the last natural break', () => {
+    expect(fitTitle(' 秋天第一杯拿铁 ', 20)).toBe('秋天第一杯拿铁');
+    expect(fitTitle('告别手动建单，Linear 让重复任务自动循环', 20)).toBe('告别手动建单，Linear');
+    expect(fitTitle('产研团队提速：用 Linear 自动化重复流程，找回专注与节奏', 30)).toBe('产研团队提速：用 Linear 自动化重复流程');
+    expect(fitTitle('一二三四五六七八九十一二三四五六七八九十一二', 20)).toBe('一二三四五六七八九十一二三四五六七八九十');
+    expect(fitTitle('无限制', undefined)).toBe('无限制');
+    expect(fitTitle('😀'.repeat(25), 20)).toHaveLength(40);
   });
 });
 
@@ -107,7 +119,7 @@ describe('readVersions', () => {
 
 describe('readTitles / readScript / readBrand', () => {
   it('titles: de-duplicated, capped to the count and the platform title length, tags without #', () => {
-    const t = readTitles('{"titles":["标题一","标题一","这个标题特别特别特别特别特别特别长"," "],"hashtags":["#咖啡","咖啡","拿铁"]}', 5, 10)!;
+    const t = readTitles('{"titles":["这个标题特别特别特别特别特别特别长","标题一","标题一"," "],"hashtags":["#咖啡","咖啡","拿铁"]}', 5, 10)!;
     expect(t.titles).toEqual(['标题一', '这个标题特别特别特别']);
     expect(t.hashtags).toEqual(['咖啡', '拿铁']);
     expect(readTitles('{"titles":[]}', 5)).toBeNull();
@@ -167,7 +179,7 @@ describe('CreationAiService templates', () => {
     const versions = await ai.adapt('原文内容', [XHS, WEIBO], '语气轻松', BRAND);
     const [system, user] = call(chat);
     expect(system).toContain('xiaohongshu（小红书）');
-    expect(system).toContain('标题不超过 20 字');
+    expect(system).toContain('标题不超过 20 个字符');
     expect(system).toContain('小红书指南');
     expect(system).toContain('微博指南');
     expect(system).toContain('品牌：小鹿咖啡');
