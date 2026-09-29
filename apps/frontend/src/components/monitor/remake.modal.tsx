@@ -2,6 +2,7 @@
 
 import React, { FC, useCallback, useState } from 'react';
 import clsx from 'clsx';
+import Link from 'next/link';
 import dayjs from 'dayjs';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useToaster } from '@gitroom/react/toaster/toaster';
@@ -22,7 +23,7 @@ const LENGTHS = [
 
 type Channel = { id: string; name: string; identifier: string; disabled?: boolean };
 
-const Segmented: FC<{
+export const Segmented: FC<{
   label: string;
   value: string;
   options: Array<{ value: string; label: string; disabled?: boolean; hint?: string }>;
@@ -172,7 +173,16 @@ export const RemakeModal: FC<{
       </div>
 
       <p className="text-[12px] text-textColor/50 leading-[1.5]">
-        {t('remake_media_note', '不会复制原帖的图片：草稿只有文字，图片请在编辑器里自己添加（AI 生图随 AI 创作模块提供）。')}
+        {t('remake_media_note_create', '不会复制原帖的图片：草稿只有文字，图片请在编辑器里添加，或在「AI 创作」里生成封面。')}
+        {!needsUrl && (
+          <Link
+            href={`/create?template=remake&${source.itemId ? `itemId=${source.itemId}` : `targetId=${source.targetId}`}&title=${encodeURIComponent(source.title || '')}`}
+            onClick={close}
+            className="text-btnPrimary hover:underline ms-[6px]"
+          >
+            {t('remake_open_in_create', '在 AI 创作台打开（可选品牌档案和平台）')}
+          </Link>
+        )}
       </p>
 
       {original && (
