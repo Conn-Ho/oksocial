@@ -123,7 +123,7 @@ export const MonitorItems: FC<{
             {page} / {data?.pages}
           </span>
           <button type="button" disabled={page >= (data?.pages || 1)} onClick={() => setPage((p) => p + 1)} className="disabled:opacity-40">
-            {t('next', '下一页')}
+            {t('next_page', '下一页')}
           </button>
         </div>
       )}

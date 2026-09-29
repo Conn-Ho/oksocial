@@ -86,10 +86,11 @@ export const ApprovalsComponent: FC = () => {
       modal.openModal({
         title: t('reject_title', '退回修改'),
         withCloseButton: true,
-        children: (
+        // this modal's own close: closeCurrent() here would run outside the modal
+        children: (close: () => void) => (
           <RejectReason
             onSubmit={(note) => {
-              modal.closeCurrent();
+              close();
               review(group, 'reject', note);
             }}
           />

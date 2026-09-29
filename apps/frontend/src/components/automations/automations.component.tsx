@@ -72,10 +72,11 @@ const Manage: FC = () => {
         title: t('new_automation', '新建自动化'),
         withCloseButton: true,
         classNames: { modal: 'bg-transparent text-textColor w-[760px] max-w-[95vw]' },
-        children: (
+        // called with this modal's own close: closeCurrent() here would run outside the modal
+        children: (close: () => void) => (
           <TypeShelf
             onPick={(type) => {
-              modal.closeCurrent();
+              close();
               openForm(type);
             }}
           />
@@ -98,7 +99,7 @@ const Manage: FC = () => {
   }, []);
 
   const remove = useCallback(async (a: Automation) => {
-    if (await deleteDialog(t('delete_automation_confirm', '删除「{{name}}」？', { name: a.name }))) {
+    if (await deleteDialog(t('delete_automation_confirm', '删除「{{name}}」？', { name: a.name, interpolation: { escapeValue: false } }))) {
       await fetch(`/automations/${a.id}`, { method: 'DELETE' });
       mutate();
     }

@@ -134,7 +134,7 @@ export const BrandProfiles: FC<{ canManage: boolean }> = ({ canManage }) => {
                 <Chips words={b.bannedWords} danger={true} />
               </span>
             )}
-            {b.source && <span className="text-[12px] text-textColor/40 truncate">{t('brand_from', '来源：{{source}}', { source: b.source })}</span>}
+            {b.source && <span className="text-[12px] text-textColor/40 truncate">{t('brand_from', '来源：{{source}}', { source: b.source, interpolation: { escapeValue: false } })}</span>}
           </section>
         ))}
       </div>

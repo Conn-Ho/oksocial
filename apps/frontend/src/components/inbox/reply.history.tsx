@@ -61,7 +61,7 @@ export const ReplyHistoryModal: FC = () => {
           {t('previous', '上一页')}
         </button>
         <button type="button" disabled={(data?.length || 0) < 30} onClick={() => setPage(page + 1)} className="disabled:opacity-40">
-          {t('next', '下一页')}
+          {t('next_page', '下一页')}
         </button>
       </div>
     </div>

@@ -286,7 +286,7 @@ export const InboxComponent: FC = () => {
                 onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
                 className="disabled:opacity-40"
               >
-                {t('next', '下一页')}
+                {t('next_page', '下一页')}
               </button>
             </li>
           )}
