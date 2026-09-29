@@ -101,19 +101,16 @@ export const MonitorComponent: FC = () => {
 
   useEffect(() => setSelected(''), [kind]);
 
+  // the first reading starts at once; the detail view polls the target until it is done
   const firstRead = useCallback(async (target: MonitorTarget) => {
     setSelected(target.id);
     mutate();
-    toaster.show(t('monitor_added', '已添加，正在第一次读取…'), 'success');
+    toaster.show(t('monitor_added', '已添加，正在第一次读取，可能要一两分钟'), 'success');
     try {
-      const res = await call(`/monitoring/targets/${target.id}/run`);
-      if (!res.ok) {
-        toaster.show(t('monitor_read_failed', '读取失败：{{error}}', { error: res.error }), 'warning');
-      }
+      await call(`/monitoring/targets/${target.id}/run`);
     } catch (e) {
       toaster.show((e as Error).message, 'warning');
     }
-    mutate();
   }, [mutate]);
 
   const openAdd = useCallback(

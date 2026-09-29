@@ -35,8 +35,9 @@ const ACCOUNT_POSTS_PER_READ = 10;
 const HITS_PER_READ = 20;
 const OWN_POSTS_PER_READ = 20;
 const MAX_TARGETS_PER_KIND = 30;
-// One loop run reads at most this many targets and stops before the activity times out.
-const TARGETS_PER_RUN = 40;
+// One loop run reads at most this many targets and stops before the activity times out; what is
+// left is the longest waiting next hour.
+const TARGETS_PER_RUN = 100;
 const RUN_BUDGET_MS = 45 * 60_000;
 const TAG_BATCH = 20;
 const DAY_MS = 86_400_000;
@@ -340,17 +341,38 @@ export class MonitorService {
       return { ok: true, added };
     } catch (err) {
       const message = ((err as Error)?.message || '读取失败').slice(0, 500);
-      await this._repository.finishRun(target.id, { lastError: message, nextRunAt, succeeded: false });
+      await this._repository
+        .finishRun(target.id, { lastError: message, nextRunAt, succeeded: false })
+        .catch((e) => console.log(`monitor ${target.id}`, (e as Error)?.message));
       return { ok: false, added: 0, error: message };
     }
   }
 
+  // Targets this process is reading on request, so a second click does not start a second read.
+  private _reading = new Set<string>();
+
+  /**
+   * Reads a target on request. A Xiaohongshu post read takes minutes (two page loads 8-15 s
+   * apart), longer than a request should hang, so it runs detached; the page watches the target.
+   */
   async runNow(orgId: string, id: string) {
     const target = await this._repository.getTarget(orgId, id);
     if (!target) {
       throw new HttpException('Not found', 404);
     }
-    return this.runTarget(target);
+    if (this._reading.has(id)) {
+      return { started: false };
+    }
+    this._reading.add(id);
+    this.runTarget(target).finally(() => this._reading.delete(id));
+    return { started: true };
+  }
+
+  /** In-app notice; a failed notice must not turn a good read into a failed one. */
+  private async notify(orgId: string, subject: string, message: string) {
+    await this._notificationService
+      .inAppNotification(orgId, subject, message)
+      .catch((err) => console.log('monitor notification', (err as Error)?.message));
   }
 
   private async read(target: MonitorTarget, provider: SocialProvider & { name: string }, channel: Channel) {
@@ -380,7 +402,7 @@ export class MonitorService {
       const fresh = freshPosts(added, target.lastRunAt);
       if (fresh.length) {
         const who = target.title || name || target.query;
-        await this._notificationService.inAppNotification(
+        await this.notify(
           target.organizationId,
           `竞品「${who}」发了新内容`,
           fresh.length === 1
@@ -401,7 +423,7 @@ export class MonitorService {
     });
     if (target.lastRunAt && added.length) {
       const negative = [...tags.values()].filter((s) => s === 'negative').length;
-      await this._notificationService.inAppNotification(
+      await this.notify(
         target.organizationId,
         `关键词「${target.query}」有新内容`,
         `关键词「${target.query}」在${provider.name}有 ${added.length} 条新内容` +

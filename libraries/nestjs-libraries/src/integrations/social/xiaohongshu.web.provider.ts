@@ -200,7 +200,8 @@ export class XiaohongshuWebProvider
         comments: rows
           .filter((r) => r.text)
           .map((r) => ({
-            externalId: contentId(ref.externalId, r.author, r.text, r.time),
+            // not the time: the page shows it relative ("3小时前"), so it changes between reads
+            externalId: contentId(ref.externalId, r.author, r.text),
             authorName: r.author || '',
             content: r.text,
             likes: countFrom(r.likes),

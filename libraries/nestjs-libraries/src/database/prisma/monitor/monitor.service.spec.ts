@@ -291,13 +291,31 @@ describe('runTarget', () => {
     );
   });
 
-  it('runNow reads the organization target or 404s', async () => {
+  it('runNow starts a detached read of the organization target once, or 404s', async () => {
     const { service, repo } = setup();
     await expect(service.runNow('o1', 'nope')).rejects.toMatchObject({ status: 404 });
-    repo.getTarget.mockResolvedValueOnce(target());
-    xhs.readPost.mockResolvedValueOnce({ post: { externalId: 'n1', url: 'u' }, comments: [] });
-    expect(await service.runNow('o1', 't1')).toEqual({ ok: true, added: 0 });
+    repo.getTarget.mockResolvedValue(target());
+    let finish: (v: unknown) => void = () => undefined;
+    xhs.readPost.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    expect(await service.runNow('o1', 't1')).toEqual({ started: true });
+    expect(await service.runNow('o1', 't1')).toEqual({ started: false });
+    finish({ post: { externalId: 'n1', url: 'u' }, comments: [] });
+    await new Promise((r) => setImmediate(r));
+    expect(repo.finishRun).toHaveBeenCalledWith('t1', expect.objectContaining({ succeeded: true }));
     expect(repo.addComments).not.toHaveBeenCalled();
+    xhs.readPost.mockResolvedValueOnce({ post: { externalId: 'n1', url: 'u' }, comments: [] });
+    expect(await service.runNow('o1', 't1')).toEqual({ started: true });
+  });
+
+  it('a failing notification or bookkeeping write never fails or aborts a read', async () => {
+    const { service, repo, notifications } = setup();
+    notifications.inAppNotification.mockRejectedValueOnce(new Error('db down'));
+    wb.readAccount.mockResolvedValueOnce({ posts: [{ externalId: 'x', url: 'u', title: '新' }] });
+    expect(await service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'r', lastRunAt: new Date() }))).toEqual({ ok: true, added: 1 });
+
+    xhs.readPost.mockRejectedValueOnce(new Error('boom'));
+    repo.finishRun.mockRejectedValueOnce(new Error('db blip'));
+    expect(await service.runTarget(target())).toEqual({ ok: false, added: 0, error: 'boom' });
   });
 });
 

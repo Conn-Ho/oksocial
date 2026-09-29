@@ -160,6 +160,17 @@ describe('Xiaohongshu monitor reads', () => {
     expect(p.monitor.readGapMs).toEqual([8000, 15000]);
   });
 
+  it('a comment keeps its id when its relative time moves on between reads', async () => {
+    const read = async (time: string) =>
+      (
+        await withFleet(new XiaohongshuWebProvider(), [
+          rows([{ field: 'title', value: 't' }]),
+          rows([{ author: '路人', text: '求链接', likes: 2, time }]),
+        ]).p.monitor.readPost('s1', { externalId: NOTE, url: XSEC }, 20)
+      ).comments[0].externalId;
+    expect(await read('3小时前')).toBe(await read('昨天 10:00'));
+  });
+
   it('skips the comment read when none are asked for', async () => {
     const { p, fleet, pause } = withFleet(new XiaohongshuWebProvider(), [rows([{ field: 'title', value: 't' }])]);
     expect((await p.monitor.readPost('s1', { externalId: NOTE, url: XSEC }, 0)).comments).toEqual([]);

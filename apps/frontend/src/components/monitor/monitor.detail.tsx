@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FC, useCallback, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { useSWRConfig } from 'swr';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
@@ -83,8 +83,10 @@ export const MonitorDetail: FC<{
   const modal = useModals();
   const call = useMonitorCall();
   const { mutate: revalidate } = useSWRConfig();
-  const { data: target, mutate } = useMonitorTarget(targetId);
-  const [running, setRunning] = useState(false);
+  // the target's updatedAt when a requested read started; cleared when the row changes
+  const [readingSince, setReadingSince] = useState<string | null>(null);
+  const { data: target, mutate } = useMonitorTarget(targetId, !!readingSince);
+  const lastUpdate = useRef<string | undefined>(undefined);
   const platform = platforms.find((p) => p.identifier === target?.platform);
 
   const refresh = useCallback(() => {
@@ -93,21 +95,41 @@ export const MonitorDetail: FC<{
     onChanged();
   }, [targetId, onChanged]);
 
+  // a read finished (requested here, the first one, or the hourly loop): show what it brought
+  useEffect(() => {
+    if (!target) {
+      return;
+    }
+    if (lastUpdate.current && lastUpdate.current !== target.updatedAt) {
+      revalidate((key) => typeof key === 'string' && key.startsWith(`/monitoring/targets/${targetId}/items`));
+      onChanged();
+    }
+    lastUpdate.current = target.updatedAt;
+    if (readingSince && target.updatedAt !== readingSince) {
+      setReadingSince(null);
+      toaster.show(
+        target.lastError
+          ? t('monitor_read_failed', '读取失败：{{error}}', { error: target.lastError })
+          : t('monitor_read_ok', '已读取最新数据'),
+        target.lastError ? 'warning' : 'success'
+      );
+    }
+  }, [target?.updatedAt]);
+
   const runNow = useCallback(async () => {
-    setRunning(true);
+    if (!target) {
+      return;
+    }
     try {
       const res = await call(`/monitoring/targets/${targetId}/run`);
-      toaster.show(
-        res.ok ? t('monitor_read_ok', '已读取，新增 {{n}} 条', { n: res.added }) : t('monitor_read_failed', '读取失败：{{error}}', { error: res.error }),
-        res.ok ? 'success' : 'warning'
-      );
+      setReadingSince(target.updatedAt);
+      if (!res.started) {
+        toaster.show(t('monitor_read_running', '正在读取中，请稍候'), 'success');
+      }
     } catch (e) {
       toaster.show((e as Error).message, 'warning');
-    } finally {
-      setRunning(false);
-      refresh();
     }
-  }, [targetId, refresh]);
+  }, [targetId, target?.updatedAt]);
 
   const update = useCallback(
     async (body: Record<string, unknown>) => {
@@ -122,11 +144,15 @@ export const MonitorDetail: FC<{
   );
 
   const remove = useCallback(async () => {
-    if (!(await deleteDialog(t('monitor_delete_confirm', '停止监控并删除它的历史数据？'), t('delete', '删除')))) {
+    if (!(await deleteDialog(t('monitor_delete_confirm', '停止监控，并把它从列表里移除？'), t('delete', '删除')))) {
       return;
     }
-    await call(`/monitoring/targets/${targetId}`, 'DELETE');
-    onChanged();
+    try {
+      await call(`/monitoring/targets/${targetId}`, 'DELETE');
+      onChanged();
+    } catch (e) {
+      toaster.show((e as Error).message, 'warning');
+    }
   }, [targetId, onChanged]);
 
   const openRemake = useCallback(
@@ -187,8 +213,8 @@ export const MonitorDetail: FC<{
         )}
         <div className="flex gap-[8px] flex-wrap items-center pt-[4px]">
           {canWrite && (
-            <Button secondary={true} loading={running} onClick={runNow}>
-              {t('monitor_read_now', '立即读取')}
+            <Button secondary={true} loading={!!readingSince} disabled={!!readingSince} onClick={runNow}>
+              {readingSince ? t('monitor_reading', '读取中…') : t('monitor_read_now', '立即读取')}
             </Button>
           )}
           {canWrite && target.kind === 'POST' && (

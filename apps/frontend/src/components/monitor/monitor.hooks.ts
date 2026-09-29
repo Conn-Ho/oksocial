@@ -35,6 +35,7 @@ export type MonitorTarget = {
   nextRunAt?: string | null;
   lastError?: string | null;
   createdAt: string;
+  updatedAt: string;
   integration?: { id: string; name: string; picture?: string | null } | null;
   _count?: { items: number };
 };
@@ -95,11 +96,18 @@ export const useMonitorTargets = (kind: MonitorKind) => {
   return useSWR<MonitorTarget[]>(key, load, { refreshInterval: 60_000 });
 };
 
-export const useMonitorTarget = (id: string) => {
+// Reads run in the background: while one is going (or the first one has not happened yet) the
+// target is polled until its row changes.
+const READ_POLL_MS = 4000;
+
+export const useMonitorTarget = (id: string, reading: boolean) => {
   const fetch = useFetch();
   const key = `/monitoring/targets/${id}`;
   const load = useCallback(async () => (await fetch(key)).json(), [key]);
-  return useSWR<MonitorTarget & { snapshots: MonitorSnapshot[] }>(key, load);
+  return useSWR<MonitorTarget & { snapshots: MonitorSnapshot[] }>(key, load, {
+    refreshInterval: (latest) =>
+      reading || (latest && !latest.lastRunAt && !latest.lastError && !latest.paused) ? READ_POLL_MS : 0,
+  });
 };
 
 export const useMonitorItems = (id: string, kind: MonitorItemKind, page: number, sentiment?: string) => {
