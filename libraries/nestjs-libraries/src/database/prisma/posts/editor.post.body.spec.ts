@@ -32,3 +32,13 @@ describe('editorPostBody', () => {
     expect(body.posts[0].value).toHaveLength(1);
   });
 });
+
+describe('editorPostBody through the publisher', () => {
+  it('comes out as the original text where posts are published (normal editor)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { stripHtmlValidation } = require('@gitroom/helpers/utils/strip.html.validation');
+    const text = '秋天第一杯拿铁 ☕\n\n豆子来自云南，<手冲> & 冷萃都有\n#咖啡 #秋天';
+    const [value] = editorPostBody({ id: 'c1', providerIdentifier: 'xiaohongshu' }, [text], new Date()).posts[0].value;
+    expect(stripHtmlValidation('normal', value.content, true, false, false)).toBe(text);
+  });
+});
