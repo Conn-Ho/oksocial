@@ -492,9 +492,9 @@ export class MonitorService {
   }
 
   /**
-   * Our channel's recent posts for 竞品 VS.
-   * TODO(analytics): the analytics module (built in parallel) stores our own channels' posts and
-   * metrics; read them from there instead of this live read through the channel's browser.
+   * Our channel's recent posts for 竞品 VS, read live through the channel's browser.
+   * TODO(analytics): the analytics module (ChannelStatsService) samples account totals only; once it
+   * also keeps per-post numbers of our channels, read them from there instead of this live read.
    */
   private async ownChannelPosts(integration: Integration) {
     const provider = this.provider(integration.providerIdentifier);
