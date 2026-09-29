@@ -8,14 +8,13 @@ const PAGE_SIZE = 20;
 export class CreationRepository {
   constructor(private _generations: PrismaRepository<'aiGeneration'>) {}
 
-  record(data: {
+  /** A generation as it starts: who, which template, what went in. */
+  start(data: {
     organizationId: string;
     userId: string | null;
     brandId?: string | null;
     template: string;
     input: Prisma.InputJsonValue;
-    output?: Prisma.InputJsonValue;
-    error?: string;
   }) {
     return this._generations.model.aiGeneration.create({ data, select: { id: true } });
   }
@@ -51,10 +50,11 @@ export class CreationRepository {
     });
   }
 
-  setOutput(orgId: string, id: string, output: Prisma.InputJsonValue) {
+  /** What came out, or why nothing did. */
+  finish(orgId: string, id: string, data: { output?: Prisma.InputJsonValue; error?: string }) {
     return this._generations.model.aiGeneration.updateMany({
       where: { id, organizationId: orgId },
-      data: { output },
+      data,
     });
   }
 }

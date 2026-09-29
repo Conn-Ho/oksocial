@@ -6,6 +6,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/posts/posts.service', () =>
 jest.mock('@gitroom/nestjs-libraries/database/prisma/media/media.service', () => ({ MediaService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.service', () => ({ IntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/upload/upload.factory', () => ({ UploadFactory: { createStorage: () => ({}) } }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
 jest.mock('unpdf', () => ({}));
 jest.mock('mammoth', () => ({}));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
@@ -32,16 +33,28 @@ const BRAND = { system: '品牌：小鹿', banned: ['最便宜'] };
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<string, any> } = {}) => {
+const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<string, any>; broke?: boolean } = {}) => {
+  // what the history holds: started rows, then their output or error
   const recorded: any[] = [];
   const repo = {
-    record: jest.fn(async (data: any) => {
-      recorded.push(data);
+    start: jest.fn(async (data: any) => {
+      recorded.push({ ...data });
       return { id: `g${recorded.length}` };
+    }),
+    finish: jest.fn(async (_o: string, id: string, data: any) => {
+      Object.assign(recorded[Number(id.slice(1)) - 1] ?? {}, data);
+      return { count: 1 };
     }),
     history: jest.fn(async () => ({ total: 0, page: 1, pages: 0, items: [] })),
     get: jest.fn(async () => opts.generation ?? null),
-    setOutput: jest.fn(async () => ({ count: 1 })),
+  };
+  const credits = {
+    withCredits: jest.fn(async (_o: string, _a: string, _r: string, work: () => Promise<unknown>) => {
+      if (opts.broke) {
+        throw new HttpException('积分不足：AI 生成图片需要 60 积分，当前余额 0 积分。请购买积分包或升级套餐。', 402);
+      }
+      return work();
+    }),
   };
   const brands = {
     promptFor: jest.fn(async () => BRAND),
@@ -80,24 +93,36 @@ const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<
     monitor as any,
     integrations as any,
     posts as any,
-    media as any
+    media as any,
+    credits as any
   );
   (service as any)._storage = storage;
-  return { service, repo, brands, ai, images, monitor, integrations, posts, media, storage, recorded };
+  return { service, repo, brands, ai, images, monitor, integrations, posts, media, storage, recorded, credits };
 };
 
 describe('AiCreationService.run (the one door every generation goes through)', () => {
-  it('names a credit key for every action', () => {
+  it('prices text generation as an AI rewrite and both image actions as an AI image', () => {
     expect(CREATION_ACTIONS).toEqual({
-      brand: 'ai.text', adapt: 'ai.text', titles: 'ai.text', remake: 'ai.text', script: 'ai.text', cover: 'ai.image', translate: 'ai.image',
+      brand: 'ai_rewrite', adapt: 'ai_rewrite', titles: 'ai_rewrite', remake: 'ai_rewrite', script: 'ai_rewrite', cover: 'ai_image', translate: 'ai_image',
     });
   });
 
-  it('records the generation with who, template, input and output', async () => {
-    const { service, recorded } = setup();
+  it('charges the action against the history row and records who, template, input and output', async () => {
+    const { service, recorded, credits } = setup();
     const res = await service.run('o1', 'u1', 'titles', { input: { text: 'x' }, brandId: 'b1' }, async () => ({ titles: ['t'] }));
     expect(res).toEqual({ titles: ['t'], generationId: 'g1' });
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_rewrite', 'g1', expect.any(Function));
     expect(recorded[0]).toEqual({ organizationId: 'o1', userId: 'u1', brandId: 'b1', template: 'titles', input: { text: 'x' }, output: { titles: ['t'] } });
+    await service.run('o1', 'u1', 'cover', { input: {} }, async () => ({ image: {} }));
+    expect(credits.withCredits).toHaveBeenLastCalledWith('o1', 'ai_image', 'g2', expect.any(Function));
+  });
+
+  it('does not run the work when the credits do not cover it, and says so', async () => {
+    const { service, recorded } = setup({ broke: true });
+    const work = jest.fn();
+    await expect(service.run('o1', 'u1', 'cover', { input: {} }, work)).rejects.toMatchObject({ status: 402 });
+    expect(work).not.toHaveBeenCalled();
+    expect(recorded[0].error).toContain('积分不足');
   });
 
   it('records failures and answers in words the user can act on', async () => {
@@ -120,11 +145,12 @@ describe('AiCreationService.run (the one door every generation goes through)', (
   });
 
   it('refuses when the relay is not configured, before doing anything', async () => {
-    const { service, repo } = setup({ aiEnabled: false });
+    const { service, repo, credits } = setup({ aiEnabled: false });
     const work = jest.fn();
     await expect(service.run('o1', 'u1', 'titles', { input: {} }, work)).rejects.toMatchObject({ status: 503 });
     expect(work).not.toHaveBeenCalled();
-    expect(repo.record).not.toHaveBeenCalled();
+    expect(repo.start).not.toHaveBeenCalled();
+    expect(credits.withCredits).not.toHaveBeenCalled();
   });
 });
 
@@ -218,7 +244,9 @@ describe('history, media library and drafts', () => {
     const { service, media, repo } = setup({ generation });
     expect(await service.saveToMedia('o1', 'g9')).toEqual({ id: 'm1', path: 'https://app/uploads/x.jpeg' });
     expect(media.saveFile).toHaveBeenCalledWith('o1', 'x.jpeg', 'https://app/uploads/x.jpeg');
-    expect(repo.setOutput).toHaveBeenCalledWith('o1', 'g9', { image: { path: 'https://app/uploads/x.jpeg', name: 'x.jpeg', mediaId: 'm1' }, aspect: '3:4' });
+    expect(repo.finish).toHaveBeenCalledWith('o1', 'g9', {
+      output: { image: { path: 'https://app/uploads/x.jpeg', name: 'x.jpeg', mediaId: 'm1' }, aspect: '3:4' },
+    });
 
     const saved = setup({ generation: { ...generation, output: { image: { path: 'p.jpeg', name: 'p.jpeg', mediaId: 'm1' } } } });
     expect(await saved.service.saveToMedia('o1', 'g9')).toEqual({ id: 'm1', path: 'p.jpeg' });

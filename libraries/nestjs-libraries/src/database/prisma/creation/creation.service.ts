@@ -26,20 +26,23 @@ import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { IUploadProvider } from '@gitroom/nestjs-libraries/upload/upload.interface';
 import { generationError } from '@gitroom/nestjs-libraries/openai/generation.error';
 import { stripBanned } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
+import { CreditAction } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 /**
- * Every AI 创作 action and the credit it will cost. The keys are what the history stores as
- * `template`; the values are the credits ledger's action keys.
+ * Every AI 创作 action and what one run costs: its price key in the credits table (text
+ * generation is priced as an AI rewrite, both image actions as an AI image). The keys are what
+ * the history stores as `template`.
  */
 export const CREATION_ACTIONS = {
-  brand: 'ai.text',
-  adapt: 'ai.text',
-  titles: 'ai.text',
-  remake: 'ai.text',
-  script: 'ai.text',
-  cover: 'ai.image',
-  translate: 'ai.image',
-} as const;
+  brand: 'ai_rewrite',
+  adapt: 'ai_rewrite',
+  titles: 'ai_rewrite',
+  remake: 'ai_rewrite',
+  script: 'ai_rewrite',
+  cover: 'ai_image',
+  translate: 'ai_image',
+} satisfies Record<string, CreditAction>;
 export type CreationAction = keyof typeof CREATION_ACTIONS;
 
 // What the 创作台 history lists (brand extraction lives on the 品牌档案 tab).
@@ -98,7 +101,8 @@ export class AiCreationService {
     private _monitor: MonitorService,
     private _integrationService: IntegrationService,
     private _postsService: PostsService,
-    private _mediaService: MediaService
+    private _mediaService: MediaService,
+    private _credits: CreditsService
   ) {}
 
   private get storage() {
@@ -107,8 +111,9 @@ export class AiCreationService {
   }
 
   /**
-   * The one door of AI 创作: every generation runs through here and lands in the history (who,
-   * template, input, output or error), so what it costs is decided in one place.
+   * The one door of AI 创作: every generation runs through here. It is charged here and only here
+   * (CREATION_ACTIONS[action], refunded when the work fails; the ledger entry points at the
+   * history row), and it lands in the history: who, template, input, then output or error.
    */
   async run<T extends object>(
     orgId: string,
@@ -120,26 +125,24 @@ export class AiCreationService {
     if (!this._ai.enabled) {
       throw new HttpException('AI 还没有配置，请联系管理员', 503);
     }
-    const row = {
+    const { id } = await this._repository.start({
       organizationId: orgId,
       userId,
       brandId: record.brandId ?? null,
       template: action,
       input: record.input as Prisma.InputJsonValue,
-    };
+    });
     let output: T;
     try {
-      // Credits: charge CREATION_ACTIONS[action] ('ai.text' / 'ai.image') around this call, once the
-      // credits ledger exists (only a successful run should cost).
-      output = await work();
+      output = await this._credits.withCredits(orgId, CREATION_ACTIONS[action], id, work);
     } catch (err) {
       const failure = creationFailure(err);
       await this._repository
-        .record({ ...row, error: failure.message })
+        .finish(orgId, id, { error: failure.message })
         .catch((e) => console.log('creation history', (e as Error)?.message));
       throw failure;
     }
-    const { id } = await this._repository.record({ ...row, output: output as Prisma.InputJsonValue });
+    await this._repository.finish(orgId, id, { output: output as Prisma.InputJsonValue });
     return { ...output, generationId: id };
   }
 
@@ -288,10 +291,9 @@ export class AiCreationService {
       }
     }
     const media = await this._mediaService.saveFile(orgId, image.name, image.path);
-    await this._repository.setOutput(orgId, generationId, {
-      ...(row.output as Record<string, unknown>),
-      image: { ...image, mediaId: media.id },
-    } as Prisma.InputJsonValue);
+    await this._repository.finish(orgId, generationId, {
+      output: { ...(row.output as Record<string, unknown>), image: { ...image, mediaId: media.id } } as Prisma.InputJsonValue,
+    });
     return { id: media.id, path: media.path };
   }
 
