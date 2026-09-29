@@ -134,15 +134,39 @@ describe('BillingRepository', () => {
     expect(findMany.mock.calls[1][0]).toMatchObject({ skip: 1, cursor: { id: 'o5' } });
   });
 
-  it('markPaid moves only a pending order and stores the term', async () => {
-    const updateMany = jest.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
-    const r = repo({ billingOrder: { updateMany } });
-    const term = { tier: 'TEAM' as const, periodStart: new Date(), periodEnd: new Date(), dailyPrice: 6.4 };
-    expect(await r.markPaid('oks1', { a: 1 }, term)).toBe(true);
-    expect(await r.markPaid('oks1', { a: 1 })).toBe(false);
-    expect(updateMany.mock.calls[0][0]).toMatchObject({
-      where: { orderNo: 'oks1', status: 'PENDING' },
-      data: expect.objectContaining({ status: 'PAID', notifyPayload: { a: 1 }, tier: 'TEAM', dailyPrice: 6.4 }),
+  describe('claimPaid', () => {
+    const txFor = (order: any, lastPaid: any = null, subscription: any = null) => ({
+      billingOrder: {
+        findUnique: jest.fn(async () => order),
+        findFirst: jest.fn(async () => lastPaid),
+        update: jest.fn(async ({ data }: any) => ({ ...order, ...data })),
+      },
+      subscription: { findFirst: jest.fn(async () => subscription) },
+    });
+    const run = (tx: any) => jest.fn(async (fn: any, opts: any) => {
+      expect(opts).toEqual({ isolationLevel: 'Serializable' });
+      return fn(tx);
+    });
+
+    it('marks a pending or closed order paid, with the term computed inside the transaction', async () => {
+      const lastPaid = { orderNo: 'oks0', tier: 'TEAM' };
+      const subscription = { provider: 'xorpay' };
+      const tx = txFor({ orderNo: 'oks1', organizationId: 'o1', status: 'CLOSED' }, lastPaid, subscription);
+      const term = jest.fn(() => ({ tier: 'TEAM' as const, periodStart: new Date(1), periodEnd: new Date(2), dailyPrice: 6.4 }));
+      const paid = await repo({}, run(tx)).claimPaid('oks1', { a: 1 }, term);
+      expect(term).toHaveBeenCalledWith({ lastPaid, subscription });
+      expect(paid).toMatchObject({ status: 'PAID', notifyPayload: { a: 1 }, tier: 'TEAM', dailyPrice: 6.4 });
+      expect(tx.subscription.findFirst).toHaveBeenCalledWith({ where: { organizationId: 'o1', deletedAt: null } });
+    });
+
+    it('a pack needs no term; an order paid before or unknown gives null', async () => {
+      const pending = txFor({ orderNo: 'oks1', organizationId: 'o1', status: 'PENDING' });
+      expect(await repo({}, run(pending)).claimPaid('oks1', {})).toMatchObject({ status: 'PAID' });
+      expect(pending.subscription.findFirst).not.toHaveBeenCalled();
+      const paid = txFor({ orderNo: 'oks1', status: 'PAID' });
+      expect(await repo({}, run(paid)).claimPaid('oks1', {})).toBeNull();
+      expect(paid.billingOrder.update).not.toHaveBeenCalled();
+      expect(await repo({}, run(txFor(null))).claimPaid('oks1', {})).toBeNull();
     });
   });
 
@@ -165,8 +189,17 @@ describe('BillingRepository', () => {
     expect(billingOrder.update).toHaveBeenCalledWith({ where: { orderNo: 'oks1' }, data: { providerOrderId: 'A1', qr: 'qr' } });
     await r.closeOrder('oks1');
     expect(billingOrder.updateMany).toHaveBeenLastCalledWith({ where: { orderNo: 'oks1', status: 'PENDING' }, data: { status: 'CLOSED' } });
-    await r.reopen('oks1');
-    expect(billingOrder.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { orderNo: 'oks1', status: 'PAID' } }));
+    await r.markFulfilled('oks1');
+    expect(billingOrder.update).toHaveBeenLastCalledWith({ where: { orderNo: 'oks1' }, data: { fulfilledAt: expect.any(Date) } });
+    const since = new Date();
+    await r.pendingOrder('o1', 'team', 'native', since);
+    expect(billingOrder.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { organizationId: 'o1', productId: 'team', payType: 'native', status: 'PENDING', qr: { not: null }, createdAt: { gte: since } },
+    }));
+    await r.paidUnfulfilled(since);
+    expect(billingOrder.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { status: 'PAID', fulfilledAt: null, paidAt: { lte: since } },
+    }));
     await r.getOrder('oks1');
     await r.getOrgOrder('o1', 'oks1');
     expect(billingOrder.findFirst).toHaveBeenCalledWith({ where: { organizationId: 'o1', orderNo: 'oks1' } });

@@ -2,9 +2,10 @@ import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions
 
 // oksocial plan catalogue: the one place that says what each plan includes, what the RMB plans and
 // credit packs cost and what each metered action costs in credits. Plans are keyed by Postiz's
-// SubscriptionTier, so a plan bought through XorPay and one bought through Stripe are the same
-// Subscription row and read the same limits. Every list can be overridden with an env JSON
-// (OKSOCIAL_BILLING_TIERS / _PLANS / _PACKS, OKSOCIAL_CREDIT_PRICES); a bad override fails at boot.
+// SubscriptionTier, so when XorPay is on, a plan bought through XorPay and one bought through Stripe
+// are the same kind of Subscription row and read the same limits (Stripe alone keeps Postiz's
+// tiers). Every list can be overridden with an env JSON (OKSOCIAL_BILLING_TIERS / _PLANS / _PACKS,
+// OKSOCIAL_CREDIT_PRICES); a bad override fails at boot.
 
 export type PlanTier = 'FREE' | 'STANDARD' | 'TEAM' | 'PRO' | 'ULTIMATE';
 export type PaidTier = Exclude<PlanTier, 'FREE'>;

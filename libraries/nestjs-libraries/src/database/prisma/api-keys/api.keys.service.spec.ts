@@ -35,6 +35,15 @@ describe('ApiKeysService', () => {
     expect(stored.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
   });
 
+  it('refuses a 21st working key', async () => {
+    const { service, repo } = setup();
+    repo.list.mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, i) => ({ id: `k${i}`, note: null, prefix: 'osk_x', expiresAt: null, lastUsedAt: null, revokedAt: null, createdAt: new Date() }))
+    );
+    await expect(service.create('o1', 'u1')).rejects.toMatchObject({ status: 400 });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
   it('a key without expiry never expires; an empty note is dropped', async () => {
     const { service, repo } = setup();
     await service.create('o1', undefined, '   ');

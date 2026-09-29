@@ -15,7 +15,7 @@ import { normalizeTags, parseJsonLoose } from '@gitroom/nestjs-libraries/inbox/i
 
 const noCredits = () => Object.assign(new Error('积分不足'), { status: 402 });
 
-const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: boolean } = {}) => {
+const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: boolean; affordable?: number[] } = {}) => {
   const repo = {
     addItems: jest.fn(async (_o: string, _i: string, items: any[]) => items.map((it, n) => ({ id: `n${n}`, content: it.content }))),
     setTags: jest.fn(async () => ({})),
@@ -46,6 +46,7 @@ const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: 
       return { id: 'charge1', organizationId: org, amount: -15, action, referenceId: ref ?? null };
     }),
     refund: jest.fn(async () => true),
+    affordable: jest.fn(async () => (opts.broke ? 0 : opts.affordable?.shift() ?? Infinity)),
     withCredits: jest.fn(async (_o: string, _a: string, _r: string, work: () => Promise<unknown>) => {
       if (opts.broke) throw noCredits();
       return work();
@@ -79,6 +80,15 @@ describe('InboxService', () => {
     await service.sync('o1', 'i1');
     expect(credits.withCredits).toHaveBeenNthCalledWith(1, 'o1', 'ai_tag', 'n0', expect.any(Function), 20);
     expect(credits.withCredits).toHaveBeenNthCalledWith(2, 'o1', 'ai_tag', 'n20', expect.any(Function), 5);
+  });
+
+  it('sync tags only as many items as the credits cover', async () => {
+    const fetched = Array.from({ length: 25 }, (_, i) => ({ kind: 'COMMENT', externalId: `e${i}`, authorName: 'a', content: `c${i}` }));
+    const { service, credits, repo } = setup({ provider: { inbox: { fetch: jest.fn(async () => fetched) } }, affordable: [7, 0] });
+    await expect(service.sync('o1', 'i1')).resolves.toEqual({ fetched: 25, added: 25 });
+    expect(credits.withCredits).toHaveBeenCalledTimes(1);
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_tag', 'n0', expect.any(Function), 7);
+    expect(repo.setTags).toHaveBeenCalledTimes(7);
   });
 
   it('sync still stores items when the organization has no credits left, untagged', async () => {

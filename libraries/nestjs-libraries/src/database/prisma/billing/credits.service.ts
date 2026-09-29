@@ -9,7 +9,7 @@ import {
 import {
   CATALOGUE,
   CreditAction,
-  isBillingEnabled,
+  isXorPayBilling,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 // How many organizations the monthly grant loads at a time.
@@ -30,7 +30,8 @@ const actionLabel = (action: string | null) =>
 /**
  * Credits: every movement is a CreditEntry row and the balance is their sum. Plans grant a monthly
  * allowance (spent first, the unused part expires when the next one is granted), packs add credits
- * that stay, and metered actions spend them. Without billing everything here is a no-op.
+ * that stay, and metered actions spend them. Without oksocial plans (XorPay) everything here is a
+ * no-op.
  */
 @Injectable()
 export class CreditsService {
@@ -39,8 +40,9 @@ export class CreditsService {
     private _planService: PlanService
   ) {}
 
+  // on with oksocial's own plans (XorPay); self-hosting and Stripe-only deployments are not metered
   get enabled() {
-    return isBillingEnabled();
+    return isXorPayBilling();
   }
 
   price(action: CreditAction) {
@@ -53,6 +55,16 @@ export class CreditsService {
 
   balance(orgId: string) {
     return this._repository.balance(orgId);
+  }
+
+  /** How many times the balance covers an action right now (Infinity when it is not charged). */
+  async affordable(orgId: string, action: CreditAction) {
+    const price = this.price(action);
+    if (!this.enabled || price <= 0) {
+      return Infinity;
+    }
+    await this.grantIfDue(orgId);
+    return Math.max(0, Math.floor((await this._repository.balance(orgId)) / price));
   }
 
   /**

@@ -42,12 +42,17 @@ export class OrganizationService {
     return this._organizationRepository.createMaxUser(id, name, saasName, email);
   }
 
-  addUserToOrg(
+  // Accepting an invite: a team that is full by now (several links were sent) adds nobody, like the
+  // repository's own plan check.
+  async addUserToOrg(
     userId: string,
     id: string,
     orgId: string,
     role: 'USER' | 'ADMIN'
   ) {
+    if (!(await this._planService.withinLimit(orgId, 'team_members'))) {
+      return false;
+    }
     return this._organizationRepository.addUserToOrg(userId, id, orgId, role);
   }
 

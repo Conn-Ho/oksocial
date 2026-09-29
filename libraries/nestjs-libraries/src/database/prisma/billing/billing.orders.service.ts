@@ -2,11 +2,15 @@ import { HttpException, Injectable } from '@nestjs/common';
 import { BillingOrder, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import dayjs from 'dayjs';
-import { BillingRepository } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.repository';
+import {
+  BillingRepository,
+  TermInputs,
+} from '@gitroom/nestjs-libraries/database/prisma/billing/billing.repository';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
-import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { isExpired, PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import { XORPAY_PROVIDER } from '@gitroom/nestjs-libraries/services/payment/payment.providers';
 import {
+  BillingProduct,
   CATALOGUE,
   getProduct,
   isStripeBilling,
@@ -30,6 +34,11 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 // XorPay QR codes last 2 hours and nobody closes unpaid orders: after a day they show as expired.
 const ORDER_TTL_MS = DAY_MS;
+const QR_TTL_MS = 2 * 60 * 60 * 1000;
+// an unpaid order of the same product and method is shown again for this long instead of a new one
+const REUSE_ORDER_MS = 60 * 60 * 1000;
+// paid orders whose grant did not finish are retried by the workflow after this
+const SETTLE_AFTER_MS = 5 * 60 * 1000;
 // channels stored on the subscription of a plan without a channel limit
 const UNLIMITED_CHANNELS = 1000000;
 const PAYMENT_CHANNEL_UNAVAILABLE = '支付通道暂时不可用，请稍后再试；一直不行的话请联系我们。';
@@ -85,8 +94,23 @@ export const quoteFor = (current: CurrentTerm, plan: PlanProduct, now = new Date
   return { change, startsAt: term.startsAt, expiresAt: term.expiresAt };
 };
 
+/** The running XorPay period: the latest paid plan order, while its subscription is still on. */
+export const termFrom = ({ lastPaid, subscription }: TermInputs, now = new Date()): CurrentTerm =>
+  subscription?.provider === XORPAY_PROVIDER &&
+  !isExpired(subscription, now) &&
+  lastPaid?.tier &&
+  lastPaid.periodEnd
+    ? { tier: lastPaid.tier as PaidTier, periodEnd: lastPaid.periodEnd, dailyPrice: lastPaid.dailyPrice }
+    : null;
+
 /** Order numbers go to XorPay and onto receipts: random only, no organization id or time. */
 export const newOrderNo = () => `oks${randomBytes(10).toString('hex')}`;
+
+/** Yuan amounts compared in cents, so "99" and "99.00" are the same price. */
+const cents = (yuan: unknown) => Math.round(Number(yuan) * 100);
+
+/** Order numbers come from unsigned input before the signature is checked: quote them in logs. */
+const quoted = (value: unknown) => JSON.stringify(String(value ?? '')).slice(0, 80);
 
 const displayStatus = (order: Pick<BillingOrder, 'status' | 'createdAt'>, now = Date.now()) =>
   order.status === 'PENDING' && now - order.createdAt.getTime() > ORDER_TTL_MS ? 'EXPIRED' : order.status;
@@ -117,15 +141,11 @@ export class BillingOrdersService {
 
   /** The organization's paid XorPay period, if one is running. */
   async currentTerm(orgId: string): Promise<CurrentTerm> {
-    const sub = await this._planService.activeSubscription(orgId);
-    if (sub?.provider !== XORPAY_PROVIDER) {
+    const subscription = await this._planService.activeSubscription(orgId);
+    if (subscription?.provider !== XORPAY_PROVIDER) {
       return null;
     }
-    const last = await this._repository.lastPaidPlanOrder(orgId);
-    if (!last?.periodEnd || !last.tier) {
-      return null;
-    }
-    return { tier: last.tier as PaidTier, periodEnd: last.periodEnd, dailyPrice: last.dailyPrice };
+    return termFrom({ subscription, lastPaid: await this._repository.lastPaidPlanOrder(orgId) });
   }
 
   /** Plans (with the period each would give) and credit packs, when RMB payment is set up. */
@@ -145,6 +165,19 @@ export class BillingOrdersService {
     return { xorpay: isXorPayBilling(), stripe: isStripeBilling() };
   }
 
+  private async orderResponse(orgId: string, product: BillingProduct, order: Pick<BillingOrder, 'orderNo' | 'payType' | 'qr'>, expireIn: number) {
+    return {
+      orderNo: order.orderNo,
+      name: product.name,
+      priceYuan: product.priceYuan,
+      payType: order.payType as PayType,
+      qr: order.qr!,
+      qrImage: xorPayQrImageUrl(order.qr!),
+      expireIn,
+      quote: product.kind === 'plan' ? quoteFor(await this.currentTerm(orgId), product) : null,
+    };
+  }
+
   async createOrder(orgId: string, userId: string | undefined, productId: string, payType: PayType) {
     if (!isXorPayBilling()) {
       throw new HttpException('未开通支付宝 / 微信支付', 400);
@@ -161,6 +194,13 @@ export class BillingOrdersService {
       if (sub && (sub.isLifetime || sub.provider !== XORPAY_PROVIDER)) {
         throw new HttpException('当前套餐不是通过支付宝 / 微信购买的，请在原渠道管理套餐', 400);
       }
+    }
+
+    // pressing the button again shows the same QR code instead of filling the table with orders
+    const pending = await this._repository.pendingOrder(orgId, product.id, payType, new Date(Date.now() - REUSE_ORDER_MS));
+    if (pending) {
+      const left = QR_TTL_MS - (Date.now() - pending.createdAt.getTime());
+      return this.orderResponse(orgId, product, pending, Math.round(left / 1000));
     }
 
     const orderNo = newOrderNo();
@@ -191,17 +231,7 @@ export class BillingOrdersService {
       throw new HttpException({ message: PAYMENT_CHANNEL_UNAVAILABLE, code: 'payment_channel_unavailable' }, 502);
     }
     await this._repository.attachPayment(orderNo, payment.aoid, payment.qr);
-
-    return {
-      orderNo,
-      name: product.name,
-      priceYuan: product.priceYuan,
-      payType,
-      qr: payment.qr,
-      qrImage: xorPayQrImageUrl(payment.qr),
-      expireIn: payment.expireIn,
-      quote: product.kind === 'plan' ? quoteFor(await this.currentTerm(orgId), product) : null,
-    };
+    return this.orderResponse(orgId, product, { orderNo, payType, qr: payment.qr }, payment.expireIn);
   }
 
   async orderStatus(orgId: string, orderNo: string) {
@@ -209,7 +239,9 @@ export class BillingOrdersService {
     if (!order) {
       throw new HttpException('订单不存在', 404);
     }
-    return { orderNo, status: displayStatus(order), paidAt: order.paidAt };
+    // the payment dialog says "开通成功" on PAID: only once the plan or the credits are in place
+    const status = order.status === 'PAID' && !order.fulfilledAt ? 'PENDING' : displayStatus(order);
+    return { orderNo, status, paidAt: order.paidAt };
   }
 
   async listOrders(orgId: string) {
@@ -225,18 +257,23 @@ export class BillingOrdersService {
   }
 
   /**
-   * A signed payment notification: amount must match, XorPay must confirm the order is paid, then
-   * the product is applied once. Non-2xx answers make XorPay retry (1/2/4/16/64/300 minutes).
+   * A signed payment notification: amount (and XorPay's order id) must match, XorPay must confirm
+   * the order is paid, then the product is applied once. Non-2xx answers make XorPay retry
+   * (1/2/4/16/64/300 minutes).
    */
   async handleNotify(payload: XorPayNotify) {
     const order = await this._repository.getOrder(String(payload.order_id ?? ''));
     if (!order) {
-      console.log(`xorpay notify for unknown order ${payload.order_id}`);
+      console.log(`xorpay notify for unknown order ${quoted(payload.order_id)}`);
       return 'ignored';
     }
-    if (String(payload.pay_price) !== order.priceYuan) {
-      console.log(`xorpay notify ${order.orderNo}: paid ${payload.pay_price}, expected ${order.priceYuan}`);
+    if (cents(payload.pay_price) !== cents(order.priceYuan) || !Number.isFinite(Number(payload.pay_price))) {
+      console.log(`xorpay notify ${order.orderNo}: paid ${quoted(payload.pay_price)}, expected ${order.priceYuan}`);
       throw new HttpException('price mismatch', 400);
+    }
+    if (order.providerOrderId && payload.aoid && String(payload.aoid) !== order.providerOrderId) {
+      console.log(`xorpay notify ${order.orderNo}: aoid ${quoted(payload.aoid)} is not ${order.providerOrderId}`);
+      throw new HttpException('order mismatch', 400);
     }
     let remote: string;
     try {
@@ -249,14 +286,18 @@ export class BillingOrdersService {
       console.log(`xorpay notify ${order.orderNo}: XorPay says ${remote}`);
       throw new HttpException('not paid', 400);
     }
+    if (order.status === 'CLOSED') {
+      console.log(`xorpay order ${order.orderNo} was closed but XorPay confirms it paid: granting it`);
+    }
     await this.fulfil(order, payload as Prisma.InputJsonValue);
     return 'success';
   }
 
   /**
-   * Marks the order paid and grants what it bought; returns false when it was applied before.
-   * If granting fails the order goes back to pending, so XorPay's retry applies it again (every
-   * step is safe to repeat).
+   * Marks the order paid and grants what it bought; returns false when that was done before.
+   * Paying and granting are two steps: a paid order whose grant did not finish (crash, database
+   * error) is granted again by the next notification or by settlePaidOrders. Every grant step is
+   * safe to repeat.
    */
   async fulfil(order: BillingOrder, payload: Prisma.InputJsonValue, now = new Date()) {
     const product = getProduct(order.productId);
@@ -266,49 +307,91 @@ export class BillingOrdersService {
       throw new HttpException('unknown product', 500);
     }
 
-    const term = product.kind === 'plan' ? nextTerm(await this.currentTerm(order.organizationId), product, now) : null;
-    const claimed = await this._repository.markPaid(
-      order.orderNo,
-      payload,
-      term && product.kind === 'plan'
-        ? { tier: product.tier, periodStart: term.startsAt, periodEnd: term.expiresAt, dailyPrice: term.dailyPrice }
-        : undefined
-    );
-    if (!claimed) {
+    let paid: BillingOrder | null = order.status === 'PAID' ? order : null;
+    if (!paid) {
+      paid =
+        (await this._repository.claimPaid(
+          order.orderNo,
+          payload,
+          product.kind === 'plan'
+            ? (current) => {
+                const term = nextTerm(termFrom(current, now), product, now);
+                return {
+                  tier: product.tier,
+                  periodStart: term.startsAt,
+                  periodEnd: term.expiresAt,
+                  dailyPrice: term.dailyPrice,
+                };
+              }
+            : undefined
+        )) ??
+        // paid by a concurrent notification: finish its grant if that one has not yet
+        (await this._repository.getOrder(order.orderNo));
+    }
+    if (!paid || paid.status !== 'PAID' || paid.fulfilledAt) {
       return false;
     }
 
     try {
-      if (product.kind === 'pack') {
-        await this._repository.addOnce({
-          organizationId: order.organizationId,
-          kind: 'TOPUP',
-          amount: product.credits,
-          action: product.id,
-          referenceId: order.orderNo,
-          idempotencyKey: `order:${order.orderNo}`,
-        });
-      } else {
-        const channels = CATALOGUE.tiers[product.tier].limits.channels;
-        await this._subscriptionService.createOrUpdateSubscriptionByOrg(
-          false,
-          order.organizationId,
-          XORPAY_PROVIDER,
-          order.orderNo,
-          channels === UNLIMITED ? UNLIMITED_CHANNELS : channels,
-          product.tier,
-          product.days >= 365 ? 'YEARLY' : 'MONTHLY',
-          dayjs(term!.expiresAt).unix()
-        );
-        // a new tier starts a new allowance right away; a renewal keeps the running one
-        await this._creditsService.grantIfDue(order.organizationId, now);
-      }
+      await this.grant(paid, product, now);
+      await this._repository.markFulfilled(paid.orderNo);
     } catch (err) {
-      await this._repository.reopen(order.orderNo);
-      console.log(`xorpay order ${order.orderNo}: granting failed`, (err as Error)?.message);
+      console.log(`xorpay order ${paid.orderNo}: granting failed, will retry`, (err as Error)?.message);
       throw new HttpException('fulfilment failed', 500);
     }
     return true;
+  }
+
+  private async grant(order: BillingOrder, product: BillingProduct, now: Date) {
+    if (product.kind === 'pack') {
+      await this._repository.addOnce({
+        organizationId: order.organizationId,
+        kind: 'TOPUP',
+        amount: product.credits,
+        action: product.id,
+        referenceId: order.orderNo,
+        idempotencyKey: `order:${order.orderNo}`,
+      });
+      return;
+    }
+    // The subscription always mirrors the latest paid plan order, so granting an older order again
+    // (a retry) can never shorten a period a later order extended.
+    const latest = (await this._repository.lastPaidPlanOrder(order.organizationId)) ?? order;
+    const tier = latest.tier as PaidTier;
+    const channels = CATALOGUE.tiers[tier].limits.channels;
+    const days = (getProduct(latest.productId) as PlanProduct | null)?.days ?? product.days;
+    await this._subscriptionService.createOrUpdateSubscriptionByOrg(
+      false,
+      order.organizationId,
+      XORPAY_PROVIDER,
+      latest.orderNo,
+      channels === UNLIMITED ? UNLIMITED_CHANNELS : channels,
+      tier,
+      days >= 365 ? 'YEARLY' : 'MONTHLY',
+      dayjs(latest.periodEnd!).unix()
+    );
+    // createOrUpdateSubscriptionByOrg gives up quietly (another provider's or a lifetime
+    // subscription, a failed channel downgrade): check it took, else the order stays unfulfilled
+    const applied = await this._planService.activeSubscription(order.organizationId);
+    if (applied?.provider !== XORPAY_PROVIDER || applied.identifier !== latest.orderNo) {
+      throw new Error(`subscription of ${order.organizationId} was not updated`);
+    }
+    // a new tier starts a new allowance right away; a renewal keeps the running one
+    await this._creditsService.grantIfDue(order.organizationId, now);
+  }
+
+  /** Paid orders whose grant never finished, granted again (the billing workflow). */
+  async settlePaidOrders(now = new Date()) {
+    const orders = await this._repository.paidUnfulfilled(new Date(now.getTime() - SETTLE_AFTER_MS));
+    let settled = 0;
+    for (const order of orders) {
+      try {
+        settled += (await this.fulfil(order, order.notifyPayload ?? {}, now)) ? 1 : 0;
+      } catch (err) {
+        console.log(`settle order ${order.orderNo}`, (err as Error)?.message);
+      }
+    }
+    return settled;
   }
 
   /** Prepaid periods that ran out go back to the free plan (extra channels and members are disabled). */

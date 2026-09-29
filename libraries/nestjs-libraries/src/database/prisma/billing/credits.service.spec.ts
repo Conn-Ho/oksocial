@@ -107,10 +107,20 @@ describe('CreditsService', () => {
     });
   });
 
-  it('Stripe alone also meters credits', async () => {
+  it('Stripe alone does not meter credits (Postiz tiers only)', async () => {
     delete process.env.OKSOCIAL_XORPAY_AID;
     process.env.STRIPE_PUBLISHABLE_KEY = 'pk';
-    expect(setup().service.enabled).toBe(true);
+    const { service } = setup();
+    expect(service.enabled).toBe(false);
+    expect(await service.affordable('o1', 'ai_tag')).toBe(Infinity);
+  });
+
+  it('affordable is how many times the balance covers an action', async () => {
+    const { service } = setup();
+    expect(await service.affordable('o1', 'ai_reply')).toBe(60);
+    await service.spend('o1', 'ai_reply', 'x', 59);
+    expect(await service.affordable('o1', 'ai_reply')).toBe(1);
+    expect(await service.affordable('o1', 'ai_tag')).toBe(5);
   });
 
   it('the first spend grants the monthly allowance, then charges the price', async () => {

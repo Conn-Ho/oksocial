@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import dayjs from 'dayjs';
 import { ApiKeysRepository } from '@gitroom/nestjs-libraries/database/prisma/api-keys/api.keys.repository';
@@ -9,6 +9,8 @@ export const API_KEY_PREFIX = 'osk_';
 // what the list shows of a key: the prefix plus a few random characters
 const SHOWN_CHARS = API_KEY_PREFIX.length + 6;
 export const API_KEY_EXPIRY_DAYS = [0, 30, 90, 180, 365] as const;
+// keys an organization may have that still work
+const MAX_ACTIVE_KEYS = 20;
 
 export const hashApiKey = (key: string) => createHash('sha256').update(key, 'utf8').digest('hex');
 
@@ -33,6 +35,10 @@ export class ApiKeysService {
 
   /** Creates a key and returns it in full, the only time it is visible. */
   async create(orgId: string, userId: string | undefined, note?: string, expiresInDays = 0) {
+    const active = (await this.list(orgId)).filter((k) => k.status === 'active').length;
+    if (active >= MAX_ACTIVE_KEYS) {
+      throw new HttpException(`最多同时保留 ${MAX_ACTIVE_KEYS} 把有效的密钥，请先撤销不用的`, 400);
+    }
     const key = API_KEY_PREFIX + randomBytes(24).toString('base64url');
     const row = await this._repository.create({
       organizationId: orgId,

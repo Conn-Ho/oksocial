@@ -77,13 +77,18 @@ export class InboxService {
     return { channels: channels.length, added };
   }
 
-  /** AI tags, charged per item; stops (402) when the organization runs out of credits. */
+  /** AI tags, charged per item; what the credits do not cover stays untagged. */
   async tagItems(orgId: string, rows: Array<{ id: string; content: string }>) {
     if (!this._ai.enabled) {
       return;
     }
-    for (let i = 0; i < rows.length; i += TAG_BATCH) {
-      const batch = rows.slice(i, i + TAG_BATCH);
+    for (let i = 0; i < rows.length; ) {
+      const size = Math.min(TAG_BATCH, await this._credits.affordable(orgId, 'ai_tag'));
+      if (size < 1) {
+        return;
+      }
+      const batch = rows.slice(i, i + size);
+      i += batch.length;
       const tags = await this._credits.withCredits(
         orgId,
         'ai_tag',

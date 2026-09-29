@@ -1,4 +1,5 @@
 import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 import { MediaRepository } from '@gitroom/nestjs-libraries/database/prisma/media/media.repository';
 import { OpenaiService } from '@gitroom/nestjs-libraries/openai/openai.service';
 import { generationError } from '@gitroom/nestjs-libraries/openai/generation.error';
@@ -91,7 +92,8 @@ export class MediaService {
     private _openAi: OpenaiService,
     private _subscriptionService: SubscriptionService,
     private _videoManager: VideoManager,
-    private _temporalService: TemporalService
+    private _temporalService: TemporalService,
+    private _creditsService: CreditsService
   ) {}
 
   async deleteMedia(org: string, id: string) {
@@ -107,23 +109,26 @@ export class MediaService {
     org: Organization,
     generatePromptFirst?: boolean
   ) {
-    try {
-      const generating = await this._subscriptionService.useCredit(
-        org,
-        'ai_images',
-        async () => {
-          if (generatePromptFirst) {
-            prompt = await this._openAi.generatePromptForPicture(prompt);
-            console.log('Prompt:', prompt);
+    // oksocial credits (a no-op without oksocial plans), refunded when the generation fails
+    return this._creditsService.withCredits(org.id, 'ai_image', undefined, async () => {
+      try {
+        const generating = await this._subscriptionService.useCredit(
+          org,
+          'ai_images',
+          async () => {
+            if (generatePromptFirst) {
+              prompt = await this._openAi.generatePromptForPicture(prompt);
+              console.log('Prompt:', prompt);
+            }
+            return this._openAi.generateImage(prompt);
           }
-          return this._openAi.generateImage(prompt);
-        }
-      );
+        );
 
-      return generating;
-    } catch (err) {
-      throw generationError(err);
-    }
+        return generating;
+      } catch (err) {
+        throw generationError(err);
+      }
+    });
   }
 
   // Streams the remote body straight into storage: only the sniffing prefix

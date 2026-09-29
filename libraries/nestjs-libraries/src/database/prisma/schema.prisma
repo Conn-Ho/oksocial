@@ -2079,6 +2079,8 @@ model BillingOrder {
   periodEnd       DateTime?
   dailyPrice      Float?
   paidAt          DateTime?
+  // set once what was bought has been granted; PAID without it is retried by the notify and the workflow
+  fulfilledAt     DateTime?
   notifyPayload   Json?
   userId          String?
   createdAt       DateTime           @default(now())

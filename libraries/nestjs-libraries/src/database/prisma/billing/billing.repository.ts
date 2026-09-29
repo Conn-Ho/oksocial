@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { BillingOrderStatus, CreditEntryKind, Prisma, SubscriptionTier } from '@prisma/client';
+import { BillingOrder, CreditEntryKind, Prisma, Subscription, SubscriptionTier } from '@prisma/client';
 import {
   PrismaRepository,
   PrismaTransaction,
@@ -35,25 +35,13 @@ export class BillingRepository {
     return _sum.amount ?? 0;
   }
 
-  /** Charges `amount` credits if the balance covers it, else returns null. */
-  async spend(orgId: string, action: string, amount: number, referenceId?: string) {
+  /** Runs `work` in a serializable transaction, again when Postgres aborts it for a conflict. */
+  private async serializable<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this._transaction.model.$transaction(
-          async (tx) => {
-            const { _sum } = await tx.creditEntry.aggregate({
-              where: { organizationId: orgId },
-              _sum: { amount: true },
-            });
-            if ((_sum.amount ?? 0) < amount) {
-              return null;
-            }
-            return tx.creditEntry.create({
-              data: { organizationId: orgId, kind: 'SPEND', amount: -amount, action, referenceId },
-            });
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-        );
+        return await this._transaction.model.$transaction(work, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
       } catch (err) {
         if ((err as { code?: string })?.code === 'P2034' && attempt < SERIALIZATION_RETRIES) {
           continue;
@@ -61,6 +49,22 @@ export class BillingRepository {
         throw err;
       }
     }
+  }
+
+  /** Charges `amount` credits if the balance covers it, else returns null. */
+  spend(orgId: string, action: string, amount: number, referenceId?: string) {
+    return this.serializable(async (tx) => {
+      const { _sum } = await tx.creditEntry.aggregate({
+        where: { organizationId: orgId },
+        _sum: { amount: true },
+      });
+      if ((_sum.amount ?? 0) < amount) {
+        return null;
+      }
+      return tx.creditEntry.create({
+        data: { organizationId: orgId, kind: 'SPEND', amount: -amount, action, referenceId },
+      });
+    });
   }
 
   /**
@@ -261,34 +265,76 @@ export class BillingRepository {
   }
 
   /** The plan order that set the organization's current period (the latest paid one). */
-  lastPaidPlanOrder(orgId: string) {
-    return this._orders.model.billingOrder.findFirst({
+  lastPaidPlanOrder(orgId: string, tx: Pick<Prisma.TransactionClient, 'billingOrder'> = this._orders.model) {
+    return tx.billingOrder.findFirst({
       where: { organizationId: orgId, status: 'PAID', tier: { not: null } },
       orderBy: { paidAt: 'desc' },
     });
   }
 
-  /**
-   * PENDING -> PAID, once: a repeated or concurrent notification updates nothing and gets false.
-   * The term of a plan order is stored with it.
-   */
-  async markPaid(
-    orderNo: string,
-    notifyPayload: Prisma.InputJsonValue,
-    term?: { tier: SubscriptionTier; periodStart: Date; periodEnd: Date; dailyPrice: number }
-  ) {
-    const { count } = await this._orders.model.billingOrder.updateMany({
-      where: { orderNo, status: BillingOrderStatus.PENDING },
-      data: { status: 'PAID', paidAt: new Date(), notifyPayload, ...(term || {}) },
+  /** A payable order of the same product and method, shown again instead of creating another. */
+  pendingOrder(orgId: string, productId: string, payType: string, since: Date) {
+    return this._orders.model.billingOrder.findFirst({
+      where: {
+        organizationId: orgId,
+        productId,
+        payType,
+        status: 'PENDING',
+        qr: { not: null },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
     });
-    return count > 0;
   }
 
-  /** Undo markPaid when granting what was bought failed, so XorPay's retry applies it again. */
-  reopen(orderNo: string) {
-    return this._orders.model.billingOrder.updateMany({
-      where: { orderNo, status: 'PAID' },
-      data: { status: 'PENDING', paidAt: null, tier: null, periodStart: null, periodEnd: null, dailyPrice: null },
+  /**
+   * Marks a payment XorPay confirmed as PAID, once (an order we closed but that got paid anyway
+   * counts too). For a plan, `term` gets the latest paid plan order and the subscription and
+   * returns the period this order buys, inside the same serializable transaction: two plan
+   * payments of one organization chain their periods instead of both starting from the same end.
+   * Returns the PAID order, or null when it had been paid before.
+   */
+  claimPaid(
+    orderNo: string,
+    notifyPayload: Prisma.InputJsonValue,
+    term?: (current: TermInputs) => PaidTerm | undefined
+  ) {
+    return this.serializable(async (tx) => {
+      const order = await tx.billingOrder.findUnique({ where: { orderNo } });
+      if (!order || !(order.status === 'PENDING' || order.status === 'CLOSED')) {
+        return null;
+      }
+      const period = term
+        ? term({
+            lastPaid: await this.lastPaidPlanOrder(order.organizationId, tx),
+            subscription: await tx.subscription.findFirst({
+              where: { organizationId: order.organizationId, deletedAt: null },
+            }),
+          })
+        : undefined;
+      return tx.billingOrder.update({
+        where: { orderNo },
+        data: { status: 'PAID', paidAt: new Date(), notifyPayload, ...(period || {}) },
+      });
+    });
+  }
+
+  markFulfilled(orderNo: string) {
+    return this._orders.model.billingOrder.update({
+      where: { orderNo },
+      data: { fulfilledAt: new Date() },
+    });
+  }
+
+  /** Paid orders whose grant never finished (the process died between payment and grant). */
+  paidUnfulfilled(before: Date) {
+    return this._orders.model.billingOrder.findMany({
+      where: { status: 'PAID', fulfilledAt: null, paidAt: { lte: before } },
+      orderBy: { paidAt: 'asc' },
+      take: 100,
     });
   }
 }
+
+export type PaidTerm = { tier: SubscriptionTier; periodStart: Date; periodEnd: Date; dailyPrice: number };
+export type TermInputs = { lastPaid: BillingOrder | null; subscription: Subscription | null };

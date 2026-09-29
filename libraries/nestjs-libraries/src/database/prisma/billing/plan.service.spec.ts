@@ -46,7 +46,6 @@ describe('PlanService', () => {
     await expect(service.assertFeature('o1', 'approval')).resolves.toBeUndefined();
     expect(await service.withinLimit('o1', 'team_members')).toBe(true);
     expect(await service.hasFeature('o1', 'share_reports')).toBe(true);
-    expect(await service.channelLimit('o1')).toBe(Number.MAX_SAFE_INTEGER);
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
@@ -67,24 +66,31 @@ describe('PlanService', () => {
     expect(plan.subscription).toMatchObject({ provider: 'xorpay', period: 'MONTHLY' });
   });
 
-  it('an XorPay period that ran out counts as the free plan; Stripe cancellations do not', async () => {
+  it('a period that ran out counts as the free plan; lifetime and open-ended ones never run out', async () => {
     xorpayOn();
     const ended = sub({ cancelAt: new Date(Date.now() - 1000) });
     expect((await setup({ sub: ended }).service.getPlan('o1')).tier).toBe('FREE');
     expect(isExpired(ended as any)).toBe(true);
     expect(isExpired({ ...ended, isLifetime: true } as any)).toBe(false);
-    expect(isExpired({ ...ended, provider: 'stripe' } as any)).toBe(false);
     expect(isExpired({ ...ended, cancelAt: null } as any)).toBe(false);
   });
 
-  it('Stripe-only deployments have no free plan (Postiz pays first)', async () => {
+  it('Stripe alone keeps Postiz: oksocial limits are off, enabling channels uses the subscription', async () => {
     process.env.STRIPE_PUBLISHABLE_KEY = 'pk';
-    const plan = await setup().service.getPlan('o1');
-    expect(plan.limits.channels).toBe(pricing.FREE.channel);
-    expect(plan.limits.monthly_credits).toBe(0);
-    const paid = await setup({ sub: sub({ provider: 'stripe', subscriptionTier: 'PRO', totalChannels: 30, cancelAt: null }) }).service.getPlan('o1');
-    expect(paid).toMatchObject({ tier: 'PRO' });
-    expect(paid.limits.monthly_credits).toBe(15000);
+    const { service, repo } = setup({ channels: 99, members: 99, bytes: 1024 ** 4 });
+    expect((await service.getPlan('o1')).billing).toBe(false);
+    await expect(service.assertWithinLimit('o1', 'team_members')).resolves.toBeUndefined();
+    expect(await service.withinLimit('o1', 'storage_gb')).toBe(true);
+    expect(repo.countMembers).not.toHaveBeenCalled();
+    expect(await service.channelLimit('o1')).toBe(pricing.FREE.channel);
+    const stripeTeam = setup({ sub: sub({ provider: 'stripe', subscriptionTier: 'TEAM', totalChannels: 12, cancelAt: null }) });
+    expect(await stripeTeam.service.channelLimit('o1')).toBe(12);
+  });
+
+  it('with XorPay the channel limit is the plan one', async () => {
+    xorpayOn();
+    expect(await setup().service.channelLimit('o1')).toBe(2);
+    expect(await setup({ sub: sub({ subscriptionTier: 'ULTIMATE', totalChannels: -1 }) }).service.channelLimit('o1')).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('refuses one more channel at the limit with a Chinese message and a link to the usage page', async () => {
@@ -162,12 +168,14 @@ describe('PlanService', () => {
       expect(options).toMatchObject({ channel: -10, ai: true, team_members: true });
     });
 
-    it('Stripe only: exactly Postiz tiers, free has no channels', async () => {
+    it('Stripe only: exactly Postiz tiers, free has no channels, cancelAt is left to the webhook', async () => {
       process.env.STRIPE_PUBLISHABLE_KEY = 'pk';
       const free = await setup().service.packageOptions('o1');
       expect(free.options).toMatchObject({ channel: pricing.FREE.channel, posts_per_month: 0, team_members: false });
       const standard = await setup({ sub: sub({ provider: 'stripe', subscriptionTier: 'STANDARD', cancelAt: null }) }).service.packageOptions('o1');
       expect(standard.options).toMatchObject({ channel: -10, team_members: false });
+      const cancelled = await setup({ sub: sub({ provider: 'stripe', subscriptionTier: 'PRO', cancelAt: new Date(Date.now() - 1000) }) }).service.packageOptions('o1');
+      expect(cancelled.subscription).toMatchObject({ subscriptionTier: 'PRO' });
     });
 
     it('XorPay: the free plan can post and connect its channels; members are counted on invite', async () => {

@@ -17,7 +17,6 @@ import {
   PlanTierDefinition,
   UNLIMITED,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
-import { XORPAY_PROVIDER } from '@gitroom/nestjs-libraries/services/payment/payment.providers';
 
 const GB = 1024 ** 3;
 
@@ -29,11 +28,14 @@ export class PaymentRequiredException extends HttpException {
 }
 
 export type EffectivePlan = PlanTierDefinition & {
-  // false: no billing configured (self-hosting), nothing is limited or charged
+  // false: oksocial plans are off (self-hosting, or Stripe only), nothing here is limited or charged
   billing: boolean;
   subscription: Pick<Subscription, 'provider' | 'period' | 'cancelAt' | 'isLifetime' | 'totalChannels'> | null;
 };
 
+// oksocial's plans, limits and credits are on when oksocial sells plans itself (XorPay). Without it
+// nothing here limits anything: self-hosting stays unlimited and a Stripe-only deployment keeps
+// Postiz's own tiers exactly (the policy guard still applies them).
 const unlimitedPlan: EffectivePlan = {
   tier: 'ULTIMATE',
   name: '不限量（未启用计费）',
@@ -44,22 +46,9 @@ const unlimitedPlan: EffectivePlan = {
   subscription: null,
 };
 
-// Stripe-only deployments keep Postiz's pay-first model: there is no free plan, a trial or a
-// subscription comes first. The oksocial free plan exists when oksocial sells plans itself (XorPay).
-const payFirstFree = (): PlanTierDefinition => ({
-  ...CATALOGUE.tiers.FREE,
-  limits: {
-    ...(Object.fromEntries(LIMIT_KEYS.map((k) => [k, 0])) as Record<LimitKey, number>),
-    channels: pricing.FREE.channel || 0,
-    team_members: 1,
-  },
-  features: [],
-  postizFeatures: 'FREE',
-});
-
-/** A prepaid (XorPay) period that ran out; Stripe removes its own subscriptions by webhook. */
-export const isExpired = (sub: Pick<Subscription, 'provider' | 'cancelAt' | 'isLifetime'>, now = new Date()) =>
-  sub.provider === XORPAY_PROVIDER && !sub.isLifetime && !!sub.cancelAt && sub.cancelAt.getTime() <= now.getTime();
+/** A subscription whose end (cancelAt) has passed is over, whatever removes its row later. */
+export const isExpired = (sub: Pick<Subscription, 'cancelAt' | 'isLifetime'>, now = new Date()) =>
+  !sub.isLifetime && !!sub.cancelAt && sub.cancelAt.getTime() <= now.getTime();
 
 const withinLimit = (used: number, limit: number) => limit === UNLIMITED || used < limit;
 
@@ -85,15 +74,11 @@ export class PlanService {
   }
 
   async getPlan(orgId: string): Promise<EffectivePlan> {
-    if (!isBillingEnabled()) {
+    if (!isXorPayBilling()) {
       return unlimitedPlan;
     }
     const sub = await this.activeSubscription(orgId);
-    const def = sub
-      ? CATALOGUE.tiers[sub.subscriptionTier as PlanTier]
-      : isXorPayBilling()
-      ? CATALOGUE.tiers.FREE
-      : payFirstFree();
+    const def = CATALOGUE.tiers[(sub?.subscriptionTier as PlanTier) || 'FREE'];
     return {
       ...def,
       // a subscription carries the channels that were bought (Stripe sells them per seat)
@@ -173,8 +158,13 @@ export class PlanService {
     );
   }
 
-  /** Channels the organization may have connected at once (for enabling a disabled channel). */
+  /** Channels the organization may have enabled at once (enabling a disabled channel). */
   async channelLimit(orgId: string) {
+    if (!isXorPayBilling()) {
+      // Postiz: the channels of the subscription, or of its free tier
+      const sub = await this._repository.getSubscription(orgId);
+      return sub?.totalChannels || pricing.FREE.channel || 0;
+    }
     const limit = (await this.getPlan(orgId)).limits.channels;
     return limit === UNLIMITED ? Number.MAX_SAFE_INTEGER : limit;
   }
@@ -184,14 +174,15 @@ export class PlanService {
    * (no billing, or Stripe only) this is exactly Postiz's computation.
    */
   async packageOptions(orgId: string) {
-    const subscription = await this.activeSubscription(orgId);
-    const tier = (subscription?.subscriptionTier ||
-      (!isBillingEnabled() ? 'PRO' : 'FREE')) as PlanTier;
-
     if (!isXorPayBilling()) {
+      const subscription = await this._repository.getSubscription(orgId);
+      const tier = subscription?.subscriptionTier || (!isBillingEnabled() ? 'PRO' : 'FREE');
       const { channel, ...all } = pricing[tier];
       return { subscription, options: { ...all, channel: tier === 'FREE' ? channel : -10 } };
     }
+
+    const subscription = await this.activeSubscription(orgId);
+    const tier = (subscription?.subscriptionTier || 'FREE') as PlanTier;
 
     const def = CATALOGUE.tiers[tier];
     const { channel, ...all } = pricing[def.postizFeatures];

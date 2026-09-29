@@ -7,6 +7,7 @@ import {
   newOrderNo,
   nextTerm,
   quoteFor,
+  termFrom,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.orders.service';
 import { getProduct, PlanProduct } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 import { md5sign, XorPayClient } from '@gitroom/nestjs-libraries/services/payment/xorpay.client';
@@ -51,6 +52,16 @@ describe('nextTerm / quoteFor (okchat semantics)', () => {
     expect(nextTerm({ ...current, dailyPrice: null }, plan('pro'), NOW).expiresAt.getTime()).toBe(NOW.getTime() + 31 * DAY);
   });
 
+  it('termFrom reads only a running XorPay period', () => {
+    const lastPaid = { tier: 'PRO', periodEnd: new Date(NOW.getTime() + DAY), dailyPrice: 16 } as any;
+    const xorpay = { provider: 'xorpay', isLifetime: false, cancelAt: new Date(NOW.getTime() + DAY) } as any;
+    expect(termFrom({ lastPaid, subscription: xorpay }, NOW)).toEqual({ tier: 'PRO', periodEnd: lastPaid.periodEnd, dailyPrice: 16 });
+    expect(termFrom({ lastPaid, subscription: { ...xorpay, provider: 'stripe' } }, NOW)).toBeNull();
+    expect(termFrom({ lastPaid, subscription: { ...xorpay, cancelAt: new Date(NOW.getTime() - 1) } }, NOW)).toBeNull();
+    expect(termFrom({ lastPaid: null, subscription: xorpay }, NOW)).toBeNull();
+    expect(termFrom({ lastPaid, subscription: null }, NOW)).toBeNull();
+  });
+
   it('order numbers are random and carry nothing else', () => {
     expect(newOrderNo()).toMatch(/^oks[0-9a-f]{20}$/);
     expect(newOrderNo()).not.toBe(newOrderNo());
@@ -59,33 +70,51 @@ describe('nextTerm / quoteFor (okchat semantics)', () => {
 
 type Order = Record<string, any>;
 
-const setup = (opts: { activeSub?: any; lastPaid?: any; remote?: string; pay?: () => Promise<Response>; failQuery?: boolean } = {}) => {
+/** In-memory orders and subscription, with the repository's once-only semantics. */
+const setup = (
+  opts: { activeSub?: any; lastPaid?: any; remote?: string; pay?: () => Promise<Response>; failQuery?: boolean } = {}
+) => {
   const orders = new Map<string, Order>();
+  const state: { sub: any } = { sub: opts.activeSub ?? null };
+  const latestPaid = () =>
+    [...orders.values()]
+      .filter((o) => o.status === 'PAID' && o.tier)
+      .sort((a, b) => b.paidAt - a.paidAt)[0] ?? opts.lastPaid ?? null;
   const repo = {
     createOrder: jest.fn(async (d: Order) => {
-      orders.set(d.orderNo, { ...d, status: 'PENDING', createdAt: new Date() });
+      orders.set(d.orderNo, { ...d, status: 'PENDING', createdAt: new Date(), fulfilledAt: null });
       return orders.get(d.orderNo);
     }),
     attachPayment: jest.fn(async (no: string, aoid: string, qr: string) => Object.assign(orders.get(no)!, { providerOrderId: aoid, qr })),
     closeOrder: jest.fn(async (no: string) => Object.assign(orders.get(no)!, { status: 'CLOSED' })),
-    getOrder: jest.fn(async (no: string) => orders.get(no) ?? null),
+    getOrder: jest.fn(async (no: string) => (orders.get(no) ? { ...orders.get(no) } : null)),
     getOrgOrder: jest.fn(async (org: string, no: string) => (orders.get(no)?.organizationId === org ? orders.get(no) : null)),
     listOrders: jest.fn(async () => [...orders.values()]),
-    lastPaidPlanOrder: jest.fn(async () => opts.lastPaid ?? null),
-    markPaid: jest.fn(async (no: string, payload: unknown, term?: Order) => {
+    pendingOrder: jest.fn(async (org: string, productId: string, payType: string, since: Date) =>
+      [...orders.values()].find((o) => o.organizationId === org && o.productId === productId && o.payType === payType && o.status === 'PENDING' && o.qr && o.createdAt >= since) ?? null
+    ),
+    lastPaidPlanOrder: jest.fn(async () => latestPaid()),
+    claimPaid: jest.fn(async (no: string, payload: unknown, term?: (c: any) => Order | undefined) => {
       const o = orders.get(no)!;
-      if (o.status !== 'PENDING') return false;
-      Object.assign(o, { status: 'PAID', paidAt: new Date(), notifyPayload: payload, ...(term || {}) });
-      return true;
+      if (!['PENDING', 'CLOSED'].includes(o.status)) return null;
+      const period = term ? term({ lastPaid: latestPaid(), subscription: state.sub }) : undefined;
+      Object.assign(o, { status: 'PAID', paidAt: new Date(), notifyPayload: payload, ...(period || {}) });
+      return { ...o };
     }),
-    reopen: jest.fn(async (no: string) => Object.assign(orders.get(no)!, { status: 'PENDING' })),
+    markFulfilled: jest.fn(async (no: string) => Object.assign(orders.get(no)!, { fulfilledAt: new Date() })),
+    paidUnfulfilled: jest.fn(async () => [...orders.values()].filter((o) => o.status === 'PAID' && !o.fulfilledAt)),
     addOnce: jest.fn(async () => true),
     expiredSubscriptions: jest.fn(async () => [{ organizationId: 'o1' }, { organizationId: 'o2' }]),
   };
-  const planService = { activeSubscription: jest.fn(async () => opts.activeSub ?? null) };
+  const planService = { activeSubscription: jest.fn(async () => state.sub) };
   const credits = { grantIfDue: jest.fn(async () => true) };
   const subscriptions = {
-    createOrUpdateSubscriptionByOrg: jest.fn(async () => ({})),
+    // the real one gives up quietly over another provider's or a lifetime subscription
+    createOrUpdateSubscriptionByOrg: jest.fn(async (_t: boolean, _org: string, provider: string, identifier: string, _c: number, tier: string, _p: string, cancelAt: number) => {
+      if (state.sub && (state.sub.isLifetime || state.sub.provider !== provider)) return {};
+      state.sub = { provider, identifier, subscriptionTier: tier, isLifetime: false, cancelAt: new Date(cancelAt * 1000) };
+      return undefined;
+    }),
     deleteSubscriptionByOrgId: jest.fn(async () => true),
   };
   const fetchImpl = jest.fn(async (url: string) => {
@@ -97,11 +126,11 @@ const setup = (opts: { activeSub?: any; lastPaid?: any; remote?: string; pay?: (
   });
   const service = new BillingOrdersService(repo as any, planService as any, credits as any, subscriptions as any);
   (service as any).xorpay = new XorPayClient('aid', 'secret', fetchImpl as any);
-  return { service, repo, orders, planService, credits, subscriptions, fetchImpl };
+  return { service, repo, orders, state, planService, credits, subscriptions, fetchImpl };
 };
 
-const notifyFor = (orderNo: string, price: string) => {
-  const p: Record<string, string> = { aoid: 'A1', order_id: orderNo, pay_price: price, pay_time: '2026-09-29 12:00:00' };
+const notifyFor = (orderNo: string, price: string, aoid = 'A1') => {
+  const p: Record<string, string> = { aoid, order_id: orderNo, pay_price: price, pay_time: '2026-09-29 12:00:00' };
   return { ...p, sign: md5sign(p.aoid, p.order_id, p.pay_price, p.pay_time, 'secret') };
 };
 
@@ -135,6 +164,18 @@ describe('BillingOrdersService', () => {
       const body = new URLSearchParams(String((fetchImpl.mock.calls[0] as any)[1].body));
       expect(body.get('notify_url')).toBe('https://app.oksocial.online/api/payment/xorpay');
       expect(body.get('order_id')).toBe(res.orderNo);
+    });
+
+    it('pressing again shows the same unpaid QR code instead of a new order', async () => {
+      const { service, repo, fetchImpl } = setup();
+      const first = await service.createOrder('o1', 'u1', 'team', 'native');
+      const again = await service.createOrder('o1', 'u1', 'team', 'native');
+      expect(again).toMatchObject({ orderNo: first.orderNo, qr: first.qr });
+      expect(again.expireIn).toBeGreaterThan(7000);
+      expect(repo.createOrder).toHaveBeenCalledTimes(1);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      await service.createOrder('o1', 'u1', 'team', 'alipay');
+      expect(repo.createOrder).toHaveBeenCalledTimes(2);
     });
 
     it('credit packs have no period', async () => {
@@ -178,7 +219,7 @@ describe('BillingOrdersService', () => {
   });
 
   describe('payment notification', () => {
-    const paidOrder = async (s: ReturnType<typeof setup>, productId: string) =>
+    const newOrder = async (s: ReturnType<typeof setup>, productId: string) =>
       (await s.service.createOrder('o1', 'u1', productId, 'native')).orderNo;
 
     it('ignores unknown orders', async () => {
@@ -187,24 +228,24 @@ describe('BillingOrdersService', () => {
 
     it('a credit pack is added once, however often XorPay notifies', async () => {
       const s = setup();
-      const no = await paidOrder(s, 'pack-5000');
+      const no = await newOrder(s, 'pack-5000');
       expect(await s.service.handleNotify(notifyFor(no, '45.00'))).toBe('success');
-      expect(await s.service.handleNotify(notifyFor(no, '45.00'))).toBe('success');
+      expect(await s.service.handleNotify(notifyFor(no, '45'))).toBe('success');
       expect(s.repo.addOnce).toHaveBeenCalledTimes(1);
       expect(s.repo.addOnce).toHaveBeenCalledWith({
         organizationId: 'o1', kind: 'TOPUP', amount: 5000, action: 'pack-5000', referenceId: no, idempotencyKey: `order:${no}`,
       });
-      expect(s.orders.get(no)).toMatchObject({ status: 'PAID' });
+      expect(s.orders.get(no)).toMatchObject({ status: 'PAID', fulfilledAt: expect.any(Date) });
       expect(s.subscriptions.createOrUpdateSubscriptionByOrg).not.toHaveBeenCalled();
     });
 
     it('a plan activates the XorPay subscription until the end of its period and starts its credits', async () => {
       const s = setup();
-      const no = await paidOrder(s, 'team');
+      const no = await newOrder(s, 'team');
       const before = Date.now();
       await s.service.handleNotify(notifyFor(no, '199.00'));
       const order = s.orders.get(no)!;
-      expect(order).toMatchObject({ status: 'PAID', tier: 'TEAM' });
+      expect(order).toMatchObject({ status: 'PAID', tier: 'TEAM', fulfilledAt: expect.any(Date) });
       expect(order.periodEnd.getTime() - order.periodStart.getTime()).toBe(31 * DAY);
       expect(order.periodStart.getTime()).toBeGreaterThanOrEqual(before);
       expect(s.subscriptions.createOrUpdateSubscriptionByOrg).toHaveBeenCalledWith(
@@ -215,8 +256,11 @@ describe('BillingOrdersService', () => {
 
     it('a renewal continues after the running period, a yearly plan is YEARLY', async () => {
       const end = new Date(Date.now() + 5 * DAY);
-      const s = setup({ activeSub: { provider: 'xorpay', isLifetime: false }, lastPaid: { tier: 'TEAM', periodEnd: end, dailyPrice: 6 } });
-      const no = await paidOrder(s, 'team-year');
+      const s = setup({
+        activeSub: { provider: 'xorpay', isLifetime: false, cancelAt: end, identifier: 'oksold' },
+        lastPaid: { orderNo: 'oksold', productId: 'team', tier: 'TEAM', periodEnd: end, dailyPrice: 6, status: 'PAID', paidAt: new Date(0) },
+      });
+      const no = await newOrder(s, 'team-year');
       await s.service.handleNotify(notifyFor(no, '1990.00'));
       const order = s.orders.get(no)!;
       expect(order.periodStart.getTime()).toBe(end.getTime());
@@ -224,37 +268,84 @@ describe('BillingOrdersService', () => {
       expect((s.subscriptions.createOrUpdateSubscriptionByOrg.mock.calls[0] as any[])[6]).toBe('YEARLY');
     });
 
-    it('refuses a bad amount (400), an unpaid order (400), and asks XorPay to retry when it cannot confirm (500)', async () => {
+    it('two plan payments chain, and granting the older one again never shortens the period', async () => {
       const s = setup();
-      const no = await paidOrder(s, 'team');
+      const a = await newOrder(s, 'team');
+      const b = await newOrder(s, 'team-year');
+      await s.service.handleNotify(notifyFor(a, '199.00'));
+      s.orders.get(a)!.paidAt = new Date(Date.now() - 10_000);
+      await s.service.handleNotify(notifyFor(b, '1990.00'));
+      const [ordA, ordB] = [s.orders.get(a)!, s.orders.get(b)!];
+      expect(ordB.periodStart.getTime()).toBe(ordA.periodEnd.getTime());
+      // A is granted again (e.g. by the settle job): the subscription keeps B's end
+      await s.service.fulfil({ ...ordA, fulfilledAt: null } as any, {});
+      expect(s.state.sub).toMatchObject({ identifier: b, cancelAt: new Date(dayjs(ordB.periodEnd).unix() * 1000) });
+    });
+
+    it('refuses a bad amount or a foreign XorPay order id (400), an unpaid order (400), and asks XorPay to retry when it cannot confirm (500)', async () => {
+      const s = setup();
+      const no = await newOrder(s, 'team');
       await expect(s.service.handleNotify(notifyFor(no, '0.01'))).rejects.toMatchObject({ status: 400 });
+      await expect(s.service.handleNotify(notifyFor(no, 'abc'))).rejects.toMatchObject({ status: 400 });
+      await expect(s.service.handleNotify(notifyFor(no, '199.00', 'A-other'))).rejects.toMatchObject({ status: 400 });
       const unpaid = setup({ remote: 'new' });
-      const no2 = await paidOrder(unpaid, 'team');
+      const no2 = await newOrder(unpaid, 'team');
       await expect(unpaid.service.handleNotify(notifyFor(no2, '199.00'))).rejects.toMatchObject({ status: 400 });
       const down = setup({ failQuery: true });
-      const no3 = await paidOrder(down, 'team');
+      const no3 = await newOrder(down, 'team');
       await expect(down.service.handleNotify(notifyFor(no3, '199.00'))).rejects.toMatchObject({ status: 500 });
       for (const x of [s, unpaid, down]) {
-        expect(x.repo.markPaid).not.toHaveBeenCalled();
+        expect(x.repo.claimPaid).not.toHaveBeenCalled();
       }
     });
 
-    it('when granting fails the order goes back to pending so the retry applies it', async () => {
+    it('an order closed on our side that XorPay confirms paid is still granted', async () => {
       const s = setup();
-      const no = await paidOrder(s, 'team');
+      const no = await newOrder(s, 'pack-1000');
+      s.orders.get(no)!.status = 'CLOSED';
+      expect(await s.service.handleNotify(notifyFor(no, '10.00'))).toBe('success');
+      expect(s.repo.addOnce).toHaveBeenCalledTimes(1);
+    });
+
+    it('when granting fails the order stays paid but unfulfilled, and the next notification grants it', async () => {
+      const s = setup();
+      const no = await newOrder(s, 'team');
       s.subscriptions.createOrUpdateSubscriptionByOrg.mockRejectedValueOnce(new Error('db down'));
       await expect(s.service.handleNotify(notifyFor(no, '199.00'))).rejects.toMatchObject({ status: 500 });
-      expect(s.orders.get(no)!.status).toBe('PENDING');
+      expect(s.orders.get(no)).toMatchObject({ status: 'PAID', fulfilledAt: null });
+      // the payment dialog keeps waiting instead of saying it worked
+      expect(await s.service.orderStatus('o1', no)).toMatchObject({ status: 'PENDING' });
       expect(await s.service.handleNotify(notifyFor(no, '199.00'))).toBe('success');
-      expect(s.orders.get(no)!.status).toBe('PAID');
+      expect(s.orders.get(no)!.fulfilledAt).toBeInstanceOf(Date);
+      expect(await s.service.orderStatus('o1', no)).toMatchObject({ status: 'PAID' });
+    });
+
+    it('a subscription that did not take (another provider meanwhile) leaves the order unfulfilled', async () => {
+      const s = setup();
+      const no = await newOrder(s, 'team');
+      s.state.sub = { provider: 'stripe', isLifetime: false, cancelAt: null };
+      await expect(s.service.handleNotify(notifyFor(no, '199.00'))).rejects.toMatchObject({ status: 500 });
+      expect(s.orders.get(no)).toMatchObject({ status: 'PAID', fulfilledAt: null });
+      expect(s.credits.grantIfDue).not.toHaveBeenCalled();
+    });
+
+    it('settlePaidOrders grants paid orders whose grant did not finish, and keeps going on errors', async () => {
+      const s = setup();
+      const a = await newOrder(s, 'pack-1000');
+      const b = await newOrder(s, 'pack-5000');
+      for (const no of [a, b]) Object.assign(s.orders.get(no)!, { status: 'PAID', paidAt: new Date(), notifyPayload: {} });
+      s.repo.addOnce.mockRejectedValueOnce(new Error('db down'));
+      expect(await s.service.settlePaidOrders()).toBe(1);
+      expect(await s.service.settlePaidOrders()).toBe(1);
+      expect(await s.service.settlePaidOrders()).toBe(0);
     });
 
     it('never marks paid an order whose product left the catalogue', async () => {
       const s = setup();
-      const no = await paidOrder(s, 'team');
+      const no = await newOrder(s, 'team');
       s.orders.get(no)!.productId = 'retired-plan';
       await expect(s.service.fulfil(s.orders.get(no) as any, {})).rejects.toMatchObject({ status: 500 });
-      expect(s.repo.markPaid).not.toHaveBeenCalled();
+      expect(s.repo.claimPaid).not.toHaveBeenCalled();
     });
   });
 

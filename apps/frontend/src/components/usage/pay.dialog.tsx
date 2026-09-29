@@ -37,14 +37,38 @@ export const PayDialog: FC<{
   const [order, setOrder] = useState<CreatedOrder | null>(null);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
-  const { data: status } = useOrderStatus(order?.orderNo ?? null, !!order);
-  const state = status?.status ?? (order ? 'PENDING' : null);
+  // the QR code stops working after expireIn (the order itself only shows as expired a day later)
+  const [qrExpired, setQrExpired] = useState(false);
+  const [settled, setSettled] = useState(false);
+  const { data: polled } = useOrderStatus(order?.orderNo ?? null, !!order && !qrExpired && !settled);
+  const remote = polled?.status;
+  const state = !order
+    ? null
+    : remote && remote !== 'PENDING'
+    ? remote
+    : qrExpired
+    ? 'EXPIRED'
+    : 'PENDING';
 
   useEffect(() => {
-    if (state === 'PAID') {
+    setQrExpired(false);
+    setSettled(false);
+    if (!order) {
+      return;
+    }
+    const timer = setTimeout(() => setQrExpired(true), order.expireIn * 1000);
+    return () => clearTimeout(timer);
+  }, [order?.orderNo]);
+
+  useEffect(() => {
+    if (!remote || remote === 'PENDING') {
+      return;
+    }
+    setSettled(true);
+    if (remote === 'PAID') {
       onPaid();
     }
-  }, [state]);
+  }, [remote]);
 
   const createOrder = useCallback(async () => {
     setCreating(true);
@@ -146,7 +170,9 @@ export const PayDialog: FC<{
 
       {(state === 'CLOSED' || state === 'EXPIRED') && (
         <div className="flex flex-col gap-[12px]">
-          <p className="text-[13px] text-textColor/70">订单已关闭或过期，没有扣款。</p>
+          <p className="text-[13px] text-textColor/70">
+            二维码已失效。如果刚刚已经付款，几分钟内会自动到账，可在订单记录里查看；否则请重新下单。
+          </p>
           <Button secondary={true} onClick={() => setOrder(null)}>重新下单</Button>
         </div>
       )}

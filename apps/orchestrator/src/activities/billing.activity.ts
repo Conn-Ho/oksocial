@@ -11,6 +11,12 @@ export class BillingActivity {
     private _billingOrdersService: BillingOrdersService
   ) {}
 
+  // Paid orders whose grant did not finish (crash between payment and grant).
+  @ActivityMethod()
+  async settlePaidOrders() {
+    return this._billingOrdersService.settlePaidOrders();
+  }
+
   // Prepaid (XorPay) plans that ran out go back to the free plan.
   @ActivityMethod()
   async expirePlans() {

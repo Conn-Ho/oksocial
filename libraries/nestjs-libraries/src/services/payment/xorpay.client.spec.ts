@@ -22,6 +22,8 @@ describe('XorPay client (ported from okchat runtime/test/billing.test.js)', () =
     const p: Record<string, string> = { aoid: 'A1', order_id: 'ok1-1-abcd', pay_price: '99.00', pay_time: '2026-08-26 10:00:00' };
     p.sign = md5sign(p.aoid, p.order_id, p.pay_price, p.pay_time, 'testsecret');
     expect(client.verifyNotify(p)).toBe(true);
+    expect(client.verifyNotify({ ...p, sign: p.sign.toUpperCase() })).toBe(true);
+    expect(client.verifyNotify({ ...p, sign: p.sign.slice(1) })).toBe(false);
     expect(client.verifyNotify({ ...p, pay_price: '0.01' })).toBe(false);
     expect(client.verifyNotify({ ...p, sign: 'f'.repeat(32) })).toBe(false);
     expect(client.verifyNotify({ order_id: 'x' })).toBe(false);

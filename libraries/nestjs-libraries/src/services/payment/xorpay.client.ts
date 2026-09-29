@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 // XorPay (xorpay.com): RMB collection through WeChat Native and Alipay QR codes, ported from okchat's
 // runtime/src/billing/xorpay.js. Signatures are MD5 (lowercase hex) of the plain values concatenated
@@ -101,10 +101,11 @@ export class XorPayClient {
     if (!this.configured || !p?.sign || !p.aoid || !p.order_id) {
       return false;
     }
-    return (
-      md5sign(String(p.aoid), String(p.order_id), String(p.pay_price ?? ''), String(p.pay_time ?? ''), this.secret) ===
-      String(p.sign)
+    const expected = Buffer.from(
+      md5sign(String(p.aoid), String(p.order_id), String(p.pay_price ?? ''), String(p.pay_time ?? ''), this.secret)
     );
+    const given = Buffer.from(String(p.sign).toLowerCase());
+    return given.length === expected.length && timingSafeEqual(given, expected);
   }
 
   /** Order status by our order number (query2): not_exist / new / payed / success / expire / fee_error. */
