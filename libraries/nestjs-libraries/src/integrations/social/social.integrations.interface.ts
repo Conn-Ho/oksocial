@@ -1,4 +1,5 @@
 import { Integration } from '@prisma/client';
+import type { CreditAction } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 export interface ClientInformation {
   client_id: string;
@@ -332,6 +333,9 @@ export interface SocialProvider
   stats?: (token: string, integration: Integration) => Promise<ChannelStats>;
   // oksocial 监控: read posts, accounts and keyword searches of this platform.
   monitor?: MonitorCapabilities;
+  // oksocial billing: credit price-table action charged for every write through this channel
+  // (post, comment, reply); unset = writes are free.
+  writeCreditAction?: CreditAction;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

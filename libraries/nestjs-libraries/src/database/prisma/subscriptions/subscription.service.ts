@@ -57,8 +57,13 @@ export class SubscriptionService {
     );
   }
 
-  // Store-managed subscriptions (RevenueCat etc.) have no Stripe customer, they are keyed by org
-  async deleteSubscriptionByOrgId(organizationId: string, provider: string) {
+  // Store-managed subscriptions (RevenueCat etc.) have no Stripe customer, they are keyed by org.
+  // freeChannels: channels the organization keeps afterwards (oksocial's free plan has some).
+  async deleteSubscriptionByOrgId(
+    organizationId: string,
+    provider: string,
+    freeChannels = pricing.FREE.channel || 0
+  ) {
     const current = await this._subscriptionRepository.getSubscriptionByOrgId(
       organizationId
     );
@@ -66,11 +71,7 @@ export class SubscriptionService {
       return false;
     }
 
-    await this.modifySubscriptionByOrg(
-      organizationId,
-      pricing.FREE.channel || 0,
-      'FREE'
-    );
+    await this.modifySubscriptionByOrg(organizationId, freeChannels, 'FREE');
     return this._subscriptionRepository.deleteSubscriptionByOrgId(
       organizationId,
       provider

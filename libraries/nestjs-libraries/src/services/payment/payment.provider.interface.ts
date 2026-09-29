@@ -14,6 +14,10 @@ export abstract class PaymentProviderAbstract {
   // subscribed on one platform at a time, the other platform is blocked.
   abstract platform: PaymentPlatform;
 
+  // Whether new subscriptions of the platform go through this provider's checkout. Providers that
+  // sell their own way (XorPay: one-off RMB orders from the usage page) opt out.
+  defaultForPlatform = true;
+
   // Turn the raw webhook request into a trusted event (throw on bad signature / secret)
   abstract validateWebhook(
     rawBody: Buffer,

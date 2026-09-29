@@ -5,6 +5,7 @@ import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { buildChannelReport, ChannelReport } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
 export const REPORT_DAYS = [7, 30, 90] as const;
 
@@ -39,7 +40,8 @@ export const renderWeeklyEmail = (orgName: string, report: ChannelReport, url: s
 export class ReportService {
   constructor(
     private _repository: ChannelStatsRepository,
-    private _notificationService: NotificationService
+    private _notificationService: NotificationService,
+    private _planService: PlanService
   ) {}
 
   async overview(orgId: string, days: number) {
@@ -56,6 +58,7 @@ export class ReportService {
   }
 
   async createShare(orgId: string, days: number, expiresInDays?: number, password?: string) {
+    await this._planService.assertFeature(orgId, 'share_reports');
     const token = randomBytes(18).toString('base64url');
     const row = await this._repository.createShare(
       orgId,
@@ -101,7 +104,10 @@ export class ReportService {
     return this._repository.getWeeklyEmail(orgId);
   }
 
-  setWeeklyEmail(orgId: string, enabled: boolean) {
+  async setWeeklyEmail(orgId: string, enabled: boolean) {
+    if (enabled) {
+      await this._planService.assertFeature(orgId, 'weekly_email');
+    }
     return this._repository.setWeeklyEmail(orgId, enabled);
   }
 
@@ -110,6 +116,10 @@ export class ReportService {
     const orgs = await this._repository.orgsWithSnapshots(dayjs().subtract(8, 'day').toDate());
     let sent = 0;
     for (const { organizationId } of orgs) {
+      // opted in, then moved to a plan without the weekly email
+      if (!(await this._planService.hasFeature(organizationId, 'weekly_email'))) {
+        continue;
+      }
       const recipients = await this._repository.reviewersOf(organizationId);
       if (!recipients.length) {
         continue;

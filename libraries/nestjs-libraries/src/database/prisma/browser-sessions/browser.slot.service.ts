@@ -11,6 +11,7 @@ import {
 } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
 // A login session nobody finished (closed the dialog, never scanned) is cleaned up after this.
 export const PENDING_SLOT_TTL_MS = 30 * 60 * 1000;
@@ -33,7 +34,8 @@ export class BrowserSlotService {
     private _repository: BrowserSlotRepository,
     private _integrationService: IntegrationService,
     private _integrationManager: IntegrationManager,
-    private _refreshIntegrationService: RefreshIntegrationService
+    private _refreshIntegrationService: RefreshIntegrationService,
+    private _planService: PlanService
   ) {}
 
   private browserProvider(identifier: string) {
@@ -59,6 +61,10 @@ export class BrowserSlotService {
       : null;
     if (integrationId && !existing) {
       throw new HttpException('Channel not found', 404);
+    }
+    // a new account counts against the plan; a reconnect does not add one
+    if (!existing) {
+      await this._planService.assertWithinLimit(orgId, 'channels');
     }
     const row =
       existing ??

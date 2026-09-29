@@ -6,6 +6,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.se
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({ IntegrationManager: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/refresh.integration.service', () => ({ RefreshIntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.repository', () => ({ BrowserSlotRepository: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/plan.service', () => ({ PlanService: class {} }));
 
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import {
@@ -26,7 +27,7 @@ const provider = {
   },
 };
 
-const setup = (overrides: { run?: any; slotRow?: any; integration?: any } = {}) => {
+const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean } = {}) => {
   const fleet = {
     configured: true,
     ensureSlot: jest.fn(async () => ({})),
@@ -63,9 +64,14 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any } = {}) 
   };
   const manager = { getSocialIntegration: jest.fn(() => provider) };
   const refresh = { startRefreshWorkflow: jest.fn(async () => ({})) };
-  const service = new BrowserSlotService(repo as any, integrationService as any, manager as any, refresh as any);
+  const plans = {
+    assertWithinLimit: jest.fn(async () => {
+      if (overrides.overLimit) throw Object.assign(new Error('账号数已达免费版上限（2 个），请升级套餐后再添加。'), { status: 402 });
+    }),
+  };
+  const service = new BrowserSlotService(repo as any, integrationService as any, manager as any, refresh as any, plans as any);
   (service as any).fleet = fleet;
-  return { service, fleet, repo, integrationService, refresh, manager };
+  return { service, fleet, repo, integrationService, refresh, manager, plans };
 };
 
 describe('BrowserSlotService', () => {
@@ -99,6 +105,21 @@ describe('BrowserSlotService', () => {
     await service.startLogin('org1', 'xiaohongshu', 'int7');
     expect(repo.createPending).not.toHaveBeenCalled();
     expect(fleet.ensureSlot).toHaveBeenCalledWith('sreuse', 'http://u:pw@1.2.3.4:8000');
+  });
+
+  it('startLogin refuses a new account beyond the plan before any browser is created', async () => {
+    const { service, fleet, repo, plans } = setup({ overLimit: true });
+    await expect(service.startLogin('org1', 'xiaohongshu')).rejects.toMatchObject({ status: 402 });
+    expect(plans.assertWithinLimit).toHaveBeenCalledWith('org1', 'channels');
+    expect(repo.createPending).not.toHaveBeenCalled();
+    expect(fleet.ensureSlot).not.toHaveBeenCalled();
+  });
+
+  it('startLogin lets a reconnect through even when the plan is full', async () => {
+    const slotRow = { id: 'row7', slot: 'sreuse', status: 'ACTIVE', integrationId: 'int7', providerIdentifier: 'xiaohongshu', proxy: null };
+    const { service, plans } = setup({ slotRow, overLimit: true });
+    await expect(service.startLogin('org1', 'xiaohongshu', 'int7')).resolves.toMatchObject({ id: 'row7' });
+    expect(plans.assertWithinLimit).not.toHaveBeenCalled();
   });
 
   it('startLogin rejects providers without a browser session and unknown channels', async () => {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import {
   Activity,
   ActivityMethod,
@@ -32,6 +32,8 @@ import {
   BadBody,
   Disconnect,
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
+import { CreditAction } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 // Drops fields the workflow and downstream activities never read — biggest wins are `error` (grows per retry) and `childrenPost` (Prisma side-loads it on every recursive row).
 function slimPost(post: any) {
@@ -103,7 +105,8 @@ export class PostActivity {
     private _refreshIntegrationService: RefreshIntegrationService,
     private _webhookService: WebhooksService,
     private _temporalService: TemporalService,
-    private _subscriptionService: SubscriptionService
+    private _subscriptionService: SubscriptionService,
+    private _creditsService: CreditsService
   ) {}
 
   @ActivityMethod()
@@ -226,31 +229,39 @@ export class PostActivity {
           posts
         );
 
-        return getIntegration.comment(
-          integration.internalId,
-          postId,
-          lastPostId,
-          integration.token,
-          await Promise.all(
-            (newPosts || []).map(async (p) => ({
-              id: p.id,
-              message: stripHtmlValidation(
-                getIntegration.editor,
-                p.content,
-                true,
-                false,
-                !/<\/?[a-z][\s\S]*>/i.test(p.content),
-                getIntegration.mentionFormat
-              ),
-              settings: JSON.parse(p.settings || '{}'),
-              media: await this._postService.updateMedia(
-                p.id,
-                JSON.parse(p.image || '[]'),
-                getIntegration?.convertToJPEG || false
-              ),
-            }))
-          ),
-          integration
+        const comments = await Promise.all(
+          (newPosts || []).map(async (p) => ({
+            id: p.id,
+            message: stripHtmlValidation(
+              getIntegration.editor,
+              p.content,
+              true,
+              false,
+              !/<\/?[a-z][\s\S]*>/i.test(p.content),
+              getIntegration.mentionFormat
+            ),
+            settings: JSON.parse(p.settings || '{}'),
+            media: await this._postService.updateMedia(
+              p.id,
+              JSON.parse(p.image || '[]'),
+              getIntegration?.convertToJPEG || false
+            ),
+          }))
+        );
+
+        return this.chargedWrite(
+          integration,
+          getIntegration.writeCreditAction,
+          posts[0]?.id,
+          () =>
+            getIntegration.comment(
+              integration.internalId,
+              postId,
+              lastPostId,
+              integration.token,
+              comments,
+              integration
+            )
         );
       })
     );
@@ -301,6 +312,48 @@ export class PostActivity {
         );
       }
 
+      throw err;
+    }
+  }
+
+  // Channels that charge credits per write (browser channels): charged before the write and refunded
+  // when it fails, so every retry attempt nets out. Running out of credits fails the post for good
+  // (BadBody) with the reason, instead of retrying.
+  private async chargedWrite<T>(
+    integration: Integration,
+    action: CreditAction | undefined,
+    referenceId: string | undefined,
+    work: () => Promise<T>
+  ): Promise<T> {
+    if (!action) {
+      return work();
+    }
+    let charge: Awaited<ReturnType<CreditsService['spend']>>;
+    try {
+      charge = await this._creditsService.spend(
+        integration.organizationId,
+        action,
+        referenceId
+      );
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === 402) {
+        throw new BadBody(
+          integration.providerIdentifier,
+          JSON.stringify({}),
+          Buffer.from('{}'),
+          (err.getResponse() as { message?: string })?.message || err.message
+        );
+      }
+      throw err;
+    }
+    try {
+      return await work();
+    } catch (err) {
+      await this._creditsService
+        .refund(charge)
+        .catch((e) =>
+          console.log('post credits refund', (e as Error)?.message)
+        );
       throw err;
     }
   }
@@ -373,20 +426,25 @@ export class PostActivity {
     );
 
     setHeartbeatDetails(`${integration.providerIdentifier}: publish`);
-    const postNow =
-      allowPending && getIntegration.postPending
-        ? await getIntegration.postPending(
-            integration.internalId,
-            integration.token,
-            mappedPosts,
-            integration
-          )
-        : await getIntegration.post(
-            integration.internalId,
-            integration.token,
-            mappedPosts,
-            integration
-          );
+    const postNow = await this.chargedWrite(
+      integration,
+      getIntegration.writeCreditAction,
+      mappedPosts[0]?.id,
+      () =>
+        allowPending && getIntegration.postPending
+          ? getIntegration.postPending(
+              integration.internalId,
+              integration.token,
+              mappedPosts,
+              integration
+            )
+          : getIntegration.post(
+              integration.internalId,
+              integration.token,
+              mappedPosts,
+              integration
+            )
+    );
 
     // The post is already published at this point: the streak is best-effort,
     // failing the activity here would retry it and publish again.
@@ -420,7 +478,11 @@ export class PostActivity {
     );
 
     return this.handleDisconnect(integration, () =>
-      getIntegration.checkPostStatus(integration.token, pendingData, integration)
+      getIntegration.checkPostStatus(
+        integration.token,
+        pendingData,
+        integration
+      )
     );
   }
 

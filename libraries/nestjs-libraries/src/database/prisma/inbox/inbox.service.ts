@@ -10,6 +10,7 @@ import {
   socialIntegrationList,
 } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 
 const TAG_BATCH = 20;
 const KIND_LABEL: Record<InboxKind, string> = { COMMENT: '评论', DM: '私信', MENTION: '@提及' };
@@ -27,7 +28,8 @@ export class InboxService {
     private _repository: InboxRepository,
     private _integrationService: IntegrationService,
     private _integrationManager: IntegrationManager,
-    private _ai: InboxAiService
+    private _ai: InboxAiService,
+    private _credits: CreditsService
   ) {}
 
   /** Providers that implement an inbox (identifiers). */
@@ -57,7 +59,7 @@ export class InboxService {
     const added = items.length
       ? await this._repository.addItems(orgId, integration.id, items)
       : [];
-    await this.tagItems(added).catch((err) => console.log('inbox tagging', err?.message));
+    await this.tagItems(orgId, added).catch((err) => console.log('inbox tagging', err?.message));
     return { fetched: items.length, added: added.length };
   }
 
@@ -75,12 +77,25 @@ export class InboxService {
     return { channels: channels.length, added };
   }
 
-  async tagItems(rows: Array<{ id: string; content: string }>) {
+  /** AI tags, charged per item; what the credits do not cover stays untagged. */
+  async tagItems(orgId: string, rows: Array<{ id: string; content: string }>) {
     if (!this._ai.enabled) {
       return;
     }
-    for (let i = 0; i < rows.length; i += TAG_BATCH) {
-      const tags = await this._ai.tag(rows.slice(i, i + TAG_BATCH));
+    for (let i = 0; i < rows.length; ) {
+      const size = Math.min(TAG_BATCH, await this._credits.affordable(orgId, 'ai_tag'));
+      if (size < 1) {
+        return;
+      }
+      const batch = rows.slice(i, i + size);
+      i += batch.length;
+      const tags = await this._credits.withCredits(
+        orgId,
+        'ai_tag',
+        batch[0].id,
+        () => this._ai.tag(batch),
+        batch.length
+      );
       for (const [id, t] of tags) {
         await this._repository.setTags(id, t.sentiment, t.intent);
       }
@@ -123,6 +138,9 @@ export class InboxService {
     if (!send) {
       throw new HttpException(`这个平台暂不支持在 oksocial 里回复${KIND_LABEL[item.kind]}`, 400);
     }
+    const charge = provider.writeCreditAction
+      ? await this._credits.spend(orgId, provider.writeCreditAction, item.id)
+      : null;
     try {
       await send(
         item.integration.token,
@@ -131,6 +149,9 @@ export class InboxService {
         text
       );
     } catch (err) {
+      await this._credits
+        .refund(charge)
+        .catch((e) => console.log('inbox reply refund', (e as Error)?.message));
       const message = (err as Error)?.message || 'reply failed';
       await this._repository.logReply(item.id, userId, text, source, message);
       throw new HttpException(`发送失败：${message}`, 502);
@@ -149,12 +170,14 @@ export class InboxService {
       orgId,
       item.kind === 'DM' ? 'DM' : 'COMMENT'
     );
-    const text = await this._ai.suggestReply({
-      content: item.content,
-      kind: item.kind,
-      threadTitle: item.threadTitle,
-      templates: templates.slice(0, 8).map((t) => t.content),
-    });
+    const text = await this._credits.withCredits(orgId, 'ai_reply', item.id, () =>
+      this._ai.suggestReply({
+        content: item.content,
+        kind: item.kind,
+        threadTitle: item.threadTitle,
+        templates: templates.slice(0, 8).map((t) => t.content),
+      })
+    );
     return { text };
   }
 
@@ -163,7 +186,9 @@ export class InboxService {
       throw new HttpException('AI is not configured', 503);
     }
     const item = await this.getItem(orgId, id);
-    const translated = await this._ai.translate(item.content, target);
+    const translated = await this._credits.withCredits(orgId, 'ai_translate', item.id, () =>
+      this._ai.translate(item.content, target)
+    );
     await this._repository.setTranslation(orgId, id, translated);
     return { translated };
   }

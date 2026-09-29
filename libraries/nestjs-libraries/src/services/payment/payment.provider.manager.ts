@@ -35,7 +35,7 @@ export class PaymentProviderManager {
   // First registered provider of a platform is the one new subscriptions use
   getDefaultProvider(platform: PaymentPlatform) {
     const found = this.getProviders().find(
-      (p) => p.provider.platform === platform
+      (p) => p.provider.platform === platform && p.provider.defaultForPlatform
     );
 
     if (!found) {

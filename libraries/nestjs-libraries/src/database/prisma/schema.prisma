@@ -58,6 +58,9 @@ model Organization {
   automations         Automation[]
   leads               Lead[]
   monitorTargets      MonitorTarget[]
+  creditEntries       CreditEntry[]
+  billingOrders       BillingOrder[]
+  apiKeys             ApiKey[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -1912,36 +1915,36 @@ enum InboxStatus {
 }
 
 model InboxItem {
-  id                String        @id @default(uuid())
-  organizationId    String
-  integrationId     String
-  kind              InboxKind
+  id             String       @id @default(uuid())
+  organizationId String
+  integrationId  String
+  kind           InboxKind
   // platform id of the comment / message, or a content hash when the platform exposes none
-  externalId        String
+  externalId     String
   // conversation id (DM) or the post the comment belongs to
-  threadId          String?
-  threadTitle       String?
-  threadUrl         String?
+  threadId       String?
+  threadTitle    String?
+  threadUrl      String?
   // where a reply is sent (tweet URL, note URL, conversation id)
-  replyTarget       String?
-  authorName        String
-  authorId          String?
-  authorUrl         String?
-  authorAvatar      String?
-  content           String
-  translated        String?
-  platformTime      String?
-  status            InboxStatus   @default(UNREPLIED)
-  sentiment         String?
-  intent            String?
-  assigneeId        String?
-  repliedAt         DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  deletedAt         DateTime?
-  organization      Organization  @relation(fields: [organizationId], references: [id])
-  integration       Integration   @relation(fields: [integrationId], references: [id])
-  replies           ReplyLog[]
+  replyTarget    String?
+  authorName     String
+  authorId       String?
+  authorUrl      String?
+  authorAvatar   String?
+  content        String
+  translated     String?
+  platformTime   String?
+  status         InboxStatus  @default(UNREPLIED)
+  sentiment      String?
+  intent         String?
+  assigneeId     String?
+  repliedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  integration    Integration  @relation(fields: [integrationId], references: [id])
+  replies        ReplyLog[]
 
   @@unique([integrationId, kind, externalId])
   @@index([organizationId, kind, status])
@@ -2201,4 +2204,97 @@ model MonitorItem {
 
   @@unique([targetId, kind, externalId])
   @@index([targetId, kind, createdAt])
+}
+
+// oksocial credits: every movement is one row and the balance is their sum.
+enum CreditEntryKind {
+  // the plan's monthly allowance
+  GRANT
+  // what was left of the previous allowance when the next one is granted
+  EXPIRE
+  // a credit pack that was bought
+  TOPUP
+  // an action that was charged (AI, browser writes)
+  SPEND
+  // a charged action that failed
+  REFUND
+}
+
+model CreditEntry {
+  id             String          @id @default(uuid())
+  organizationId String
+  kind           CreditEntryKind
+  // positive adds credits, negative removes them
+  amount         Int
+  // price-table key (SPEND / REFUND) or the plan tier (GRANT / EXPIRE)
+  action         String?
+  // what was charged (inbox item, post), or the order that paid for the credits
+  referenceId    String?
+  // movements that must happen once: a period's grant, a spend's refund, an order's credits
+  idempotencyKey String?         @unique
+  createdAt      DateTime        @default(now())
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, kind, createdAt])
+}
+
+enum BillingOrderStatus {
+  PENDING
+  PAID
+  CLOSED
+}
+
+// One RMB payment through XorPay (WeChat Native / Alipay QR code) for a plan period or a credit pack.
+model BillingOrder {
+  id              String             @id @default(uuid())
+  organizationId  String
+  // our order number, sent to XorPay as order_id; random so it cannot be guessed
+  orderNo         String             @unique
+  // catalogue id of the plan or the credit pack
+  productId       String
+  priceYuan       String
+  // native (WeChat) or alipay
+  payType         String
+  provider        String             @default("xorpay")
+  // XorPay's own order id (aoid)
+  providerOrderId String?
+  // QR code content (weixin:// or an Alipay URL)
+  qr              String?
+  status          BillingOrderStatus @default(PENDING)
+  // plans only, written when paid: the period this order bought and what each of its days is worth
+  tier            SubscriptionTier?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  dailyPrice      Float?
+  paidAt          DateTime?
+  // set once what was bought has been granted; PAID without it is retried by the notify and the workflow
+  fulfilledAt     DateTime?
+  notifyPayload   Json?
+  userId          String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  organization    Organization       @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([status])
+}
+
+// Named public API keys (osk_...): shown once, stored hashed, with an optional expiry and a note.
+// The organization's original key (Organization.apiKey) keeps working next to them.
+model ApiKey {
+  id             String       @id @default(uuid())
+  organizationId String
+  note           String?
+  keyHash        String       @unique
+  // first characters of the key, so the list can tell keys apart
+  prefix         String
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
 }

@@ -12,6 +12,8 @@ export enum Sections {
   IMPORT_FROM_CHANNELS = 'import_from_channels',
   ADMIN = 'admin',
   WEBHOOKS = 'webhooks',
+  // oksocial: media storage of the plan
+  STORAGE = 'storage',
 }
 
 export enum AuthorizationActions {

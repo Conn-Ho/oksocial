@@ -4,7 +4,12 @@ import {
   ExceptionFilter,
   HttpException,
 } from '@nestjs/common';
-import { AuthorizationActions, Sections, SubscriptionException } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import {
+  AuthorizationActions,
+  Sections,
+  SubscriptionException,
+} from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import { isXorPayBilling } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 @Catch(SubscriptionException)
 export class SubscriptionExceptionFilter implements ExceptionFilter {
@@ -20,7 +25,9 @@ export class SubscriptionExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       message,
-      url: process.env.FRONTEND_URL + '/billing',
+      // oksocial plans are bought on the usage page, Stripe plans on the billing page
+      url:
+        process.env.FRONTEND_URL + (isXorPayBilling() ? '/usage' : '/billing'),
     });
   }
 }
@@ -31,29 +38,20 @@ const getErrorMessage = (error: {
 }) => {
   switch (error.section) {
     case Sections.POSTS_PER_MONTH:
-      switch (error.action) {
-        default:
-          return 'You have reached the maximum number of posts for your subscription. Please upgrade your subscription to add more posts.';
-      }
+      return '本月发帖数已达套餐上限，请升级套餐后继续发布。';
     case Sections.CHANNEL:
-      switch (error.action) {
-        default:
-          return 'You have reached the maximum number of channels for your subscription. Please upgrade your subscription to add more channels.';
-      }
+      return '账号数已达套餐上限，请升级套餐后再添加账号。';
     case Sections.WEBHOOKS:
-      switch (error.action) {
-        default:
-          return 'You have reached the maximum number of webhooks for your subscription. Please upgrade your subscription to add more webhooks.';
-      }
+      return 'Webhook 数量已达套餐上限，请升级套餐后再添加。';
     case Sections.VIDEOS_PER_MONTH:
-      switch (error.action) {
-        default:
-          return 'You have reached the maximum number of generated videos for your subscription. Please upgrade your subscription to generate more videos.';
-      }
+      return '本月视频生成次数已用完，请升级套餐。';
     case Sections.CLIPPING_MINUTES:
-      switch (error.action) {
-        default:
-          return 'You have used all the clipping minutes of your subscription for this month. Please upgrade your subscription to clip more videos.';
-      }
+      return '本月视频剪辑时长已用完，请升级套餐。';
+    case Sections.TEAM_MEMBERS:
+      return '当前套餐不含团队协作，请升级套餐后再邀请成员。';
+    case Sections.STORAGE:
+      return '素材空间已用满，请删除不用的素材或升级套餐。';
+    default:
+      return '当前套餐不含这项功能，请升级套餐。';
   }
 };
