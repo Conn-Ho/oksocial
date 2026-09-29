@@ -21,9 +21,9 @@ const EMPTY: Record<MonitorItemKind, string> = {
 };
 
 const ItemMetrics: FC<{ item: MonitorItem }> = ({ item }) => (
-  <span className="flex gap-[10px] text-[12px] text-textColor/60 tabular-nums">
+  <span className="flex flex-wrap gap-x-[10px] text-[12px] text-textColor/60 tabular-nums">
     {METRICS.filter((m) => item[m.key] !== null && item[m.key] !== undefined).map((m) => (
-      <span key={m.key}>
+      <span key={m.key} className="whitespace-nowrap">
         {m.label} {formatCount(item[m.key])}
       </span>
     ))}

@@ -23,6 +23,7 @@ import {
 import { AddTargetModal } from '@gitroom/frontend/components/monitor/add.target.modal';
 import { MonitorDetail } from '@gitroom/frontend/components/monitor/monitor.detail';
 import { RemakeModal } from '@gitroom/frontend/components/monitor/remake.modal';
+import { MobileBack, scrollToTopOnPhone } from '@gitroom/frontend/components/new-layout/mobile.back';
 
 const ADD_LABEL: Record<MonitorKind, string> = { POST: '监控帖子', ACCOUNT: '添加竞品', KEYWORD: '添加关键词' };
 const EMPTY: Record<MonitorKind, string> = {
@@ -55,9 +56,9 @@ const TargetRow: FC<{ target: MonitorTarget; active: boolean; onClick: () => voi
         ) : null}
       </span>
       {target.kind === 'POST' ? (
-        <span className="flex gap-[10px] text-[12px] text-textColor/60 tabular-nums">
+        <span className="flex flex-wrap gap-x-[10px] text-[12px] text-textColor/60 tabular-nums">
           {METRICS.filter((m) => latest?.[m.key] !== null && latest?.[m.key] !== undefined).map((m) => (
-            <span key={m.key}>
+            <span key={m.key} className="whitespace-nowrap">
               {m.label} {formatCount(latest?.[m.key])}
             </span>
           ))}
@@ -94,6 +95,12 @@ export const MonitorComponent: FC = () => {
   const canWrite = canWritePosts(user?.role);
   const list = targets || [];
   const current = list.find((x) => x.id === selected) || list[0];
+  // phones show the list until a row is picked, then that row's detail full-width
+  const detailOpen = !!selected && list.some((x) => x.id === selected);
+  const open = useCallback((id: string) => {
+    setSelected(id);
+    scrollToTopOnPhone();
+  }, []);
   const channels = useMemo(
     () => (integrations || []).map((i: any) => ({ id: i.id, name: i.name, identifier: i.identifier, disabled: i.disabled || i.refreshNeeded || i.inBetweenSteps })),
     [integrations]
@@ -138,10 +145,15 @@ export const MonitorComponent: FC = () => {
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-center gap-[12px] px-[24px] pt-[20px] pb-[12px] flex-wrap">
-        <h2 className="text-[24px] font-semibold me-[8px]">{t('monitor', '监控')}</h2>
-        <nav className="flex gap-[4px]" aria-label={t('monitor_kinds', '监控类型')}>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
+      <header
+        className={clsx(
+          'flex items-center gap-[12px] px-[16px] md:px-[24px] pt-[16px] md:pt-[20px] pb-[12px] flex-wrap',
+          detailOpen && 'hidden md:flex'
+        )}
+      >
+        <h2 className="hidden md:block text-[24px] font-semibold me-[8px]">{t('monitor', '监控')}</h2>
+        <nav className="flex gap-[4px] max-w-full overflow-x-auto" aria-label={t('monitor_kinds', '监控类型')}>
           {KIND_TABS.map((tab) => (
             <button
               key={tab.kind}
@@ -149,7 +161,7 @@ export const MonitorComponent: FC = () => {
               onClick={() => setKind(tab.kind)}
               aria-current={kind === tab.kind}
               className={clsx(
-                'px-[14px] h-[34px] rounded-[6px] text-[14px]',
+                'px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
                 kind === tab.kind ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
               )}
             >
@@ -157,7 +169,7 @@ export const MonitorComponent: FC = () => {
             </button>
           ))}
         </nav>
-        <div className="ms-auto flex gap-[8px] flex-wrap">
+        <div className="md:ms-auto flex gap-[8px] flex-wrap">
           {canWrite && (
             <Button secondary={true} onClick={openRemake}>
               {t('monitor_remake_link', '复刻一条链接')}
@@ -168,7 +180,13 @@ export const MonitorComponent: FC = () => {
       </header>
 
       <div className="flex flex-1 min-h-0 border-t border-newTableBorder">
-        <ul className="w-[340px] max-w-[42%] border-e border-newTableBorder overflow-y-auto" aria-label={t('monitor_list', '监控列表')}>
+        <ul
+          className={clsx(
+            'w-full md:w-[340px] md:max-w-[42%] md:border-e border-newTableBorder overflow-y-auto',
+            detailOpen && 'hidden md:block'
+          )}
+          aria-label={t('monitor_list', '监控列表')}
+        >
           {!isLoading && !list.length && (
             <li className="p-[24px] flex flex-col gap-[12px] items-start text-[14px] text-textColor/60 leading-[1.6]">
               {t(`monitor_empty_${kind.toLowerCase()}_intro`, EMPTY[kind])}
@@ -181,11 +199,14 @@ export const MonitorComponent: FC = () => {
           )}
           {list.map((target) => (
             <li key={target.id}>
-              <TargetRow target={target} active={current?.id === target.id} onClick={() => setSelected(target.id)} />
+              <TargetRow target={target} active={current?.id === target.id} onClick={() => open(target.id)} />
             </li>
           ))}
         </ul>
-        <div className="flex-1 min-w-0">
+        <div className={clsx('flex-1 min-w-0', !detailOpen && 'hidden md:block')}>
+          <div className="md:hidden px-[16px] pt-[8px]">
+            <MobileBack onClick={() => setSelected('')} />
+          </div>
           {current ? (
             <MonitorDetail
               key={current.id}

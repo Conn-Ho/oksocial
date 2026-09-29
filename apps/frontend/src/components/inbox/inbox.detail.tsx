@@ -128,7 +128,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
   );
 
   return (
-    <article className="flex flex-col gap-[16px] p-[20px] h-full overflow-y-auto">
+    <article className="flex flex-col gap-[16px] p-[16px] md:p-[20px] h-full overflow-y-auto">
       <header className="flex items-center gap-[10px] flex-wrap">
         <img
           src={`/icons/platforms/${item.integration.providerIdentifier}.png`}

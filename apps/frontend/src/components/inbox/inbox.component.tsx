@@ -24,6 +24,7 @@ import {
 import { InboxDetail, ItemTags } from '@gitroom/frontend/components/inbox/inbox.detail';
 import { ReplyTemplatesModal } from '@gitroom/frontend/components/inbox/reply.templates';
 import { ReplyHistoryModal } from '@gitroom/frontend/components/inbox/reply.history';
+import { MobileBack, scrollToTopOnPhone } from '@gitroom/frontend/components/new-layout/mobile.back';
 
 const STATUS_OPTIONS = [
   { value: 'UNREPLIED', label: '未回复' },
@@ -52,6 +53,13 @@ export const InboxComponent: FC = () => {
     () => items.find((i) => i.id === selected) || items[0],
     [items, selected]
   );
+
+  // phones show the list until a message is picked, then that message full-width
+  const detailOpen = !!selected && items.some((i) => i.id === selected);
+  const open = useCallback((id: string) => {
+    setSelected(id);
+    scrollToTopOnPhone();
+  }, []);
 
   useEffect(() => setSelected(''), [filters.kind, filters.status, filters.integrationId]);
 
@@ -88,17 +96,22 @@ export const InboxComponent: FC = () => {
   }, [filters]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-center gap-[12px] px-[24px] pt-[20px] pb-[12px] flex-wrap">
-        <h2 className="text-[24px] font-semibold me-[8px]">{t('inbox', '互动')}</h2>
-        <nav className="flex gap-[4px]" aria-label={t('inbox_kinds', '消息类型')}>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
+      <header
+        className={clsx(
+          'flex items-center gap-[12px] px-[16px] md:px-[24px] pt-[16px] md:pt-[20px] pb-[12px] flex-wrap',
+          detailOpen && 'hidden md:flex'
+        )}
+      >
+        <h2 className="hidden md:block text-[24px] font-semibold me-[8px]">{t('inbox', '互动')}</h2>
+        <nav className="flex gap-[4px] max-w-full overflow-x-auto" aria-label={t('inbox_kinds', '消息类型')}>
           {KIND_TABS.map((tab) => (
             <button
               key={tab.kind}
               type="button"
               onClick={() => update({ kind: tab.kind })}
               className={clsx(
-                'px-[14px] h-[34px] rounded-[6px] text-[14px] flex items-center gap-[6px]',
+                'px-[14px] h-[34px] rounded-[6px] text-[14px] flex items-center gap-[6px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
                 filters.kind === tab.kind ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
               )}
             >
@@ -111,7 +124,7 @@ export const InboxComponent: FC = () => {
             </button>
           ))}
         </nav>
-        <div className="ms-auto flex gap-[8px] flex-wrap">
+        <div className="md:ms-auto flex gap-[8px] flex-wrap">
           <Button secondary={true} loading={syncing} onClick={syncNow}>
             {t('inbox_sync', '立即更新')}
           </Button>
@@ -147,7 +160,7 @@ export const InboxComponent: FC = () => {
         </div>
       </header>
 
-      <div className="flex gap-[8px] px-[24px] pb-[12px] flex-wrap">
+      <div className={clsx('flex gap-[8px] px-[16px] md:px-[24px] pb-[12px] flex-wrap', detailOpen && 'hidden md:flex')}>
         <select
           aria-label={t('status', '状态')}
           className={selectClass}
@@ -203,7 +216,7 @@ export const InboxComponent: FC = () => {
           type="search"
           aria-label={t('search', '搜索')}
           placeholder={t('inbox_search', '搜内容或作者')}
-          className={clsx(selectClass, 'w-[200px]')}
+          className={clsx(selectClass, 'w-full sm:w-[200px]')}
           defaultValue={filters.q}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -214,7 +227,13 @@ export const InboxComponent: FC = () => {
       </div>
 
       <div className="flex flex-1 min-h-0 border-t border-newTableBorder">
-        <ul className="w-[380px] max-w-[45%] border-e border-newTableBorder overflow-y-auto" aria-label={t('inbox_list', '消息列表')}>
+        <ul
+          className={clsx(
+            'w-full md:w-[380px] md:max-w-[45%] md:border-e border-newTableBorder overflow-y-auto',
+            detailOpen && 'hidden md:block'
+          )}
+          aria-label={t('inbox_list', '消息列表')}
+        >
           {!isLoading && !items.length && (
             <li className="p-[24px] text-center text-textColor/60 text-[14px]">
               {t('inbox_empty', '没有消息。点“立即更新”拉取最新评论和私信。')}
@@ -224,7 +243,7 @@ export const InboxComponent: FC = () => {
             <li key={item.id}>
               <button
                 type="button"
-                onClick={() => setSelected(item.id)}
+                onClick={() => open(item.id)}
                 className={clsx(
                   'w-full text-start px-[16px] py-[12px] border-b border-newTableBorder flex flex-col gap-[4px]',
                   current?.id === item.id ? 'bg-newTableHeader' : 'hover:bg-newTableHeader/50'
@@ -272,7 +291,10 @@ export const InboxComponent: FC = () => {
             </li>
           )}
         </ul>
-        <div className="flex-1 min-w-0">
+        <div className={clsx('flex-1 min-w-0', !detailOpen && 'hidden md:block')}>
+          <div className="md:hidden px-[16px] pt-[8px]">
+            <MobileBack onClick={() => setSelected('')} />
+          </div>
           {current ? (
             <InboxDetail item={current} onChanged={refresh} />
           ) : (

@@ -42,7 +42,7 @@ const PostMetrics: FC<{ snapshots: MonitorSnapshot[] }> = ({ snapshots }) => {
   }
   return (
     <>
-      <dl className="grid grid-cols-5 gap-[8px] max-md:grid-cols-3">
+      <dl className="grid grid-cols-3 lg:grid-cols-5 gap-[8px]">
         {METRICS.map((m) => {
           const now = last[m.key];
           const delta = now !== null && first[m.key] !== null ? now - (first[m.key] as number) : null;
@@ -184,7 +184,7 @@ export const MonitorDetail: FC<{
   const onRemakeItem = canWrite ? (item: MonitorItem) => openRemake({ itemId: item.id, title: item.title || item.content?.slice(0, 40) }) : undefined;
 
   return (
-    <article className="flex flex-col gap-[16px] p-[20px] h-full overflow-y-auto">
+    <article className="flex flex-col gap-[16px] p-[16px] md:p-[20px] h-full overflow-y-auto">
       <header className="flex flex-col gap-[8px]">
         <div className="flex items-center gap-[8px] text-[13px] text-textColor/60">
           <img src={`/icons/platforms/${target.platform}.png`} alt="" className="w-[18px] h-[18px] rounded-full" />
