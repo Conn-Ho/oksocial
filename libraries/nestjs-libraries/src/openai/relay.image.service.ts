@@ -67,4 +67,10 @@ export class RelayImageService {
     }
     return image;
   }
+
+  /** generate(), as a data URL (what storage uploadSimple takes). */
+  async dataUrl(prompt: string, o: { aspect?: ImageAspect; image?: string } = {}) {
+    const image = await this.generate(prompt, o);
+    return `data:${image.mime};base64,${image.base64}`;
+  }
 }

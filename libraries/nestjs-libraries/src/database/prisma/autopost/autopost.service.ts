@@ -6,7 +6,9 @@ import { END, START, StateGraph } from '@langchain/langgraph';
 import { AutoPost, Integration } from '@prisma/client';
 import { BaseMessage } from '@langchain/core/messages';
 import striptags from 'striptags';
-import { ChatOpenAI, DallEAPIWrapper } from '@langchain/openai';
+import { ChatOpenAI } from '@langchain/openai';
+import { RelayImageService } from '@gitroom/nestjs-libraries/openai/relay.image.service';
+import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { JSDOM } from 'jsdom';
 import { z } from 'zod';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
@@ -41,10 +43,8 @@ const model = new ChatOpenAI({
   temperature: 0.7,
 });
 
-const dalle = new DallEAPIWrapper({
-  apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
-  model: 'chatgpt-image-latest',
-});
+// oksocial: images come from the relay's image model (no chatgpt-image-latest there)
+const relayImage = new RelayImageService();
 
 const generateContent = z.object({
   socialMediaPostContent: z
@@ -257,7 +257,10 @@ export class AutopostService {
           content: state.load.description || state.description,
         });
 
-    const image = await dalle.invoke(generatedTextToBeSentToDallE);
+    // stored first: the post's media path must be a URL, the relay answers with image data
+    const image = await UploadFactory.createStorage().uploadSimple(
+      await relayImage.dataUrl(generatedTextToBeSentToDallE)
+    );
 
     return { ...state, image };
   }

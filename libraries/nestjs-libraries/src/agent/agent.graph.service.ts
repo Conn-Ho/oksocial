@@ -5,7 +5,8 @@ import {
   ToolMessage,
 } from '@langchain/core/messages';
 import { END, START, StateGraph } from '@langchain/langgraph';
-import { ChatOpenAI, DallEAPIWrapper } from '@langchain/openai';
+import { ChatOpenAI } from '@langchain/openai';
+import { RelayImageService } from '@gitroom/nestjs-libraries/openai/relay.image.service';
 import { TavilySearch } from '@langchain/tavily';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
@@ -28,10 +29,8 @@ const model = new ChatOpenAI({
   temperature: 0.7,
 });
 
-const dalle = new DallEAPIWrapper({
-  apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
-  model: 'chatgpt-image-latest',
-});
+// oksocial: images come from the relay's image model (no chatgpt-image-latest there)
+const relayImage = new RelayImageService();
 
 interface WorkflowChannelsState {
   messages: BaseMessage[];
@@ -322,7 +321,8 @@ export class AgentGraphService {
     try {
       const newContent = await Promise.all(
         (state.content || []).map(async (p) => {
-          const image = await dalle.invoke(p.prompt!);
+          // a data URL; uploadSimple below stores it
+          const image = await relayImage.dataUrl(p.prompt!);
           return {
             ...p,
             image,
