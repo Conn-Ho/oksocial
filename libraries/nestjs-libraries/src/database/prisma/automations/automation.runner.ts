@@ -31,7 +31,7 @@ const LEAD_BATCH = 20;
 
 // What a held like / bookmark / follow / comment reply needs to run later (AutomationAction.payload).
 export type InteractPayload = {
-  action: 'like' | 'bookmark' | 'follow' | 'comment_reply';
+  action: 'like' | 'bookmark' | 'follow' | 'comment' | 'comment_reply';
   platform: string;
   itemId: string;
   externalId: string;
@@ -376,10 +376,10 @@ export class AutomationRunner {
   }
 
   /** Our channel on the monitored platform and what that platform can do there, or why not. */
-  private reach(ctx: Context, target: MonitorTargetRow, channels: Channel[], needs: keyof InteractCapabilities) {
+  private reach(ctx: Context, target: MonitorTargetRow, channels: Channel[], needs: Array<keyof InteractCapabilities>) {
     const channel = channels.find((ch) => ch.providerIdentifier === target.platform);
     const interact = this._integrationManager.getSocialIntegration(target.platform)?.interact;
-    if (!channel || !interact?.[needs]) {
+    if (!channel || !needs.some((n) => interact?.[n])) {
       ctx.result.skipped += 1;
       ctx.result.warning = `「${target.title || target.query}」${channel ? '所在平台暂不支持这个操作' : '所在平台没有选中的账号'}，已跳过。`;
       return null;
@@ -397,10 +397,13 @@ export class AutomationRunner {
     const since = dayjs().subtract(c.lookbackHours, 'hour').toDate();
     const channels = await this._repository.channels(org, ctx.automation.integrationIds);
     for (const target of await this._repository.monitorTargets(org, c.monitorTargetIds)) {
-      const channel = this.reach(ctx, target, channels, c.actions[0]);
+      const channel = this.reach(ctx, target, channels, c.actions);
       if (!channel) {
         continue;
       }
+      // what this platform can do of what was asked
+      const interact = this._integrationManager.getSocialIntegration(target.platform)?.interact || {};
+      const actions = c.actions.filter((a) => !!interact[a]);
       const items = (await this._repository.monitorItems([target.id], ['HIT', 'POST'], since)).filter(
         (i) =>
           this.notOwn(ctx, i) &&
@@ -411,10 +414,10 @@ export class AutomationRunner {
         action === 'follow' ? `follow:${target.platform}:${(i.authorName || '').toLowerCase()}` : `${action}:${i.id}`;
       const acted = await this._repository.actedTargets(
         ctx.automation.id,
-        items.flatMap((i) => c.actions.map((a) => keyOf(i, a)))
+        items.flatMap((i) => actions.map((a) => keyOf(i, a)))
       );
       for (const item of items) {
-        for (const action of c.actions) {
+        for (const action of actions) {
           if (ctx.remaining <= 0) {
             return;
           }
@@ -424,6 +427,11 @@ export class AutomationRunner {
           }
           acted.add(targetKey);
           const payload = this.payload(action, target.platform, item);
+          // written only now, for the posts actually commented on
+          const content =
+            action === 'comment'
+              ? await this._ai.commentOnPost({ title: item.title, content: item.content, authorName: item.authorName }, c.extraPrompt, ctx.brand)
+              : '';
           await this.act(
             ctx,
             {
@@ -431,10 +439,10 @@ export class AutomationRunner {
               targetKey,
               targetLabel: action === 'follow' ? `@${item.authorName}` : (item.title || item.content || '').slice(0, 60),
               kind: action,
-              content: '',
+              content,
               payload,
             },
-            () => this.interact(org, channel, payload, '')
+            () => this.interact(org, channel, payload, content)
           );
         }
       }
@@ -448,7 +456,7 @@ export class AutomationRunner {
     const channels = await this._repository.channels(org, ctx.automation.integrationIds);
     const targets = (await this._repository.monitorTargets(org, c.monitorTargetIds)).filter((t) => t.kind === 'POST');
     for (const target of targets) {
-      const channel = this.reach(ctx, target, channels, 'replyToComment');
+      const channel = this.reach(ctx, target, channels, ['replyToComment']);
       if (!channel) {
         continue;
       }
@@ -522,6 +530,7 @@ export class AutomationRunner {
       like: interact?.like && (() => interact.like!(channel.token, post)),
       bookmark: interact?.bookmark && (() => interact.bookmark!(channel.token, post)),
       follow: interact?.follow && p.authorName && (() => interact.follow!(channel.token, { name: p.authorName! })),
+      comment: interact?.comment && (() => interact.comment!(channel.token, post, text)),
       comment_reply: interact?.replyToComment && (() => interact.replyToComment!(channel.token, post, text)),
     }[p.action];
     if (!run) {

@@ -53,6 +53,25 @@ export class AutomationAiService extends InboxAiService {
     );
   }
 
+  /** 抢前排: one comment under someone else's post, worth reading on its own. */
+  async commentOnPost(
+    post: { title?: string | null; content?: string | null; authorName?: string | null },
+    extraPrompt: string,
+    brand?: BrandPrompt
+  ) {
+    return (
+      await this.complete(
+        '你以品牌账号的身份在别人的帖子下留言。像真人一样只针对这条帖子的具体内容：补充一个有用的信息、说出一个具体看法或问一个具体问题，30 到 80 字。' +
+          '不打广告，不放链接，不自夸产品，不说“好文”“学到了”之类的空话，不堆表情。' +
+          (extraPrompt ? `额外要求：${extraPrompt}` : '') +
+          '只输出评论正文。',
+        `帖子${post.authorName ? `（作者 ${post.authorName}）` : ''}：${post.title && post.title !== post.content ? `${post.title}\n` : ''}${(post.content || post.title || '').slice(0, 1500)}`,
+        0.8,
+        brand
+      )
+    ).trim();
+  }
+
   async generatePost(topic: string, o: { tone: string; extraPrompt?: string; avoid: string[] }, brand?: BrandPrompt) {
     return this.complete(
       `你是这个账号的运营，围绕主题写一条原创社交媒体帖子，${TONE[o.tone] ?? TONE.keep}，150 字以内，第一行是能单独成立的标题句。` +

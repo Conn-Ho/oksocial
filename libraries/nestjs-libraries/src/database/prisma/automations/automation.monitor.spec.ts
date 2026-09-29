@@ -62,6 +62,7 @@ const setup = (opts: { items?: any[]; targets?: any[]; acted?: string[]; unproxi
     like: jest.fn(async () => undefined),
     bookmark: jest.fn(async () => undefined),
     follow: jest.fn(async () => undefined),
+    comment: jest.fn(async () => undefined),
     replyToComment: jest.fn(async () => undefined),
   };
   const manager = { getSocialIntegration: jest.fn((id: string) => (id === 'xweb' ? { identifier: 'xweb', interact } : { identifier: id })) };
@@ -75,6 +76,7 @@ const setup = (opts: { items?: any[]; targets?: any[]; acted?: string[]; unproxi
   };
   const inbox = { listTemplates: jest.fn(async () => []) };
   const ai = {
+    commentOnPost: jest.fn(async () => '这个对比很实在，想问下长上下文场景你们测过哪家？'),
     suggestReply: jest.fn(async () => '可以试试我们的工具，私信你详细资料'),
     pickTemplate: jest.fn(async () => 0),
     scoreLeads: jest.fn(async (_p: string, items: any[]) => items.map((i, n) => ({ id: i.id, score: n === 0 ? 90 : 30, summary: n === 0 ? '在找工具' : '随便看看' }))),
@@ -112,6 +114,26 @@ describe('帖文操作助手', () => {
     expect(s.credits.withCredits).toHaveBeenCalledWith('o1', 'browser_write', 'h1', expect.any(Function));
     expect(s.recorded.map((r) => r.targetKey)).toEqual(['like:h1', 'follow:xweb:alice']);
     expect(s.repo.monitorItems).toHaveBeenCalledWith(['k1'], ['HIT', 'POST'], expect.any(Date));
+  });
+
+  it('comments on a new post in the brand voice, only when about to act', async () => {
+    const s = setup({ items: [hit(), hit({ id: 'h2', externalId: '1002', authorName: 'bob' })], acted: ['comment:h1'] });
+    await s.runner.run(automation({ config: { monitorTargetIds: ['k1'], actions: ['comment'], extraPrompt: '别提价格' } }) as any);
+    expect(s.ai.commentOnPost).toHaveBeenCalledTimes(1);
+    expect(s.ai.commentOnPost).toHaveBeenCalledWith(
+      { title: '有没有好用的 AI 编程工具', content: '有没有好用的 AI 编程工具', authorName: 'bob' },
+      '别提价格',
+      expect.anything()
+    );
+    expect(s.interact.comment).toHaveBeenCalledWith('slot-x', expect.objectContaining({ externalId: '1002' }), '这个对比很实在，想问下长上下文场景你们测过哪家？');
+    expect(s.recorded[0]).toMatchObject({ kind: 'comment', targetKey: 'comment:h2', content: '这个对比很实在，想问下长上下文场景你们测过哪家？' });
+  });
+
+  it('skips actions the platform cannot do instead of failing them', async () => {
+    const s = setup({ interact: { like: jest.fn(async () => undefined) } });
+    const result = await s.runner.run(automation({ config: { monitorTargetIds: ['k1'], actions: ['follow', 'like'] } }) as any);
+    expect(result).toMatchObject({ done: 1, failed: 0 });
+    expect(s.recorded.map((r) => r.kind)).toEqual(['like']);
   });
 
   it('skips our own accounts, weak posts, items already acted on and authors already followed', async () => {

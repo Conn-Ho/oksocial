@@ -19,7 +19,7 @@ import {
 } from '@gitroom/helpers/automations/automation.config';
 
 // held interactions of 帖文操作助手 / 帖文拓客助手, run from their stored payload
-const INTERACTIONS = ['like', 'bookmark', 'follow', 'comment_reply'];
+const INTERACTIONS = ['like', 'bookmark', 'follow', 'comment', 'comment_reply'];
 
 // How often each kind of automation looks for work.
 export const RUN_EVERY_MINUTES: Record<AutomationType, number> = {

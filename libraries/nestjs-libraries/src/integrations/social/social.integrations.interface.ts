@@ -172,6 +172,8 @@ export type InteractCapabilities = {
   like?: (slot: string, post: InteractPost) => Promise<void>;
   bookmark?: (slot: string, post: InteractPost) => Promise<void>;
   follow?: (slot: string, author: { name: string; url?: string | null }) => Promise<void>;
+  // a comment under someone's post (抢前排)
+  comment?: (slot: string, post: InteractPost, text: string) => Promise<void>;
   // a reply under someone's comment on a post
   replyToComment?: (slot: string, comment: InteractPost, text: string) => Promise<void>;
 };

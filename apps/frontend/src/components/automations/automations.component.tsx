@@ -22,8 +22,8 @@ import {
 import { AutomationForm } from '@gitroom/frontend/components/automations/automation.form';
 
 // what an action did, for actions without text (likes, follows) and the log
-const KIND_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注', comment_reply: '评论区回复', reply: '回复', dm: '私信', post: '发帖' };
-const HAS_TEXT = ['reply', 'dm', 'post', 'comment_reply'];
+const KIND_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注', comment: '评论', comment_reply: '评论区回复', reply: '回复', dm: '私信', post: '发帖' };
+const HAS_TEXT = ['reply', 'dm', 'post', 'comment', 'comment_reply'];
 
 const TABS = [
   { key: 'manage', label: '管理' },

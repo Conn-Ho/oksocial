@@ -209,6 +209,7 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
     follow: async (slot, author) => {
       await this.exec(slot, ['twitter', 'follow', author.name.replace(/^@/, '')]);
     },
+    comment: (slot, post, text) => this.replyTo(slot, tweetUrl(post), text),
     replyToComment: (slot, comment, text) => this.replyTo(slot, tweetUrl(comment), text),
   };
 

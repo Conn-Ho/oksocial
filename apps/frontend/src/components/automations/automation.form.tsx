@@ -26,7 +26,7 @@ const INBOX_TYPES: AutomationType[] = ['COMMENT_ASSISTANT', 'DM_ASSISTANT', 'LEA
 const MONITOR_TYPES: AutomationType[] = ['POST_ACTIONS', 'PROSPECTING'];
 // what the form starts from while the config is still incomplete (no monitor picked yet)
 const START_CONFIG: Partial<Record<AutomationType, Record<string, any>>> = {
-  POST_ACTIONS: { actions: ['like'], lookbackHours: 24, minLikes: 0, keywords: [] },
+  POST_ACTIONS: { actions: ['like'], lookbackHours: 24, minLikes: 0, keywords: [], extraPrompt: '' },
   PROSPECTING: { lookbackDays: 3, keywords: [], leadPrompt: '', minScore: 70, replyWith: 'ai', templateMatch: 'ai', extraPrompt: '', saveLeads: true },
 };
 
@@ -209,6 +209,11 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
               <input type="number" min={0} value={config.minLikes ?? 0} onChange={(e) => set({ minLikes: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
             </Row>
           </div>
+          {(config.actions || []).includes('comment') && (
+            <Row label={t('comment_prompt', '评论的额外要求（可选）')} hint={t('comment_hint', 'AI 会针对帖子内容写一句有信息量的评论，不打广告、不放链接。')}>
+              <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder="例如：多提问，少下结论" />
+            </Row>
+          )}
         </>
       )}
       {type === 'PROSPECTING' && (

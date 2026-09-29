@@ -24,8 +24,8 @@ export const AUTOMATION_META: Record<AutomationType, { label: string; descriptio
   PROSPECTING: { label: '帖文拓客助手', description: '在监控帖子的评论区找潜在客户，AI 判断后在评论下回复并存入线索库（目前支持 X）', defaultCap: 20 },
 };
 
-export const POST_ACTION_TYPES = ['like', 'bookmark', 'follow'] as const;
-export const POST_ACTION_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注作者' };
+export const POST_ACTION_TYPES = ['like', 'bookmark', 'follow', 'comment'] as const;
+export const POST_ACTION_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注作者', comment: 'AI 评论帖子' };
 
 export const SENTIMENTS = ['positive', 'negative', 'neutral'] as const;
 export const INTENTS = ['lead', 'complaint', 'question', 'suggestion', 'other'] as const;
@@ -91,6 +91,8 @@ export const CONFIG_SCHEMAS = {
     lookbackHours: z.number().int().min(1).max(168).default(24),
     minLikes: z.number().int().min(0).max(10_000_000).default(0),
     ...triggers,
+    // for the comment action (抢前排)
+    extraPrompt: z.string().max(300).default(''),
   }),
   PROSPECTING: z.object({
     // 监控 post targets whose comment sections to work
@@ -142,6 +144,7 @@ export type AutomationConfigMap = {
     actions: Array<(typeof POST_ACTION_TYPES)[number]>;
     lookbackHours: number;
     minLikes: number;
+    extraPrompt: string;
   };
   PROSPECTING: Triggers &
     ReplyWith & {
