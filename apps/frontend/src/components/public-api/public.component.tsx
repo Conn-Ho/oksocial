@@ -12,6 +12,7 @@ import { useDecisionModal } from '@gitroom/frontend/components/layout/new-modal'
 import { DeveloperComponent } from '@gitroom/frontend/components/developer/developer.component';
 import { McpClientIcon } from '@gitroom/frontend/components/public-api/mcp.client.icons';
 import clsx from 'clsx';
+import { ApiKeysComponent } from '@gitroom/frontend/components/public-api/api.keys.component';
 
 // Remote clients can't set headers, they get a URL to paste (hint = where)
 export const remoteMcpClients = {
@@ -856,6 +857,8 @@ const PublicApiContent = () => {
           </div>
         </div>
       </div>
+
+      <ApiKeysComponent />
 
       <CliSection apiKey={user.publicApi} />
 

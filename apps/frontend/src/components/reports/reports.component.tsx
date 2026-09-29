@@ -55,7 +55,10 @@ export const ReportsComponent: FC = () => {
       body: JSON.stringify({ days, expiresInDays: expires || undefined, password: password || undefined }),
     });
     if (!res.ok) {
-      toaster.show(t('share_failed', '创建失败（密码至少 4 位）'), 'warning');
+      // 402: the plan has no share links, the upgrade dialog already explained it
+      if (res.status !== 402) {
+        toaster.show(t('share_failed', '创建失败（密码至少 4 位）'), 'warning');
+      }
       return;
     }
     const share = await res.json();

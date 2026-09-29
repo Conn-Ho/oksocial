@@ -65,6 +65,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           stripeClient={process.env.STRIPE_PUBLISHABLE_KEY!}
           isChatBase={!!process.env.CHATBASE_TOKEN}
           billingEnabled={!!process.env.STRIPE_PUBLISHABLE_KEY}
+          usageBilling={
+            !!process.env.STRIPE_PUBLISHABLE_KEY ||
+            (!!process.env.OKSOCIAL_XORPAY_AID &&
+              !!process.env.OKSOCIAL_XORPAY_APP_SECRET)
+          }
           discordUrl={process.env.NEXT_PUBLIC_DISCORD_SUPPORT!}
           frontEndUrl={process.env.FRONTEND_URL!}
           isGeneral={!!process.env.IS_GENERAL}

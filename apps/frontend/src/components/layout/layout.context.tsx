@@ -104,19 +104,19 @@ function LayoutContextInner(params: { children: ReactNode }) {
       }
 
       if (response.status === 402) {
-        if (
-          await deleteDialog(
-            (
-              await response
-                .clone()
-                .json()
-                .catch(() => ({}))
-            ).message,
-            'Move to billing',
-            'Payment Required'
-          )
-        ) {
-          window.open('/billing', '_blank');
+        const body = await response
+          .clone()
+          .json()
+          .catch(() => ({}));
+        // plan limits and credits point at the usage page, Stripe subscriptions at /billing
+        let target = '/billing';
+        try {
+          target = body?.url ? new URL(body.url, window.location.origin).pathname : target;
+        } catch (e) {
+          /** keep /billing **/
+        }
+        if (await deleteDialog(body?.message, '去升级', '需要升级套餐', '稍后再说')) {
+          window.open(target, '_blank');
           return false;
         }
         return true;

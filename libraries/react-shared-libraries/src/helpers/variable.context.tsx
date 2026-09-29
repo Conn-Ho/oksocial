@@ -4,6 +4,8 @@ import { createContext, FC, ReactNode, useContext, useEffect } from 'react';
 interface VariableContextInterface {
   stripeClient: string;
   billingEnabled: boolean;
+  // oksocial plans / credits are on (Stripe or XorPay configured): shows the 用量 page
+  usageBilling?: boolean;
   isChatBase: boolean;
   isGeneral: boolean;
   genericOauth: boolean;
@@ -39,6 +41,7 @@ interface VariableContextInterface {
 const VariableContext = createContext({
   stripeClient: '',
   billingEnabled: false,
+  usageBilling: false,
   isGeneral: true,
   genericOauth: false,
   isChatBase: false,
