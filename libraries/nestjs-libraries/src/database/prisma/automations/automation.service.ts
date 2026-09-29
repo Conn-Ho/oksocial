@@ -31,6 +31,7 @@ export const RUN_EVERY_MINUTES: Record<AutomationType, number> = {
   // monitor reads are hourly, so these find new items about as often
   POST_ACTIONS: 30,
   PROSPECTING: 30,
+  FOLLOW_BACK: 120,
 };
 
 /** Whether an automation should run now. Pure. */
@@ -220,6 +221,10 @@ export class AutomationService {
             : '这条帖子不包含设定的关键词，不会操作',
           passes,
         };
+      }
+      case 'FOLLOW_BACK': {
+        const hit = (c.skipKeywords as string[]).find((k) => sample.toLowerCase().includes(k.toLowerCase()));
+        return { output: hit ? `含「${hit}」，不会回关` : '会回关这个人', passes: !hit };
       }
       case 'PROSPECTING': {
         if (c.leadPrompt) {

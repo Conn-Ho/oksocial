@@ -27,6 +27,7 @@ const MONITOR_TYPES: AutomationType[] = ['POST_ACTIONS', 'PROSPECTING'];
 // what the form starts from while the config is still incomplete (no monitor picked yet)
 const START_CONFIG: Partial<Record<AutomationType, Record<string, any>>> = {
   POST_ACTIONS: { actions: ['like'], lookbackHours: 24, minLikes: 0, keywords: [], extraPrompt: '' },
+  FOLLOW_BACK: { scan: 50, skipKeywords: [] },
   PROSPECTING: { lookbackDays: 3, keywords: [], leadPrompt: '', minScore: 70, replyWith: 'ai', templateMatch: 'ai', extraPrompt: '', saveLeads: true },
 };
 
@@ -169,7 +170,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       <Row label={t('name', '名称')}>
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} className={field} />
       </Row>
-      <Row label={INBOX_TYPES.includes(type) ? t('auto_watch_channels', '监控哪些账号') : MONITOR_TYPES.includes(type) ? t('auto_act_channels', '用哪些账号操作') : type === 'REWRITE_SYNC' ? t('auto_targets', '同步到哪些账号') : t('auto_post_channels', '给哪些账号发帖')}>
+      <Row label={INBOX_TYPES.includes(type) ? t('auto_watch_channels', '监控哪些账号') : MONITOR_TYPES.includes(type) ? t('auto_act_channels', '用哪些账号操作') : type === 'FOLLOW_BACK' ? t('auto_follow_back_channels', '给哪些账号回关') : type === 'REWRITE_SYNC' ? t('auto_targets', '同步到哪些账号') : t('auto_post_channels', '给哪些账号发帖')}>
         <div className="flex flex-wrap gap-[6px]">
           {channelChoices.map((i: any) => (
             <button
@@ -214,6 +215,16 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
               <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder="例如：多提问，少下结论" />
             </Row>
           )}
+        </>
+      )}
+      {type === 'FOLLOW_BACK' && (
+        <>
+          <Row label={t('follow_back_scan', '每次看最新的多少个粉丝')} hint={t('follow_back_hint', '只有 X 能读粉丝列表；账号要绑定出口代理。')}>
+            <input type="number" min={10} max={200} value={config.scan ?? 50} onChange={(e) => set({ scan: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
+          </Row>
+          <Row label={t('follow_back_skip', '名字或简介含这些词就不回关（逗号分隔）')}>
+            <input defaultValue={(config.skipKeywords || []).join('，')} onBlur={(e) => set({ skipKeywords: words(e.target.value) })} className={field} placeholder="例如：空投，代写，互粉" />
+          </Row>
         </>
       )}
       {type === 'PROSPECTING' && (
@@ -319,7 +330,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
 
       <div className="flex flex-col gap-[6px]">
         <div className="flex gap-[8px]">
-          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1')} />
+          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : type === 'FOLLOW_BACK' ? '粘贴一个人的名字或简介试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1')} />
           <Button secondary={true} loading={busy === 'test'} disabled={!sample.trim() && type !== 'AUTO_POST'} onClick={test}>
             {t('test', '测试')}
           </Button>

@@ -39,7 +39,9 @@ export type InteractPayload = {
   authorName: string | null;
 };
 type MonitorTargetRow = { id: string; kind: string; platform: string; title: string | null; query: string };
-type Channel = Pick<Integration, 'id' | 'token' | 'providerIdentifier'>;
+type Channel = Pick<Integration, 'id' | 'token' | 'providerIdentifier'> & Partial<Pick<Integration, 'name' | 'internalId'>>;
+// how much of whom an account follows is read to tell who is not followed back yet
+const FOLLOWING_SCAN = 400;
 
 export type RunResult = { done: number; held: number; failed: number; skipped: number; warning?: string };
 
@@ -126,6 +128,9 @@ export class AutomationRunner {
         break;
       case 'PROSPECTING':
         await this.prospecting(ctx, config as AutomationConfig<'PROSPECTING'>);
+        break;
+      case 'FOLLOW_BACK':
+        await this.followBack(ctx, config as AutomationConfig<'FOLLOW_BACK'>);
         break;
     }
     return ctx.result;
@@ -514,6 +519,50 @@ export class AutomationRunner {
             summary: score?.summary ?? null,
           });
         }
+      }
+    }
+  }
+
+  /** 回关助手: follow back each account's newest followers it does not follow yet. */
+  private async followBack(ctx: Context, c: AutomationConfig<'FOLLOW_BACK'>) {
+    const org = ctx.automation.organizationId;
+    const skip = c.skipKeywords.map((k) => k.toLowerCase());
+    for (const channel of await this._repository.channels(org, ctx.automation.integrationIds)) {
+      const interact = this._integrationManager.getSocialIntegration(channel.providerIdentifier)?.interact;
+      if (!interact?.followers || !interact.following || !interact.follow || !channel.internalId) {
+        ctx.result.skipped += 1;
+        ctx.result.warning = `「${channel.name}」所在平台暂不支持回关，已跳过。`;
+        continue;
+      }
+      const followers = await interact.followers(channel.token, channel.internalId, c.scan);
+      const following = new Set((await interact.following(channel.token, channel.internalId, FOLLOWING_SCAN)).map((f) => f.name.toLowerCase()));
+      const keyOf = (name: string) => `follow:${channel.providerIdentifier}:${name.toLowerCase()}`;
+      const todo = followers.filter((f) => {
+        const name = f.name.toLowerCase();
+        const text = `${f.name} ${f.displayName || ''} ${f.bio || ''}`.toLowerCase();
+        return !following.has(name) && !ctx.own.has(name) && !skip.some((k) => text.includes(k));
+      });
+      const acted = await this._repository.actedTargets(ctx.automation.id, todo.map((f) => keyOf(f.name)));
+      for (const f of todo) {
+        if (ctx.remaining <= 0) {
+          return;
+        }
+        if (acted.has(keyOf(f.name))) {
+          continue;
+        }
+        const payload: InteractPayload = {
+          action: 'follow',
+          platform: channel.providerIdentifier,
+          itemId: `follower:${f.name}`,
+          externalId: f.name,
+          url: null,
+          authorName: f.name,
+        };
+        await this.act(
+          ctx,
+          { integrationId: channel.id, targetKey: keyOf(f.name), targetLabel: `@${f.name}`, kind: 'follow', content: '', payload },
+          () => this.interact(org, channel, payload, '')
+        );
       }
     }
   }

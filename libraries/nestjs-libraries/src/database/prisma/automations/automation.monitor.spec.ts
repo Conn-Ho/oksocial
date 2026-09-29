@@ -52,7 +52,7 @@ const setup = (opts: { items?: any[]; targets?: any[]; acted?: string[]; unproxi
     ownIdentities: jest.fn(async () => opts.own || [{ internalId: 'me', name: 'WenBuilds', profile: null }]),
     monitorTargets: jest.fn(async () => opts.targets || [{ id: 'k1', kind: 'KEYWORD', platform: 'xweb', title: 'AI 编程', query: 'AI 编程' }]),
     monitorItems: jest.fn(async () => opts.items || [hit()]),
-    channels: jest.fn(async () => [{ id: 'ch1', name: 'WenBuilds', providerIdentifier: 'xweb', token: 'slot-x' }]),
+    channels: jest.fn(async () => [{ id: 'ch1', name: 'WenBuilds', providerIdentifier: 'xweb', token: 'slot-x', internalId: 'WenBuilds' }]),
     actedTargets: jest.fn(async (_a: string, keys: string[]) => new Set(keys.filter((k) => (opts.acted || []).includes(k)))),
     recordAction: jest.fn(async (a: any) => recorded.push(a)),
     setBrake: jest.fn(async () => ({})),
@@ -64,6 +64,13 @@ const setup = (opts: { items?: any[]; targets?: any[]; acted?: string[]; unproxi
     follow: jest.fn(async () => undefined),
     comment: jest.fn(async () => undefined),
     replyToComment: jest.fn(async () => undefined),
+    followers: jest.fn(async () => [
+      { name: 'fan1', displayName: '小王', bio: '独立开发者' },
+      { name: 'Friend', displayName: '老朋友', bio: '' },
+      { name: 'spam', displayName: 'Crypto 空投', bio: '每日空投' },
+      { name: 'fan2', displayName: 'Li', bio: 'AI 爱好者' },
+    ]),
+    following: jest.fn(async () => [{ name: 'friend' }]),
   };
   const manager = { getSocialIntegration: jest.fn((id: string) => (id === 'xweb' ? { identifier: 'xweb', interact } : { identifier: id })) };
   const credits = {
@@ -213,6 +220,31 @@ describe('帖文拓客助手', () => {
     const result = await s.runner.run(prospecting() as any);
     expect(s.interact.replyToComment).not.toHaveBeenCalled();
     expect(result.warning).toMatch(/出口代理/);
+  });
+});
+
+describe('回关助手', () => {
+  const followBack = (config: Record<string, any> = {}, over: Record<string, any> = {}) =>
+    automation({ type: 'FOLLOW_BACK', config, ...over });
+
+  it('follows back new followers we do not follow yet, skipping excluded bios and ones already done', async () => {
+    const s = setup({ acted: ['follow:xweb:fan2'] });
+    const result = await s.runner.run(followBack({ scan: 30, skipKeywords: ['空投'] }) as any);
+    expect(s.interact.followers).toHaveBeenCalledWith('slot-x', 'WenBuilds', 30);
+    expect(s.interact.follow).toHaveBeenCalledTimes(1);
+    expect(s.interact.follow).toHaveBeenCalledWith('slot-x', { name: 'fan1' });
+    expect(s.recorded.map((r) => r.targetKey)).toEqual(['follow:xweb:fan1']);
+    expect(s.credits.withCredits).toHaveBeenCalledWith('o1', 'browser_write', 'follower:fan1', expect.any(Function));
+    expect(result.done).toBe(1);
+  });
+
+  it('config reads as one sentence; platforms without a follower list are skipped with a reason', async () => {
+    expect(describeAutomation('FOLLOW_BACK', { skipKeywords: ['空投'] }, 20)).toBe(
+      '看每个账号最新的 50 个粉丝，回关还没关注的人，名字或简介含「空投」的不回关；每天最多 20 次。'
+    );
+    const s = setup({ interact: { follow: jest.fn(async () => undefined) } });
+    const result = await s.runner.run(followBack() as any);
+    expect(result.warning).toMatch(/回关/);
   });
 });
 

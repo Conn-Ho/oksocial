@@ -210,8 +210,19 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
       await this.exec(slot, ['twitter', 'follow', author.name.replace(/^@/, '')]);
     },
     comment: (slot, post, text) => this.replyTo(slot, tweetUrl(post), text),
+    followers: (slot, handle, limit) => this.accounts(slot, 'followers', handle, limit),
+    following: (slot, handle, limit) => this.accounts(slot, 'following', handle, limit),
     replyToComment: (slot, comment, text) => this.replyTo(slot, tweetUrl(comment), text),
   };
+
+  private async accounts(slot: string, list: 'followers' | 'following', handle: string, limit: number) {
+    const rows = await this.list<{ screen_name: string; name?: string; bio?: string }>(
+      slot,
+      ['twitter', list, handle, '--limit', String(limit)],
+      180_000
+    );
+    return rows.filter((r) => r.screen_name).map((r) => ({ name: r.screen_name, displayName: r.name, bio: r.bio }));
+  }
 
   private async timeline(slot: string, account: MonitorAccountRef, limit: number) {
     const rows = await this.list<TweetRow>(

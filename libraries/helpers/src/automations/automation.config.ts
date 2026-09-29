@@ -11,6 +11,7 @@ export const AUTOMATION_TYPES = [
   'AUTO_POST',
   'POST_ACTIONS',
   'PROSPECTING',
+  'FOLLOW_BACK',
 ] as const;
 export type AutomationType = (typeof AUTOMATION_TYPES)[number];
 
@@ -21,6 +22,7 @@ export const AUTOMATION_META: Record<AutomationType, { label: string; descriptio
   REWRITE_SYNC: { label: '改写与同步', description: '把一个账号新发的帖子改写后同步到其他账号', defaultCap: 10 },
   AUTO_POST: { label: 'AI 按日发帖', description: '按主题每天生成原创帖，存草稿或定时发布', defaultCap: 10 },
   POST_ACTIONS: { label: '帖文操作助手', description: '对监控到的关键词帖、竞品帖按条件自动点赞、收藏或关注作者（目前支持 X）', defaultCap: 30 },
+  FOLLOW_BACK: { label: '回关助手', description: '回关最近关注了你、而你还没关注的人，可按名字和简介关键词排除（目前支持 X）', defaultCap: 20 },
   PROSPECTING: { label: '帖文拓客助手', description: '在监控帖子的评论区找潜在客户，AI 判断后在评论下回复并存入线索库（目前支持 X）', defaultCap: 20 },
 };
 
@@ -105,6 +107,12 @@ export const CONFIG_SCHEMAS = {
     ...replyWith,
     saveLeads: z.boolean().default(true),
   }),
+  FOLLOW_BACK: z.object({
+    // newest followers of each account to look at
+    scan: z.number().int().min(10).max(200).default(50),
+    // name / bio words that mark someone not to follow back (spam, 代写…)
+    skipKeywords: keywords,
+  }),
 } satisfies Record<AutomationType, z.ZodTypeAny>;
 
 // Explicit types (z.infer needs strictNullChecks, which the app tsconfigs do not enable).
@@ -154,6 +162,7 @@ export type AutomationConfigMap = {
       minScore: number;
       saveLeads: boolean;
     };
+  FOLLOW_BACK: { scan: number; skipKeywords: string[] };
 };
 export type AutomationConfig<T extends AutomationType> = AutomationConfigMap[T];
 
@@ -217,6 +226,10 @@ export const describeAutomation = (type: AutomationType, raw: unknown, dailyCap:
     case 'POST_ACTIONS': {
       const c = parseAutomationConfig(type, raw);
       return `看所选 ${c.monitorTargetIds.length} 个监控近 ${c.lookbackHours} 小时的新帖${triggerText(c)}${c.minLikes ? `且点赞不少于 ${c.minLikes}` : ''}，${list(c.actions, POST_ACTION_TEXT)}；${tail}`;
+    }
+    case 'FOLLOW_BACK': {
+      const c = parseAutomationConfig(type, raw);
+      return `看每个账号最新的 ${c.scan} 个粉丝，回关还没关注的人${c.skipKeywords.length ? `，名字或简介含「${c.skipKeywords.join('」或「')}」的不回关` : ''}；${tail}`;
     }
     case 'PROSPECTING': {
       const c = parseAutomationConfig(type, raw);

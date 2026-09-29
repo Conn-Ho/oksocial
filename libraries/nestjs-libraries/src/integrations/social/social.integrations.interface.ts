@@ -168,12 +168,16 @@ export type MonitorAccountRef = {
 
 // oksocial 帖文操作助手 / 帖文拓客助手: acting on other people's posts and comments.
 export type InteractPost = { externalId: string; url?: string | null; authorName?: string | null };
+export type InteractAccount = { name: string; displayName?: string; bio?: string };
 export type InteractCapabilities = {
   like?: (slot: string, post: InteractPost) => Promise<void>;
   bookmark?: (slot: string, post: InteractPost) => Promise<void>;
   follow?: (slot: string, author: { name: string; url?: string | null }) => Promise<void>;
   // a comment under someone's post (抢前排)
   comment?: (slot: string, post: InteractPost, text: string) => Promise<void>;
+  // an account's newest followers / whom it follows (回关助手)
+  followers?: (slot: string, handle: string, limit: number) => Promise<InteractAccount[]>;
+  following?: (slot: string, handle: string, limit: number) => Promise<InteractAccount[]>;
   // a reply under someone's comment on a post
   replyToComment?: (slot: string, comment: InteractPost, text: string) => Promise<void>;
 };
