@@ -1,9 +1,10 @@
-export const fallbackLng = 'en';
+// oksocial serves a Chinese audience first: zh is the fallback and the first match for accept-language.
+export const fallbackLng = 'zh';
 export const languages = [
   fallbackLng,
+  'en',
   'he',
   'ru',
-  'zh',
   'fr',
   'es',
   'pt',
