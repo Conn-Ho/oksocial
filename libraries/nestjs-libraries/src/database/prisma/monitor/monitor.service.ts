@@ -1,4 +1,4 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, OnModuleInit } from '@nestjs/common';
 import { Integration, MonitorItemKind, MonitorKind, MonitorTarget } from '@prisma/client';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -27,6 +27,9 @@ import {
 import { CreatePostDto } from '@gitroom/nestjs-libraries/dtos/posts/create.post.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
+import { LimitKey } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 dayjs.extend(utc);
 
@@ -35,7 +38,14 @@ const COMMENTS_PER_READ = 20;
 const ACCOUNT_POSTS_PER_READ = 10;
 const HITS_PER_READ = 20;
 const OWN_POSTS_PER_READ = 20;
+// without oksocial plans (self-hosting) a fixed cap keeps the browser reads manageable
 const MAX_TARGETS_PER_KIND = 30;
+// the plan limit each kind of target counts against
+export const LIMIT_OF_KIND: Record<MonitorKind, LimitKey> = {
+  POST: 'monitored_posts',
+  ACCOUNT: 'competitors',
+  KEYWORD: 'keywords',
+};
 // One loop run reads at most this many targets and stops before the activity times out; what is
 // left is the longest waiting next hour.
 const TARGETS_PER_RUN = 100;
@@ -151,15 +161,23 @@ export const remakePostBody = (
 });
 
 @Injectable()
-export class MonitorService {
+export class MonitorService implements OnModuleInit {
   constructor(
     private _repository: MonitorRepository,
     private _integrationService: IntegrationService,
     private _integrationManager: IntegrationManager,
     private _ai: MonitorAiService,
     private _notificationService: NotificationService,
-    private _postsService: PostsService
+    private _postsService: PostsService,
+    private _planService: PlanService,
+    private _credits: CreditsService
   ) {}
+
+  onModuleInit() {
+    for (const [kind, key] of Object.entries(LIMIT_OF_KIND) as Array<[MonitorKind, LimitKey]>) {
+      this._planService.registerUsageCounter(key, (orgId) => this._repository.countTargets(orgId, kind));
+    }
+  }
 
   /** Random wait between reads on a platform with a read gap; tests replace it. */
   protected sleep(ms: number) {
@@ -240,7 +258,9 @@ export class MonitorService {
       intervalMinutes?: number;
     }
   ) {
-    if ((await this._repository.countTargets(orgId, body.kind)) >= MAX_TARGETS_PER_KIND) {
+    const count = await this._repository.countTargets(orgId, body.kind);
+    await this._planService.assertWithinLimit(orgId, LIMIT_OF_KIND[body.kind], count);
+    if (count >= MAX_TARGETS_PER_KIND && !(await this._planService.getPlan(orgId)).billing) {
       throw new HttpException(`每个组织最多监控 ${MAX_TARGETS_PER_KIND} 个${KIND_LABEL[body.kind]}`, 400);
     }
     const target = this.describeTarget(body.kind, body.input, body.platform);
@@ -338,7 +358,10 @@ export class MonitorService {
     try {
       const provider = this.provider(target.platform);
       channel = await this.readerOrFail(target.organizationId, provider, target.integrationId);
-      const added = await this.read(target, provider, channel);
+      const reader = channel;
+      const added = await this._credits.withCredits(target.organizationId, 'monitor_sync', target.id, () =>
+        this.read(target, provider, reader)
+      );
       await this._repository.finishRun(target.id, { lastError: null, nextRunAt, succeeded: true });
       return { ok: true, added };
     } catch (err) {
@@ -435,7 +458,7 @@ export class MonitorService {
     }
     const hits = await monitor.search(channel.token, target.query, HITS_PER_READ);
     const added = await this.store(target, 'HIT', hits);
-    const tags = await this.tagItems(added).catch((err) => {
+    const tags = await this.tagItems(target.organizationId, added).catch((err) => {
       console.log('monitor tagging', (err as Error)?.message);
       return new Map<string, string | null>();
     });
@@ -466,7 +489,7 @@ export class MonitorService {
   }
 
   /** Sentiment (and intent) per hit, in batches; returns id -> sentiment. */
-  private async tagItems(rows: Array<{ id: string; title?: string | null; content?: string | null }>) {
+  private async tagItems(orgId: string, rows: Array<{ id: string; title?: string | null; content?: string | null }>) {
     const sentiments = new Map<string, string | null>();
     if (!this._ai.enabled) {
       return sentiments;
@@ -474,8 +497,15 @@ export class MonitorService {
     const texts = rows
       .map((r) => ({ id: r.id, content: r.content || r.title || '' }))
       .filter((r) => r.content);
-    for (let i = 0; i < texts.length; i += TAG_BATCH) {
-      const tags = await this._ai.tag(texts.slice(i, i + TAG_BATCH));
+    // charged per item; what the credits do not cover stays untagged
+    for (let i = 0; i < texts.length; ) {
+      const size = Math.min(TAG_BATCH, await this._credits.affordable(orgId, 'ai_tag'));
+      if (size < 1) {
+        break;
+      }
+      const batch = texts.slice(i, i + size);
+      i += batch.length;
+      const tags = await this._credits.withCredits(orgId, 'ai_tag', batch[0].id, () => this._ai.tag(batch), batch.length);
       for (const [id, t] of tags) {
         await this._repository.setItemTags(id, t.sentiment, t.intent);
         sentiments.set(id, t.sentiment);
@@ -614,15 +644,17 @@ export class MonitorService {
     const integration = await this.channelFor(orgId, input.integrationId);
     const provider = this._integrationManager.getSocialIntegration(integration.providerIdentifier) as SocialProvider & { name: string };
     const source = await this.remakeSource(orgId, input);
-    const text = await this._ai.rewrite({
-      title: source.title,
-      content: source.content,
-      platform: provider?.name || integration.providerIdentifier,
-      maxLength: provider?.maxLength?.() || 1000,
-      tone: input.tone,
-      length: input.length,
-      instruction: input.instruction,
-    });
+    const text = await this._credits.withCredits(orgId, 'ai_rewrite', input.itemId || input.targetId, () =>
+      this._ai.rewrite({
+        title: source.title,
+        content: source.content,
+        platform: provider?.name || integration.providerIdentifier,
+        maxLength: provider?.maxLength?.() || 1000,
+        tone: input.tone,
+        length: input.length,
+        instruction: input.instruction,
+      })
+    );
     return { source, text };
   }
 

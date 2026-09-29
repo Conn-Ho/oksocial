@@ -47,7 +47,7 @@ const providers = socialIntegrationList as any[];
 const xhs = providers[0].monitor;
 const wb = providers[1].monitor;
 
-const setup = (opts: { channels?: any[]; aiEnabled?: boolean } = {}) => {
+const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean; affordable?: number } = {}) => {
   const repo = {
     countTargets: jest.fn(async () => 0),
     findSame: jest.fn(async (): Promise<any> => null),
@@ -96,17 +96,28 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean } = {}) => {
     mapTypeToPost: jest.fn(async (body: any) => body),
     createPost: jest.fn(async () => [{ postId: 'p1', integration: 'c1' }]),
   };
+  const plan = {
+    getPlan: jest.fn(async () => ({ billing: opts.billing ?? false })),
+    assertWithinLimit: jest.fn(async (_o: string, _k: string, _used?: number) => undefined),
+    registerUsageCounter: jest.fn(),
+  };
+  const credits = {
+    affordable: jest.fn(async (_o: string, _a: string) => opts.affordable ?? Infinity),
+    withCredits: jest.fn(async (_o: string, _a: string, _r: string | undefined, work: () => Promise<any>, _q?: number) => work()),
+  };
   const service = new MonitorService(
     repo as any,
     integrationService as any,
     manager as any,
     ai as any,
     notifications as any,
-    posts as any
+    posts as any,
+    plan as any,
+    credits as any
   );
   const sleep = jest.fn(async (_ms: number) => undefined);
   (service as any).sleep = sleep;
-  return { service, repo, ai, notifications, posts, sleep };
+  return { service, repo, ai, notifications, posts, sleep, plan, credits };
 };
 
 const target = (over: Record<string, unknown> = {}): any => ({
@@ -186,6 +197,49 @@ describe('createTarget', () => {
 });
 
 describe('runTarget', () => {
+  it('adding a target counts against the plan limit of its kind', async () => {
+    const { service, repo, plan } = setup({ billing: true });
+    repo.countTargets.mockResolvedValue(40);
+    await service.createTarget('o1', { kind: 'POST', input: 'https://xhs.com/p/n1' });
+    expect(plan.assertWithinLimit).toHaveBeenCalledWith('o1', 'monitored_posts', 40);
+    await service.createTarget('o1', { kind: 'KEYWORD', input: 'AI', platform: 'xhs' });
+    expect(plan.assertWithinLimit).toHaveBeenLastCalledWith('o1', 'keywords', 40);
+    plan.assertWithinLimit.mockRejectedValueOnce(Object.assign(new Error('竞品账号已达上限'), { status: 402 }));
+    await expect(service.createTarget('o1', { kind: 'ACCOUNT', input: 'https://wb.com/u/rival' })).rejects.toMatchObject({ status: 402 });
+    expect(plan.assertWithinLimit).toHaveBeenLastCalledWith('o1', 'competitors', 40);
+  });
+
+  it('registers what the usage page counts for competitors, posts and keywords', async () => {
+    const { service, repo, plan } = setup();
+    service.onModuleInit();
+    const counters = new Map(plan.registerUsageCounter.mock.calls.map((c: any[]) => [c[0], c[1]]));
+    expect([...counters.keys()].sort()).toEqual(['competitors', 'keywords', 'monitored_posts']);
+    repo.countTargets.mockResolvedValueOnce(7);
+    await expect(counters.get('competitors')('o1')).resolves.toBe(7);
+    expect(repo.countTargets).toHaveBeenLastCalledWith('o1', 'ACCOUNT');
+  });
+
+  it('each read is charged monitor_sync; without credits the read does not happen', async () => {
+    const { service, repo, credits } = setup();
+    await service.runTarget(target());
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'monitor_sync', 't1', expect.any(Function));
+    credits.withCredits.mockRejectedValueOnce(Object.assign(new Error('积分不足：监控同步需要 2 积分'), { status: 402 }));
+    xhs.readPost.mockClear();
+    const res = await service.runTarget(target());
+    expect(xhs.readPost).not.toHaveBeenCalled();
+    expect(res).toEqual(expect.objectContaining({ ok: false, error: '积分不足：监控同步需要 2 积分' }));
+    expect(repo.brake).not.toHaveBeenCalled();
+  });
+
+  it('AI tags only as many hits as the credits cover, charged per item', async () => {
+    const { service, ai, credits } = setup({ affordable: 1 });
+    credits.affordable.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    await (service as any).tagItems('o1', [{ id: 'a', content: 'x' }, { id: 'b', content: 'y' }]);
+    expect(ai.tag).toHaveBeenCalledTimes(1);
+    expect(ai.tag).toHaveBeenCalledWith([{ id: 'a', content: 'x' }]);
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_tag', 'a', expect.any(Function), 1);
+  });
+
   it('marks the target when the organization has no channel of that platform', async () => {
     const { service, repo } = setup({ channels: [] });
     const res = await service.runTarget(target());
@@ -427,6 +481,13 @@ describe('一键复刻', () => {
       tone: 'casual', length: 'shorter', instruction: '加一句结尾提问',
     });
     expect(res).toEqual({ source: { title: '标题', content: '很长的正文内容', url: 'u' }, text: '改写后的正文' });
+  });
+
+  it('a rewrite is charged ai_rewrite', async () => {
+    const { service, repo, credits } = setup();
+    repo.getItem.mockResolvedValueOnce({ kind: 'POST', title: '标题', content: '很长的正文内容', url: 'u', target: {} });
+    await service.remakeRewrite('o1', { ...options, itemId: 'i1' });
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_rewrite', 'i1', expect.any(Function));
   });
 
   it('reads the full post when a list only gave its title', async () => {
