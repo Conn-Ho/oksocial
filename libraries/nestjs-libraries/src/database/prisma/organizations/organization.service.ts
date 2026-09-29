@@ -10,12 +10,16 @@ import dayjs from 'dayjs';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { Organization, Role, ShortLinkPreference, User } from '@prisma/client';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { ApiKeysService } from '@gitroom/nestjs-libraries/database/prisma/api-keys/api.keys.service';
 
 @Injectable()
 export class OrganizationService {
   constructor(
     private _organizationRepository: OrganizationRepository,
-    private _notificationsService: NotificationService
+    private _notificationsService: NotificationService,
+    private _planService: PlanService,
+    private _apiKeysService: ApiKeysService
   ) {}
   async createOrgAndUser(
     body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
@@ -59,7 +63,11 @@ export class OrganizationService {
     return this._organizationRepository.getAccountOverview(orgId);
   }
 
+  // The organization's original key, or one of its named keys (osk_..., with expiry and revocation).
   getOrgByApiKey(api: string) {
+    if (this._apiKeysService.isNamedKey(api)) {
+      return this._apiKeysService.getOrgByKey(api);
+    }
     return this._organizationRepository.getOrgByApiKey(api);
   }
 
@@ -97,6 +105,7 @@ export class OrganizationService {
   }
 
   async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+    await this._planService.assertWithinLimit(org.id, 'team_members');
     const timeLimit = dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss');
     const id = makeId(5);
     const url =
@@ -154,6 +163,8 @@ export class OrganizationService {
       );
     }
 
+    await this._planService.assertWithinLimit(org.id, 'team_members');
+
     const added = await this._organizationRepository.addUserToOrg(
       user.id,
       makeId(5),
@@ -179,7 +190,10 @@ export class OrganizationService {
     return this._organizationRepository.getPostApproval(orgId);
   }
 
-  setPostApproval(orgId: string, enabled: boolean) {
+  async setPostApproval(orgId: string, enabled: boolean) {
+    if (enabled) {
+      await this._planService.assertFeature(orgId, 'approval');
+    }
     return this._organizationRepository.setPostApproval(orgId, enabled);
   }
 

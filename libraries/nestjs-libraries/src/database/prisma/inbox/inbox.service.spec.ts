@@ -1,5 +1,6 @@
 jest.mock('@gitroom/nestjs-libraries/database/prisma/integrations/integration.service', () => ({ IntegrationService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/inbox/inbox.repository', () => ({ InboxRepository: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
   IntegrationManager: class {},
   socialIntegrationList: [
@@ -12,7 +13,9 @@ jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
 import { InboxService, toCsv } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
 import { normalizeTags, parseJsonLoose } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 
-const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean } = {}) => {
+const noCredits = () => Object.assign(new Error('积分不足'), { status: 402 });
+
+const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: boolean } = {}) => {
   const repo = {
     addItems: jest.fn(async (_o: string, _i: string, items: any[]) => items.map((it, n) => ({ id: `n${n}`, content: it.content }))),
     setTags: jest.fn(async () => ({})),
@@ -37,8 +40,19 @@ const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean } = {}) =
     suggestReply: jest.fn(async () => '谢谢！'),
     translate: jest.fn(async () => 'hello'),
   };
-  const service = new InboxService(repo as any, integrationService as any, manager as any, ai as any);
-  return { service, repo, ai, manager, integrationService };
+  const credits = {
+    spend: jest.fn(async (org: string, action: string, ref?: string) => {
+      if (opts.broke) throw noCredits();
+      return { id: 'charge1', organizationId: org, amount: -15, action, referenceId: ref ?? null };
+    }),
+    refund: jest.fn(async () => true),
+    withCredits: jest.fn(async (_o: string, _a: string, _r: string, work: () => Promise<unknown>) => {
+      if (opts.broke) throw noCredits();
+      return work();
+    }),
+  };
+  const service = new InboxService(repo as any, integrationService as any, manager as any, ai as any, credits as any);
+  return { service, repo, ai, manager, integrationService, credits };
 };
 
 describe('InboxService', () => {
@@ -57,6 +71,22 @@ describe('InboxService', () => {
     expect(ai.tag).toHaveBeenCalledTimes(2);
     expect(repo.setTags).toHaveBeenCalledTimes(25);
     expect(repo.setTags).toHaveBeenCalledWith('n0', 'positive', 'question');
+  });
+
+  it('sync charges AI tags per item, one charge per batch', async () => {
+    const fetched = Array.from({ length: 25 }, (_, i) => ({ kind: 'COMMENT', externalId: `e${i}`, authorName: 'a', content: `c${i}` }));
+    const { service, credits } = setup({ provider: { inbox: { fetch: jest.fn(async () => fetched) } } });
+    await service.sync('o1', 'i1');
+    expect(credits.withCredits).toHaveBeenNthCalledWith(1, 'o1', 'ai_tag', 'n0', expect.any(Function), 20);
+    expect(credits.withCredits).toHaveBeenNthCalledWith(2, 'o1', 'ai_tag', 'n20', expect.any(Function), 5);
+  });
+
+  it('sync still stores items when the organization has no credits left, untagged', async () => {
+    const provider = { inbox: { fetch: jest.fn(async () => [{ kind: 'DM', externalId: 'x', authorName: 'a', content: 'hi' }]) } };
+    const { service, ai, repo } = setup({ provider, broke: true });
+    await expect(service.sync('o1', 'i1')).resolves.toEqual({ fetched: 1, added: 1 });
+    expect(ai.tag).not.toHaveBeenCalled();
+    expect(repo.setTags).not.toHaveBeenCalled();
   });
 
   it('sync skips providers without an inbox and 404s unknown channels', async () => {
@@ -100,6 +130,45 @@ describe('InboxService', () => {
     await expect(failing.service.reply('o1', 'u1', 'it2', 'x')).rejects.toMatchObject({ status: 502 });
     expect(failing.repo.logReply).toHaveBeenCalledWith('it2', 'u1', 'x', 'MANUAL', 'composer missing');
     expect(failing.repo.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('reply through a browser channel is charged, and refunded when the send fails', async () => {
+    const item = { id: 'it5', kind: 'COMMENT', replyTarget: 't', threadId: null, integration: { token: 's', providerIdentifier: 'xweb' } };
+    const ok = setup({ provider: { writeCreditAction: 'browser_write', inbox: { reply: { COMMENT: jest.fn(async () => undefined) } } }, item });
+    await ok.service.reply('o1', 'u1', 'it5', 'hi');
+    expect(ok.credits.spend).toHaveBeenCalledWith('o1', 'browser_write', 'it5');
+    expect(ok.credits.refund).not.toHaveBeenCalled();
+
+    const failing = setup({ provider: { writeCreditAction: 'browser_write', inbox: { reply: { COMMENT: jest.fn().mockRejectedValue(new Error('风控')) } } }, item });
+    await expect(failing.service.reply('o1', 'u1', 'it5', 'hi')).rejects.toMatchObject({ status: 502 });
+    expect(failing.credits.refund).toHaveBeenCalledWith(expect.objectContaining({ id: 'charge1', action: 'browser_write' }));
+  });
+
+  it('reply without credits is refused before anything is sent', async () => {
+    const send = jest.fn(async () => undefined);
+    const item = { id: 'it6', kind: 'COMMENT', replyTarget: 't', threadId: null, integration: { token: 's', providerIdentifier: 'xweb' } };
+    const { service, repo } = setup({ provider: { writeCreditAction: 'browser_write', inbox: { reply: { COMMENT: send } } }, item, broke: true });
+    await expect(service.reply('o1', 'u1', 'it6', 'hi')).rejects.toMatchObject({ status: 402 });
+    expect(send).not.toHaveBeenCalled();
+    expect(repo.logReply).not.toHaveBeenCalled();
+  });
+
+  it('replies through API channels are not charged', async () => {
+    const item = { id: 'it7', kind: 'COMMENT', replyTarget: 't', threadId: null, integration: { token: 's', providerIdentifier: 'x' } };
+    const { service, credits } = setup({ provider: { inbox: { reply: { COMMENT: jest.fn(async () => undefined) } } }, item });
+    await service.reply('o1', 'u1', 'it7', 'hi');
+    expect(credits.spend).not.toHaveBeenCalled();
+  });
+
+  it('reply drafts and translations are charged per call', async () => {
+    const item = { id: 'it8', kind: 'COMMENT', content: 'nice', threadTitle: null, integration: {} };
+    const { service, credits, repo } = setup({ item });
+    (repo as any).setTranslation = jest.fn(async () => ({}));
+    await service.suggestReply('o1', 'it8');
+    await service.translate('o1', 'it8', 'en');
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_reply', 'it8', expect.any(Function));
+    expect(credits.withCredits).toHaveBeenCalledWith('o1', 'ai_translate', 'it8', expect.any(Function));
+    await expect(setup({ item, broke: true }).service.suggestReply('o1', 'it8')).rejects.toMatchObject({ status: 402 });
   });
 
   it('suggestReply uses the DM templates for a DM', async () => {

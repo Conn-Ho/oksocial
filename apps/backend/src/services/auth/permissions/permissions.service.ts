@@ -1,12 +1,13 @@
 import { Ability, AbilityBuilder, AbilityClass } from '@casl/ability';
 import { Injectable } from '@nestjs/common';
-import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/pricing';
 import { SubscriptionService } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/subscription.service';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import dayjs from 'dayjs';
 import { WebhooksService } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhooks.service';
 import { AuthorizationActions, Sections } from './permission.exception.class';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { isBillingEnabled } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 export type AppAbility = Ability<[AuthorizationActions, Sections]>;
 
@@ -16,24 +17,13 @@ export class PermissionsService {
     private _subscriptionService: SubscriptionService,
     private _postsService: PostsService,
     private _integrationService: IntegrationService,
-    private _webhooksService: WebhooksService
+    private _webhooksService: WebhooksService,
+    private _planService: PlanService
   ) {}
-  async getPackageOptions(orgId: string) {
-    const subscription =
-      await this._subscriptionService.getSubscriptionByOrganizationId(orgId);
 
-    const tier =
-      subscription?.subscriptionTier ||
-      (!process.env.STRIPE_PUBLISHABLE_KEY ? 'PRO' : 'FREE');
-
-    const { channel, ...all } = pricing[tier];
-    return {
-      subscription,
-      options: {
-        ...all,
-        ...{ channel: tier === 'FREE' ? channel : -10 },
-      },
-    };
+  // Postiz's tiers, or oksocial's plan catalogue when oksocial sells plans itself (XorPay).
+  getPackageOptions(orgId: string) {
+    return this._planService.packageOptions(orgId);
   }
 
   async check(
@@ -47,10 +37,8 @@ export class PermissionsService {
       Ability<[AuthorizationActions, Sections]>
     >(Ability as AbilityClass<AppAbility>);
 
-    if (
-      requestedPermission.length === 0 ||
-      !process.env.STRIPE_PUBLISHABLE_KEY
-    ) {
+    // no billing configured (neither Stripe nor XorPay): self-hosting, everything is allowed
+    if (requestedPermission.length === 0 || !isBillingEnabled()) {
       for (const [action, section] of requestedPermission) {
         can(action, section);
       }
@@ -119,6 +107,14 @@ export class PermissionsService {
           can(action, section);
           continue;
         }
+      }
+
+      if (
+        section === Sections.STORAGE &&
+        (await this._planService.withinLimit(orgId, 'storage_gb'))
+      ) {
+        can(action, section);
+        continue;
       }
 
       if (section === Sections.TEAM_MEMBERS && options.team_members) {

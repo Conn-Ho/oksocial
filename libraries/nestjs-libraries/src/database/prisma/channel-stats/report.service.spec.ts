@@ -1,11 +1,12 @@
 process.env.JWT_SECRET = 'test';
 jest.mock('@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository', () => ({ ChannelStatsRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/notifications/notification.service', () => ({ NotificationService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/plan.service', () => ({ PlanService: class {} }));
 
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { renderWeeklyEmail, ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
 
-const setup = (share?: any) => {
+const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email']) => {
   const repo = {
     orgChannels: jest.fn(async () => [{ id: 'a', name: 'WenWen', providerIdentifier: 'xiaohongshu' }]),
     snapshotsSince: jest.fn(async () => []),
@@ -16,7 +17,13 @@ const setup = (share?: any) => {
     reviewersOf: jest.fn(async (org: string) => (org === 'o1' ? [{ user: { email: 'a@x.cn' }, organization: { name: '团队<1>' } }, { user: { email: 'b@x.cn' }, organization: { name: '团队<1>' } }] : [])),
   };
   const notifications = { sendEmail: jest.fn(async () => undefined) };
-  return { service: new ReportService(repo as any, notifications as any), repo, notifications };
+  const plans = {
+    hasFeature: jest.fn(async (_o: string, f: string) => features.includes(f)),
+    assertFeature: jest.fn(async (_o: string, f: string) => {
+      if (!features.includes(f)) throw Object.assign(new Error('upgrade'), { status: 402 });
+    }),
+  };
+  return { service: new ReportService(repo as any, notifications as any, plans as any), repo, notifications, plans };
 };
 
 describe('ReportService', () => {
@@ -58,6 +65,21 @@ describe('ReportService', () => {
     const { service, notifications } = setup();
     expect(await service.sendWeeklyReports()).toEqual({ organizations: 2, sent: 2 });
     expect(notifications.sendEmail).toHaveBeenCalledWith('a@x.cn', '【oksocial 周报】团队<1>', expect.stringContaining('团队&lt;1&gt;'));
+  });
+
+  it('plans without the features cannot share or turn the weekly email on, and get no email', async () => {
+    const { service, repo, notifications } = setup(undefined, []);
+    await expect(service.createShare('o1', 7)).rejects.toMatchObject({ status: 402 });
+    expect(repo.createShare).not.toHaveBeenCalled();
+    await expect(service.setWeeklyEmail('o1', true)).rejects.toMatchObject({ status: 402 });
+    expect(await service.sendWeeklyReports()).toEqual({ organizations: 2, sent: 0 });
+    expect(notifications.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('turning the weekly email off is always allowed', async () => {
+    const { service } = setup(undefined, []);
+    (service as any)._repository.setWeeklyEmail = jest.fn(async () => ({ weeklyReportEmail: false }));
+    await expect(service.setWeeklyEmail('o1', false)).resolves.toEqual({ weeklyReportEmail: false });
   });
 });
 

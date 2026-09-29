@@ -39,6 +39,14 @@ export class InfiniteWorkflowRegister implements OnModuleInit {
             taskQueue: 'main',
           });
       } catch (err) {}
+      try {
+        await this._temporalService.client
+          ?.getRawClient()
+          ?.workflow?.start('billingCreditsWorkflow', {
+            workflowId: 'billing-credits-workflow',
+            taskQueue: 'main',
+          });
+      } catch (err) {}
     }
   }
 }

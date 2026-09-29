@@ -36,6 +36,8 @@ export abstract class BrowserSocialAbstract extends SocialAbstract {
   editor = 'normal' as const;
   // Own Temporal task queue per platform (identifiers have no dash); the fleet also caps runs at 3.
   override maxConcurrentJob = 3;
+  // Every post / comment / reply runs a browser on the fleet: charged per write.
+  writeCreditAction = 'browser_write' as const;
   protected fleet: BrowserFleetClient = browserFleet;
 
   async generateAuthUrl(): Promise<GenerateAuthUrlResponse> {

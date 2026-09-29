@@ -25,6 +25,11 @@ import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { SaveMediaInformationDto } from '@gitroom/nestjs-libraries/dtos/media/save.media.information.dto';
 import { VideoDto } from '@gitroom/nestjs-libraries/dtos/videos/video.dto';
 import { VideoFunctionDto } from '@gitroom/nestjs-libraries/dtos/videos/video.function.dto';
+import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
+import {
+  AuthorizationActions,
+  Sections,
+} from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 
 @ApiTags('Media')
 @Controller('/media')
@@ -85,6 +90,7 @@ export class MediaController {
   }
 
   @Post('/upload-server')
+  @CheckPolicies([AuthorizationActions.Create, Sections.STORAGE])
   @UseInterceptors(FileInterceptor('file', streamUploadOptions()))
   async uploadServer(
     @GetOrgFromRequest() org: Organization,
@@ -128,6 +134,7 @@ export class MediaController {
   }
 
   @Post('/upload-simple')
+  @CheckPolicies([AuthorizationActions.Create, Sections.STORAGE])
   @UseInterceptors(FileInterceptor('file', streamUploadOptions()))
   async uploadSimple(
     @GetOrgFromRequest() org: Organization,
@@ -151,6 +158,7 @@ export class MediaController {
   }
 
   @Post('/:endpoint')
+  @CheckPolicies([AuthorizationActions.Create, Sections.STORAGE])
   async uploadFile(
     @GetOrgFromRequest() org: Organization,
     @Req() req: Request,

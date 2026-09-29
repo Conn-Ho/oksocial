@@ -11,6 +11,7 @@ import { ClippingActivity } from '@gitroom/orchestrator/activities/clipping.acti
 import { VideoModule } from '@gitroom/nestjs-libraries/videos/video.module';
 import { HealthController } from '@gitroom/orchestrator/health.controller';
 import { InboxActivity } from '@gitroom/orchestrator/activities/inbox.activity';
+import { BillingActivity } from '@gitroom/orchestrator/activities/billing.activity';
 
 const activities = [
   PostActivity,
@@ -21,6 +22,7 @@ const activities = [
   MediaActivity,
   ClippingActivity,
   InboxActivity,
+  BillingActivity,
 ];
 @Module({
   imports: [
