@@ -50,12 +50,13 @@ const automation = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
-const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?: string[]; own?: any[]; templates?: string[]; channels?: any[]; posts?: any[] } = {}) => {
+const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?: string[]; unproxied?: string[]; own?: any[]; templates?: string[]; channels?: any[]; posts?: any[] } = {}) => {
   const recorded: any[] = [];
   const repo = {
     countToday: jest.fn(async () => opts.today ?? 0),
     countTodayForChannel: jest.fn(async () => 0),
     brakeFor: jest.fn(async () => (opts.braked || []).map((integrationId) => ({ integrationId }))),
+    unproxiedChannels: jest.fn(async () => opts.unproxied || []),
     ownIdentities: jest.fn(async () => opts.own || [{ internalId: 'me', name: 'WenWen', profile: 'WenBuilds' }]),
     inboxCandidates: jest.fn(async () => opts.items || []),
     actedTargets: jest.fn(async (_a: string, keys: string[]) => new Set(keys.filter((k) => (opts.acted || []).includes(k)))),
@@ -166,6 +167,22 @@ describe('comment assistant', () => {
     expect(s.notifications.inAppNotification).toHaveBeenCalled();
   });
 
+  it('does not interact through a browser channel without its own exit proxy, and says why', async () => {
+    const s = setup({ items: [item(), item({ id: 'it2', authorName: 'b' })], unproxied: ['ch1'] });
+    const result = await s.runner.run(automation() as any);
+    expect(s.inbox.reply).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ done: 0, skipped: 2 });
+    expect(result.warning).toMatch(/出口代理/);
+    expect(s.repo.unproxiedChannels).toHaveBeenCalledWith(['ch1']);
+  });
+
+  it('review mode still drafts replies for a channel without a proxy (a person sends them)', async () => {
+    const s = setup({ items: [item()], unproxied: ['ch1'] });
+    const result = await s.runner.run(automation({ reviewMode: true }) as any);
+    expect(result).toMatchObject({ held: 1, skipped: 0 });
+    expect(result.warning).toBeUndefined();
+  });
+
   it('skips braked channels', async () => {
     const s = setup({ items: [item()], braked: ['ch1'] });
     expect((await s.runner.run(automation() as any)).skipped).toBe(1);
@@ -260,6 +277,13 @@ describe('AutomationService', () => {
     await service.create('o1', { type: 'DM_ASSISTANT', name: '私信', integrationIds: ['ch1'], config: {} });
     expect(repo.create).toHaveBeenCalledWith('o1', expect.objectContaining({ dailyCap: 100, enabled: false, config: expect.objectContaining({ strategy: 'once' }) }));
     await expect(service.create('o1', { type: 'LEAD_COLLECTOR', name: 'x', integrationIds: [], config: {} })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('a run warning is shown as the automation last error', async () => {
+    const { service, runner, repo } = makeService();
+    runner.run.mockResolvedValueOnce({ done: 0, held: 0, failed: 0, skipped: 3, warning: '需要出口代理' });
+    await service.runDue();
+    expect(repo.update).toHaveBeenCalledWith('o1', 'x', { lastRunAt: expect.any(Date), lastError: '需要出口代理' });
   });
 
   it('runDue runs only due automations and records the run', async () => {

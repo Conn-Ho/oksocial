@@ -26,7 +26,12 @@ export const PACE_MIN_MS = 20_000;
 export const PACE_MAX_MS = 60_000;
 const LEAD_BATCH = 20;
 
-export type RunResult = { done: number; held: number; failed: number; skipped: number };
+export type RunResult = { done: number; held: number; failed: number; skipped: number; warning?: string };
+
+// Automated interactions from a shared datacenter IP are what got x2 banned: a browser channel
+// needs its own exit proxy before an automation may reply, DM, like or follow through it.
+export const NO_PROXY_WARNING =
+  '有账号没有绑定出口代理，自动化不会用它互动（回复、私信等）。请在「设置 → 出口代理」给账号绑定代理，或打开审核模式由人工发送。';
 
 type Context = {
   automation: Automation;
@@ -34,6 +39,8 @@ type Context = {
   brand: BrandPrompt;
   remaining: number;
   braked: Set<string>;
+  // browser channels without their own exit proxy: no automated interactions
+  unproxied: Set<string>;
   own: Set<string>;
   result: RunResult;
 };
@@ -72,6 +79,7 @@ export class AutomationRunner {
       brand: await this._brands.promptFor(automation.organizationId),
       remaining: Math.max(0, automation.dailyCap - (await this._repository.countToday(automation.id))),
       braked: new Set((await this._repository.brakeFor(automation.integrationIds)).map((b) => b.integrationId!)),
+      unproxied: new Set(await this._repository.unproxiedChannels(automation.integrationIds)),
       own: ownKeys(await this._repository.ownIdentities(automation.organizationId)),
       result: { done: 0, held: 0, failed: 0, skipped: 0 },
     };
@@ -150,6 +158,13 @@ export class AutomationRunner {
       await this._repository.recordAction({ ...base, status: 'HELD' });
       ctx.result.held += 1;
       return 'held';
+    }
+    if (a.kind !== 'post' && ctx.unproxied.has(a.integrationId)) {
+      // not recorded: once a proxy is bound, the next run acts on it
+      ctx.remaining += 1;
+      ctx.result.skipped += 1;
+      ctx.result.warning = NO_PROXY_WARNING;
+      return 'unproxied';
     }
     try {
       await execute();

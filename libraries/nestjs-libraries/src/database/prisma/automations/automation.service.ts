@@ -105,7 +105,10 @@ export class AutomationService {
   async runOne(automation: Automation) {
     try {
       const result = await this._runner.run(automation);
-      await this._repository.update(automation.organizationId, automation.id, { lastRunAt: new Date(), lastError: null });
+      await this._repository.update(automation.organizationId, automation.id, {
+        lastRunAt: new Date(),
+        lastError: result.warning ?? null,
+      });
       return result;
     } catch (err) {
       const message = (err as Error)?.message || String(err);

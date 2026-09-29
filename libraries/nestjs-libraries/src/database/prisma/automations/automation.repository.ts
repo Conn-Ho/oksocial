@@ -183,6 +183,15 @@ export class AutomationRepository {
     });
   }
 
+  /** Of these channels, the browser ones that have no exit proxy bound. */
+  async unproxiedChannels(integrationIds: string[]) {
+    const rows = await this._slots.model.browserSlot.findMany({
+      where: { integrationId: { in: integrationIds }, proxyId: null, deletedAt: null },
+      select: { integrationId: true },
+    });
+    return rows.map((r) => r.integrationId!).filter(Boolean);
+  }
+
   setBrake(integrationId: string, until: Date, reason: string) {
     return this._slots.model.browserSlot.updateMany({
       where: { integrationId },
