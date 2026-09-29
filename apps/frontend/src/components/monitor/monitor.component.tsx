@@ -1,0 +1,211 @@
+'use client';
+
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import clsx from 'clsx';
+import dayjs from 'dayjs';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { useToaster } from '@gitroom/react/toaster/toaster';
+import { Button } from '@gitroom/react/form/button';
+import { useModals } from '@gitroom/frontend/components/layout/new-modal';
+import { useIntegrationList } from '@gitroom/frontend/components/launches/helpers/use.integration.list';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
+import {
+  KIND_TABS,
+  METRICS,
+  MonitorKind,
+  MonitorTarget,
+  formatCount,
+  useMonitorCall,
+  useMonitorPlatforms,
+  useMonitorTargets,
+} from '@gitroom/frontend/components/monitor/monitor.hooks';
+import { AddTargetModal } from '@gitroom/frontend/components/monitor/add.target.modal';
+import { MonitorDetail } from '@gitroom/frontend/components/monitor/monitor.detail';
+import { RemakeModal } from '@gitroom/frontend/components/monitor/remake.modal';
+
+const ADD_LABEL: Record<MonitorKind, string> = { POST: '监控帖子', ACCOUNT: '添加竞品', KEYWORD: '添加关键词' };
+const EMPTY: Record<MonitorKind, string> = {
+  POST: '粘贴一条帖子链接，按小时记录点赞、评论、转发、收藏的变化，并收集它的评论。',
+  ACCOUNT: '添加竞品账号，定时读取他们最近的帖子；发新帖时通知你，也可以和自己的账号做对比。',
+  KEYWORD: '添加关键词，定时搜索最新内容，AI 标记情绪，有新内容时通知你。',
+};
+
+/** One row of the target list: what is monitored and its latest state. */
+const TargetRow: FC<{ target: MonitorTarget; active: boolean; onClick: () => void }> = ({ target, active, onClick }) => {
+  const t = useT();
+  const latest = target.latest;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active}
+      className={clsx(
+        'w-full text-start px-[16px] py-[12px] border-b border-newTableBorder flex flex-col gap-[4px]',
+        active ? 'bg-newTableHeader' : 'hover:bg-newTableHeader/50'
+      )}
+    >
+      <span className="flex items-center gap-[6px] text-[13px]">
+        <img src={`/icons/platforms/${target.platform}.png`} alt="" className="w-[16px] h-[16px] rounded-full" />
+        <span className="font-semibold truncate">{target.title || target.query}</span>
+        {target.lastError ? (
+          <span className="ms-auto shrink-0 w-[8px] h-[8px] rounded-full bg-red-500" title={target.lastError} aria-label={t('monitor_failed', '读取失败')} />
+        ) : target.paused ? (
+          <span className="ms-auto shrink-0 text-[11px] text-textColor/50">{t('monitor_paused', '已暂停')}</span>
+        ) : null}
+      </span>
+      {target.kind === 'POST' ? (
+        <span className="flex gap-[10px] text-[12px] text-textColor/60 tabular-nums">
+          {METRICS.filter((m) => latest?.[m.key] !== null && latest?.[m.key] !== undefined).map((m) => (
+            <span key={m.key}>
+              {m.label} {formatCount(latest?.[m.key])}
+            </span>
+          ))}
+          {!latest && t('monitor_never_read', '还没读取过')}
+        </span>
+      ) : (
+        <span className="text-[12px] text-textColor/60">
+          {t('monitor_items_count', '已收录 {{n}} 条', { n: target._count?.items ?? 0 })}
+        </span>
+      )}
+      <span className="text-[11px] text-textColor/40">
+        {target.note ||
+          (target.lastRunAt
+            ? t('monitor_last_read', '上次读取 {{time}}', { time: dayjs(target.lastRunAt).format('MM-DD HH:mm') })
+            : t('monitor_never_read', '还没读取过'))}
+      </span>
+    </button>
+  );
+};
+
+/** 监控: monitored posts, competitor accounts and keywords, with 竞品 VS and 一键复刻. */
+export const MonitorComponent: FC = () => {
+  const t = useT();
+  const toaster = useToaster();
+  const modal = useModals();
+  const user = useUser();
+  const call = useMonitorCall();
+  const [kind, setKind] = useState<MonitorKind>('POST');
+  const [selected, setSelected] = useState('');
+  const { data: targets, mutate, isLoading } = useMonitorTargets(kind);
+  const { data: platforms } = useMonitorPlatforms();
+  const { data: integrations } = useIntegrationList();
+  const canManage = canManageChannels(user?.role);
+  const canWrite = canWritePosts(user?.role);
+  const list = targets || [];
+  const current = list.find((x) => x.id === selected) || list[0];
+  const channels = useMemo(
+    () => (integrations || []).map((i: any) => ({ id: i.id, name: i.name, identifier: i.identifier, disabled: i.disabled || i.refreshNeeded || i.inBetweenSteps })),
+    [integrations]
+  );
+
+  useEffect(() => setSelected(''), [kind]);
+
+  const firstRead = useCallback(async (target: MonitorTarget) => {
+    setSelected(target.id);
+    mutate();
+    toaster.show(t('monitor_added', '已添加，正在第一次读取…'), 'success');
+    try {
+      const res = await call(`/monitoring/targets/${target.id}/run`);
+      if (!res.ok) {
+        toaster.show(t('monitor_read_failed', '读取失败：{{error}}', { error: res.error }), 'warning');
+      }
+    } catch (e) {
+      toaster.show((e as Error).message, 'warning');
+    }
+    mutate();
+  }, [mutate]);
+
+  const openAdd = useCallback(
+    () =>
+      modal.openModal({
+        title: t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind]),
+        withCloseButton: true,
+        classNames: { modal: 'bg-transparent text-textColor w-[640px] max-w-[95vw]' },
+        children: (close: () => void) => (
+          <AddTargetModal kind={kind} platforms={platforms || []} channels={channels} close={close} onAdded={firstRead} />
+        ),
+      }),
+    [kind, platforms, channels, firstRead]
+  );
+
+  const openRemake = useCallback(
+    () =>
+      modal.openModal({
+        title: t('monitor_remake', '一键复刻'),
+        withCloseButton: true,
+        classNames: { modal: 'bg-transparent text-textColor w-[820px] max-w-[95vw]' },
+        children: (close: () => void) => <RemakeModal source={{}} channels={channels} close={close} />,
+      }),
+    [channels]
+  );
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <header className="flex items-center gap-[12px] px-[24px] pt-[20px] pb-[12px] flex-wrap">
+        <h2 className="text-[24px] font-semibold me-[8px]">{t('monitor', '监控')}</h2>
+        <nav className="flex gap-[4px]" aria-label={t('monitor_kinds', '监控类型')}>
+          {KIND_TABS.map((tab) => (
+            <button
+              key={tab.kind}
+              type="button"
+              onClick={() => setKind(tab.kind)}
+              aria-current={kind === tab.kind}
+              className={clsx(
+                'px-[14px] h-[34px] rounded-[6px] text-[14px]',
+                kind === tab.kind ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
+              )}
+            >
+              {t(`monitor_tab_${tab.kind.toLowerCase()}`, tab.label)}
+            </button>
+          ))}
+        </nav>
+        <div className="ms-auto flex gap-[8px] flex-wrap">
+          {canWrite && (
+            <Button secondary={true} onClick={openRemake}>
+              {t('monitor_remake_link', '复刻一条链接')}
+            </Button>
+          )}
+          {canManage && <Button onClick={openAdd}>{t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind])}</Button>}
+        </div>
+      </header>
+
+      <div className="flex flex-1 min-h-0 border-t border-newTableBorder">
+        <ul className="w-[340px] max-w-[42%] border-e border-newTableBorder overflow-y-auto" aria-label={t('monitor_list', '监控列表')}>
+          {!isLoading && !list.length && (
+            <li className="p-[24px] flex flex-col gap-[12px] items-start text-[14px] text-textColor/60 leading-[1.6]">
+              {t(`monitor_empty_${kind.toLowerCase()}_intro`, EMPTY[kind])}
+              {canManage && (
+                <Button secondary={true} onClick={openAdd}>
+                  {t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind])}
+                </Button>
+              )}
+            </li>
+          )}
+          {list.map((target) => (
+            <li key={target.id}>
+              <TargetRow target={target} active={current?.id === target.id} onClick={() => setSelected(target.id)} />
+            </li>
+          ))}
+        </ul>
+        <div className="flex-1 min-w-0">
+          {current ? (
+            <MonitorDetail
+              key={current.id}
+              targetId={current.id}
+              platforms={platforms || []}
+              channels={channels}
+              canManage={canManage}
+              canWrite={canWrite}
+              onChanged={() => mutate()}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-textColor/50 text-[14px]">
+              {t('monitor_pick', '选择左侧的一项查看数据')}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
