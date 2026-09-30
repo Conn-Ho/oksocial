@@ -11,9 +11,17 @@ test('邀请成员: the email arrives in Chinese, the invitee registers without 
   assert.match(invite.subject, /邀请你加入/);
   assert.equal(invite.lastEvent === 'bounced', false);
   const link = invite.links.find((l) => l.includes('?org='));
-  // following the link stores the invitation in a cookie
-  const landing = await fetch(link, { redirect: 'manual' });
-  const orgCookie = cookiesOf(landing).org;
+  // following the link (two redirects) stores the invitation in a cookie
+  let url = link;
+  const jar = {};
+  for (let hop = 0; hop < 5; hop++) {
+    const r = await fetch(url, { redirect: 'manual', headers: { cookie: Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ') } });
+    Object.assign(jar, cookiesOf(r));
+    const next = r.headers.get('location');
+    if (!next || jar.org) break;
+    url = new URL(next, url).href;
+  }
+  const orgCookie = jar.org;
   assert.ok(orgCookie, 'org cookie from the invitation link');
   const register = await fetch(`${BASE}/auth`, { headers: { cookie: `org=${orgCookie}` } });
   assert.ok(!(await register.text()).includes('name="company"'), 'no team-name field for an invitee');

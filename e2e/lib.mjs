@@ -141,7 +141,7 @@ import json, os, re, sys, urllib.request
 key = os.environ['RESEND_API_KEY']
 def get(u):
     return json.load(urllib.request.urlopen(urllib.request.Request(u, headers={'Authorization': 'Bearer ' + key, 'User-Agent': 'oksocial-e2e'}), timeout=20))
-d = [e for e in get('https://api.resend.com/emails?limit=50')['data'] if sys.argv[1] in e['to']]
+d = [e for e in get('https://api.resend.com/emails?limit=100')['data'] if any(sys.argv[1] in t for t in e['to'])]
 if not d:
     print('null'); sys.exit()
 e = get('https://api.resend.com/emails/' + d[0]['id'])
