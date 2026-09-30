@@ -223,7 +223,7 @@ export const TimeTable: FC<{
 
       {/* Save Button */}
       <div className="mt-[24px]">
-        <Button type="button" className="w-full rounded-[8px]" onClick={save}>
+        <Button type="button" className="w-full" onClick={save}>
           {t('save_changes', 'Save Changes')}
         </Button>
       </div>

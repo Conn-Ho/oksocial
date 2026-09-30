@@ -1,10 +1,28 @@
 const { join } = require('path');
+
+// The palette is CSS variables holding hex colors, which Tailwind cannot give an opacity to: without
+// this, text-textColor/70 or bg-newTableHeader/60 generate nothing and render at full strength.
+// A color with an opacity modifier becomes a color-mix with transparent.
+// Only an explicit modifier mixes: plain classes stay the bare variable, so a browser without
+// color-mix still paints them.
+const withAlpha = (value) => ({ opacityValue }) =>
+  opacityValue === undefined || opacityValue === '1' || String(opacityValue).startsWith('var(')
+    ? value
+    : `color-mix(in srgb, ${value} calc(${opacityValue} * 100%), transparent)`;
+const alphaReady = (colors) =>
+  Object.fromEntries(
+    Object.entries(colors).map(([name, value]) => [
+      name,
+      typeof value === 'string' && value.startsWith('var(') ? withAlpha(value) : value,
+    ])
+  );
+
 module.exports = {
   darkMode: 'class',
   content: ['./src/**/*.{ts,tsx,html}', '../../libraries/**/*.{ts,tsx,html}'],
   theme: {
     extend: {
-      colors: {
+      colors: alphaReady({
         primary: 'var(--color-primary)',
         secondary: 'var(--color-secondary)',
         textColor: 'var(--new-btn-text)',
@@ -113,7 +131,7 @@ module.exports = {
         youtubeButton: 'var(--youtube-button)',
         youtubeBgAction: 'var(--youtube-action-color)',
         youtubeSvg: 'var(--youtube-svg-border)',
-      },
+      }),
       gridTemplateColumns: {
         13: 'repeat(13, minmax(0, 1fr));',
       },
@@ -122,7 +140,7 @@ module.exports = {
         loginBg: 'url(/auth/bg-login.png)',
       },
       fontFamily: {
-        sans: ['Helvetica Neue'],
+        sans: ['var(--font-sans)'],
       },
       animation: {
         fade: 'fadeOut 0.5s ease-in-out',

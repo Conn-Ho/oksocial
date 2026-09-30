@@ -47,9 +47,12 @@ export const Button: FC<
       ref={ref}
       className={clsx(
         (props.disabled || loading) && 'opacity-50 pointer-events-none',
-        `${
-          secondary ? 'bg-third' : 'bg-forth text-white'
-        } px-[24px] h-[40px] cursor-pointer items-center justify-center flex relative`,
+        // pill buttons: primary is the one brand-colored call to action, secondary sits on hairlines
+        secondary
+          ? 'bg-btnSimple text-textColor border border-newTableBorder hover:bg-boxHover'
+          : 'bg-forth text-white hover:brightness-110',
+        'px-[20px] h-[40px] rounded-full font-[600] text-[14px] cursor-pointer items-center justify-center flex relative whitespace-nowrap',
+        'transition-[filter,background-color,transform] duration-150 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-btnPrimary',
         props?.className
       )}
     >
@@ -57,7 +60,7 @@ export const Button: FC<
         <div className="absolute inset-0 flex items-center justify-center">
           <ReactLoading
             type="spin"
-            color="#fff"
+            color={secondary ? 'currentColor' : '#fff'}
             width={height! / 2}
             height={height! / 2}
           />

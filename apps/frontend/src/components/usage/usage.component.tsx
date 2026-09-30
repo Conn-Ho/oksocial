@@ -117,7 +117,7 @@ export const UsageComponent: FC = () => {
 
   return (
     <div className="flex flex-col gap-[20px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
-      <h2 className="hidden md:block text-[24px] font-semibold">用量与套餐</h2>
+      <h2 className="sr-only">用量与套餐</h2>
 
       <div className="grid gap-[12px] grid-cols-1 lg:grid-cols-3">
         <section aria-labelledby="plan-heading" className="lg:col-span-2 rounded-[10px] border border-newTableBorder p-[18px] flex flex-col gap-[12px]">

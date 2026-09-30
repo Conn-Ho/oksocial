@@ -11,9 +11,10 @@ export const GoogleProvider = () => {
     window.location.href = link;
   }, []);
   return (
-    <div
+    <button
+      type="button"
       onClick={gotoLogin}
-      className={`cursor-pointer flex-1 bg-white h-[52px] rounded-[10px] flex justify-center items-center text-[#0E0E0E] gap-[5px]`}
+      className={`cursor-pointer flex-1 bg-newBgColorInner h-[46px] rounded-full border border-newTableBorder hover:bg-boxHover transition-colors flex justify-center items-center text-textColor font-[600] text-[14px] gap-[8px]`}
     >
       <div>
         <svg
@@ -40,7 +41,7 @@ export const GoogleProvider = () => {
           />
         </svg>
       </div>
-      <div className="block xs:hidden">{t('google', 'Google')}</div>
-    </div>
+      <span>{t('continue_with_google', '使用 Google 继续')}</span>
+    </button>
   );
 };

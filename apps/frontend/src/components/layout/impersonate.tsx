@@ -247,7 +247,7 @@ const ApplyCouponModal: FC<{ close: () => void }> = ({ close }) => {
                 <Button
                   onClick={handleCancelCoupon}
                   loading={cancelling}
-                  className="!bg-red-700 rounded-[4px] !h-[24px] !px-[10px] text-[12px]"
+                  className="!bg-red-700 !h-[24px] !px-[10px] text-[12px]"
                 >
                   {t('cancel', 'Cancel')}
                 </Button>
@@ -304,14 +304,14 @@ const ApplyCouponModal: FC<{ close: () => void }> = ({ close }) => {
           )}
           {!!error && <div className="text-red-400 text-[12px]">{error}</div>}
           <div className="flex gap-[12px] justify-end">
-            <Button onClick={close} className="rounded-[4px]">
+            <Button onClick={close} >
               {t('close', 'Close')}
             </Button>
             {info.supported && (
               <Button
                 onClick={handleApply}
                 loading={applying}
-                className="!bg-blue-700 rounded-[4px]"
+                className="!bg-blue-700"
               >
                 {t('apply', 'Apply')}
               </Button>
@@ -514,7 +514,7 @@ const ChargesModal: FC<{ close: () => void }> = ({ close }) => {
       <div className="flex gap-[12px] justify-end">
         <Button
           onClick={handleApplyCoupon}
-          className="!bg-blue-700 rounded-[4px]"
+          className="!bg-blue-700"
         >
           {t('apply_coupon', 'Apply Coupon')}
         </Button>
@@ -522,7 +522,7 @@ const ChargesModal: FC<{ close: () => void }> = ({ close }) => {
           onClick={handleRefund}
           loading={refunding}
           disabled={!selected.size}
-          className="rounded-[4px]"
+          
         >
           {t('refund_selected', 'Refund Selected')}
           {selected.size > 0 && ` (${selected.size})`}
@@ -530,7 +530,7 @@ const ChargesModal: FC<{ close: () => void }> = ({ close }) => {
         <Button
           onClick={handleCancel}
           loading={cancelling}
-          className="!bg-red-700 rounded-[4px]"
+          className="!bg-red-700"
         >
           {t('cancel_subscription', 'Cancel Subscription')}
         </Button>
@@ -683,7 +683,7 @@ const AddAnnouncementModal: FC<{ close: () => void }> = ({ close }) => {
           onClick={handleSubmit}
           loading={saving}
           disabled={!title.trim() || !description.trim()}
-          className="rounded-[4px]"
+          
         >
           {t('create_announcement', 'Create Announcement')}
         </Button>
@@ -769,7 +769,7 @@ const AddTeamMemberModal: FC<{ close: () => void }> = ({ close }) => {
             <option value="USER">{t('user', 'User')}</option>
             <option value="ADMIN">{t('admin', 'Admin')}</option>
           </Select>
-          <Button type="submit" loading={saving} className="rounded-[4px]">
+          <Button type="submit" loading={saving} >
             {t('add_team_member', 'Add Team Member')}
           </Button>
         </div>
@@ -979,7 +979,7 @@ const SwitchUser = () => {
         onClick={doSwitch}
         loading={switching}
         disabled={!selected}
-        className="rounded-[4px] whitespace-nowrap"
+        className=" whitespace-nowrap"
       >
         {t('switch_user', 'Switch User')}
       </Button>

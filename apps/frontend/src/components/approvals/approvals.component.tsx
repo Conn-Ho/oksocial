@@ -102,7 +102,7 @@ export const ApprovalsComponent: FC = () => {
   return (
     <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0">
       <div>
-        <h2 className="hidden md:block text-[24px] font-semibold">{t('approvals', '审核')}</h2>
+        <h2 className="sr-only">{t('approvals', '审核')}</h2>
         <p className="text-[14px] text-textColor/60 md:mt-[4px]">
           {t(
             'approvals_intro',

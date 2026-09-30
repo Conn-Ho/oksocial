@@ -117,7 +117,7 @@ export const InboxComponent: FC = () => {
           detailOpen && 'hidden md:flex'
         )}
       >
-        <h2 className="hidden md:block text-[24px] font-semibold me-[8px]">{t('inbox', '互动')}</h2>
+        <h2 className="sr-only">{t('inbox', '互动')}</h2>
         <nav className="flex gap-[4px] max-w-full overflow-x-auto" aria-label={t('inbox_kinds', '消息类型')}>
           {KIND_TABS.map((tab) => (
             <button

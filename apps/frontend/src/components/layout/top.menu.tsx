@@ -330,11 +330,12 @@ export const useVisibleMenuItems = () => {
   };
 };
 
-export const TopMenu: FC = () => {
+export const TopMenu: FC<{ variant?: 'rail' | 'row' }> = ({ variant = 'rail' }) => {
   const { firstMenu, secondMenu } = useVisibleMenuItems();
+  const row = variant === 'row';
   return (
     <>
-      <div className="flex flex-1 flex-col minCustom:gap-[16px] blurMe">
+      <div className={row ? 'flex flex-col gap-[2px] blurMe' : 'flex flex-1 flex-col minCustom:gap-[16px] blurMe'}>
         {firstMenu.map((item) => (
           <MenuItem
             path={item.path}
@@ -342,10 +343,18 @@ export const TopMenu: FC = () => {
             icon={item.icon}
             key={item.name}
             onClick={item.onClick}
+            variant={variant}
           />
         ))}
       </div>
-      <div className="flex flex-col minCustom:gap-[20px] custom:gap-[8px] blurMe">
+      {row && <div className="flex-1 min-h-[16px]" />}
+      <div
+        className={
+          row
+            ? 'flex flex-col gap-[2px] pt-[10px] border-t border-newBorder blurMe'
+            : 'flex flex-col minCustom:gap-[20px] custom:gap-[8px] blurMe'
+        }
+      >
         {secondMenu.map((item) => (
           <MenuItem
             path={item.path}
@@ -353,6 +362,7 @@ export const TopMenu: FC = () => {
             icon={item.icon}
             key={item.name}
             onClick={item.onClick}
+            variant={variant}
           />
         ))}
       </div>

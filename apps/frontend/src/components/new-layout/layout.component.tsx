@@ -1,8 +1,7 @@
 'use client';
 
 import React, { ReactNode, useCallback, useEffect } from 'react';
-import { Logo } from '@gitroom/frontend/components/new-layout/logo';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Brand } from '@gitroom/frontend/components/new-layout/logo';
 const ModeComponent = dynamic(
   () => import('@gitroom/frontend/components/layout/mode.component'),
   {
@@ -45,11 +44,6 @@ import { TrialTracker } from '@gitroom/frontend/components/layout/gtm.component'
 import { MobileNav } from '@gitroom/frontend/components/new-layout/mobile.nav';
 import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
 
-const jakartaSans = Plus_Jakarta_Sans({
-  weight: ['600', '500', '700'],
-  style: ['normal', 'italic'],
-  subsets: ['latin'],
-});
 
 export const LayoutComponent = ({ children }: { children: ReactNode }) => {
   const fetch = useFetch();
@@ -102,9 +96,8 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
             <ContinueProvider />
             <div
               className={clsx(
-                'flex flex-col min-h-screen min-w-screen text-newTextColor p-[12px]',
-                !firstBilling && 'pb-[calc(80px+env(safe-area-inset-bottom))] md:pb-[12px]',
-                jakartaSans.className
+                'flex flex-col min-h-screen min-w-screen text-newTextColor p-[10px] md:p-[8px]',
+                !firstBilling && 'pb-[calc(80px+env(safe-area-inset-bottom))] md:pb-[8px]',
               )}
             >
               <div>{user?.admin ? <Impersonate /> : <div />}</div>
@@ -113,49 +106,47 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
               ) : (
                 <>
                   <AnnouncementBanner />
-                  <div className="flex-1 flex gap-[8px]">
+                  <div className="flex-1 flex gap-[8px] min-h-0">
                     <Support />
-                    <div className="hidden md:flex flex-col bg-newBgColorInner w-[80px] rounded-[12px]">
+                    {/* okchat-style shell: the sidebar sits on the canvas, the page is one white card */}
+                    <aside className="hidden md:flex w-[208px] lg:w-[224px] shrink-0 flex-col">
                       <div
                         id="left-menu"
-                        className={clsx(
-                          'fixed h-full w-[64px] start-[17px] flex flex-1 top-0',
-                          user?.admin && 'pt-[60px] max-h-[1000px]:w-[500px]'
-                        )}
+                        className="sticky top-[8px] flex flex-col h-[calc(100vh-16px)] gap-[14px] pt-[2px] pb-[6px]"
                       >
-                        <div className="flex flex-col h-full gap-[32px] flex-1 py-[12px]">
-                          <Logo />
-                          <TopMenu />
-                        </div>
+                        <Brand />
+                        <nav aria-label="主导航" className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+                          <TopMenu variant="row" />
+                        </nav>
                       </div>
-                    </div>
-                    <div className="flex-1 min-w-0 bg-newBgLineColor rounded-[12px] overflow-hidden flex flex-col gap-[1px] blurMe">
-                      <div className="flex bg-newBgColorInner h-[56px] md:h-[80px] px-[16px] md:px-[20px] gap-[12px] items-center">
-                        <div className="text-[20px] md:text-[24px] font-[600] flex flex-1 min-w-0">
+                    </aside>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex h-[52px] md:h-[48px] px-[4px] md:ps-[6px] md:pe-[4px] gap-[12px] items-center">
+                        <div className="text-[18px] md:text-[17px] font-[700] flex flex-1 min-w-0 text-textColor">
                           <Title />
                         </div>
                         {/* phones keep the organisation and notifications; theme and language move to 「更多」 */}
-                        <div className="flex items-center md:items-stretch gap-[12px] md:gap-[20px] text-textItemBlur">
+                        <div className="flex items-center md:items-stretch gap-[12px] md:gap-[16px] text-textItemBlur">
                           <div className="hidden md:contents">
                             <StreakComponent />
-                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
+                            <div className="w-[1px] h-[20px] self-center bg-newBorder" />
                           </div>
                           <OrganizationSelector />
                           <div className="hidden md:contents">
-                            <div className="hover:text-newTextColor">
+                            <div className="hover:text-newTextColor flex items-center">
                               <ModeComponent />
                             </div>
-                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
                             <LanguageComponent />
                             <ChromeExtensionComponent />
-                            <div className="w-[1px] h-[20px] bg-blockSeparator" />
                             <AttachToFeedbackIcon />
                           </div>
                           <NotificationComponent />
                         </div>
                       </div>
                       {/* phones stack a page's panes (e.g. channels over the calendar) instead of squeezing them side by side */}
-                      <div className="flex flex-1 flex-col md:flex-row gap-[1px]">{children}</div>
+                      <main className="flex-1 min-w-0 bg-newBgLineColor rounded-[14px] overflow-hidden flex flex-col md:flex-row gap-[1px] blurMe shadow-[0_1px_2px_rgba(10,15,30,0.05)] ring-1 ring-newBorder">
+                        {children}
+                      </main>
                     </div>
                   </div>
                   <MobileNav />

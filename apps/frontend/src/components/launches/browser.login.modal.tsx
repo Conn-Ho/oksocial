@@ -240,13 +240,13 @@ export const BrowserLoginModal: FC<{
           {phase === 'error' && step && <span className="text-red-400">{message}</span>}
         </div>
         <Button
-          className="rounded-[4px]"
+          
           disabled={phase !== 'waiting' && phase !== 'mismatch'}
           onClick={checkNow}
         >
           {t('browser_login_done', '我已登录')}
         </Button>
-        <Button className="rounded-[4px]" secondary={true} onClick={() => modals.closeCurrent()}>
+        <Button  secondary={true} onClick={() => modals.closeCurrent()}>
           {web ? t('browser_web_skip', '跳过，以后再说') : t('cancel', 'Cancel')}
         </Button>
       </div>

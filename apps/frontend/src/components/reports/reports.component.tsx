@@ -99,7 +99,7 @@ export const ReportsComponent: FC = () => {
   return (
     <div className="flex flex-col gap-[20px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
-        <h2 className="hidden md:block text-[24px] font-semibold">{t('reports', '报告')}</h2>
+        <h2 className="sr-only">{t('reports', '报告')}</h2>
         <div className="flex gap-[4px] md:ms-auto max-w-full overflow-x-auto" role="tablist" aria-label={t('period', '周期')}>
           {PERIODS.map((p) => (
             <button

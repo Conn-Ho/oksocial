@@ -11,13 +11,55 @@
   to { transform: rotate(360deg); }
 }
 
+// Shared design tokens (okchat workbench language: canvas + white cards, hairlines, pill buttons,
+// one brand color used sparingly). Colors live in colors.scss, per theme.
+:root {
+  --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei', -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 10px;
+  --radius-shell: 14px;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 240ms;
+}
+
 body {
   background: var(--new-bgColor) !important;
   color: var(--new-btn-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-body * {
-  outline: none !important;
+// focus rings for keyboard users only; pointer clicks stay clean
+:focus:not(:focus-visible) {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--new-btn-primary);
+  outline-offset: 2px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 0;
+}
+[contenteditable]:focus-visible,
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
+.tabular-nums,
+table td {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .box {
@@ -826,4 +868,36 @@ html[dir='rtl'] [dir='ltr'] {
 /* Preview page: text that can be selected to leave an inline comment */
 .preview-comment-cursor {
   cursor: url("data:image/svg+xml,%3Csvg xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 width%3D%2228%22 height%3D%2228%22 viewBox%3D%220 0 28 28%22%3E%3Cg fill%3D%22none%22 stroke-linecap%3D%22round%22 stroke-linejoin%3D%22round%22%3E%3Cpath d%3D%22M3 4h6M3 24h6M6 4v20%22 stroke%3D%22%23fff%22 stroke-width%3D%224%22%2F%3E%3Cpath d%3D%22M3 4h6M3 24h6M6 4v20%22 stroke%3D%22%23000%22 stroke-width%3D%221.6%22%2F%3E%3Cpath d%3D%22M14 4h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-6l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z%22 fill%3D%22%23612bd3%22 stroke%3D%22%23fff%22 stroke-width%3D%221.5%22%2F%3E%3Cpath d%3D%22M17 8h6M17 11h4%22 stroke%3D%22%23fff%22 stroke-width%3D%221.5%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 6 14, text;
+}
+
+// Auth brand panel: a purple paper gradient with fine grain (okchat's login panel, in our color)
+.auth-panel {
+  background:
+    radial-gradient(120% 90% at 15% 0%, #b9a6f7 0%, transparent 55%),
+    radial-gradient(90% 70% at 100% 30%, #8a63ee 0%, transparent 60%),
+    radial-gradient(120% 80% at 30% 100%, #2a1470 0%, transparent 65%),
+    linear-gradient(170deg, #9b80f2 0%, #6a3ee0 45%, #3b1a9c 100%);
+  isolation: isolate;
+}
+.auth-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.auth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(20, 8, 60, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(6px);
 }

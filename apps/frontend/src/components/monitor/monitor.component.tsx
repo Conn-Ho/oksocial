@@ -154,7 +154,7 @@ export const MonitorComponent: FC = () => {
           detailOpen && 'hidden md:flex'
         )}
       >
-        <h2 className="hidden md:block text-[24px] font-semibold me-[8px]">{t('monitor', '监控')}</h2>
+        <h2 className="sr-only">{t('monitor', '监控')}</h2>
         <nav className="flex gap-[4px] max-w-full overflow-x-auto" aria-label={t('monitor_kinds', '监控类型')}>
           {KIND_TABS.map((tab) => (
             <button

@@ -40,7 +40,7 @@ export const Textarea: FC<
         props.disabled && 'opacity-50'
       )}
     >
-      <div className={`text-[14px]`}>
+      <div className="text-[13px] font-[600] text-textColor">
         <TranslatedLabel
           label={label}
           translationKey={translationKey}
@@ -50,7 +50,7 @@ export const Textarea: FC<
       <textarea
         {...(disableForm ? {} : form.register(props.name))}
         className={clsx(
-          'bg-input min-h-[150px] p-[16px] outline-none border-fifth border rounded-[4px] text-inputText placeholder-inputText',
+          'bg-newBgColorInner min-h-[150px] p-[14px] outline-none border-newTableBorder border rounded-[8px] text-[14px] text-textColor placeholder:text-textItemBlur transition-[border-color,box-shadow] duration-150 focus-visible:outline-none focus:border-btnPrimary focus:ring-[3px] focus:ring-btnPrimary/15',
           className
         )}
         {...rest}

@@ -161,14 +161,15 @@ export function RegisterAfter({
     <FormProvider {...form}>
       <form className="flex-1 flex" onSubmit={form.handleSubmit(onSubmit)}>
         <div className="flex flex-col flex-1">
-          <div>
-            <h1 className="text-[40px] font-[500] -tracking-[0.8px] text-start cursor-pointer">
-              {t('sign_up', 'Sign Up')}
-            </h1>
-          </div>
-          <div className="text-[14px] mt-[32px] mb-[12px]">
-            {t('continue_with', 'Continue With')}
-          </div>
+          <h1 className="text-[32px] font-[800] tracking-[-0.01em] text-start">
+            {t('register_title', '注册 oksocial')}
+          </h1>
+          <p className="text-[14px] text-textItemBlur mt-[8px] mb-[28px]">
+            {t('already_have_an_account', '已经有账号？')}&nbsp;
+            <Link href="/auth/login" className="text-btnPrimary font-[600] hover:underline">
+              {t('sign_in', '登录')}
+            </Link>
+          </p>
           <div className="flex flex-col text-[14px]">
             {!isAfterProvider &&
               (!isGeneral ? (
@@ -186,13 +187,10 @@ export function RegisterAfter({
                 </div>
               ))}
             {!isAfterProvider && (
-              <div className="h-[20px] mb-[24px] mt-[24px] relative">
-                <div className="absolute w-full h-[1px] bg-fifth top-[50%] -translate-y-[50%]" />
-                <div
-                  className={`absolute z-[1] justify-center items-center w-full start-0 -top-[4px] flex`}
-                >
-                  <div className="px-[16px]">{t('or', 'or')}</div>
-                </div>
+              <div className="flex items-center gap-[12px] my-[22px] text-[12px] text-textItemBlur">
+                <div className="flex-1 h-[1px] bg-newBorder" />
+                {t('or_with_email_register', '或用邮箱注册')}
+                <div className="flex-1 h-[1px] bg-newBorder" />
               </div>
             )}
             <div className="flex flex-col gap-[12px]">
@@ -231,51 +229,19 @@ export function RegisterAfter({
                   />
                 )}
               </div>
-              <div className={clsx('text-[12px]')}>
-                {t(
-                  'by_registering_you_agree_to_our',
-                  'By registering you agree to our'
-                )}
-                &nbsp;
-                <a
-                  href="/terms"
-                  className="underline hover:font-bold"
-                  rel="nofollow"
-                >
-                  {t('terms_of_service', 'Terms of Service')}
+              <Button type="submit" className="w-full !h-[48px] mt-[4px]" loading={loading}>
+                {t('create_account', '创建账号')}
+              </Button>
+              <p className="text-[12px] text-textItemBlur">
+                {t('by_registering_you_agree_to_our', '注册即表示同意')}
+                <a href="/terms" rel="nofollow" className="hover:text-textColor">
+                  {t('terms_quoted', '《服务条款》')}
                 </a>
-                &nbsp;
-                {t('and', 'and')}&nbsp;
-                <a
-                  href="/privacy"
-                  rel="nofollow"
-                  className="underline hover:font-bold"
-                >
-                  {t('privacy_policy', 'Privacy Policy')}
+                {t('and', '和')}
+                <a href="/privacy" rel="nofollow" className="hover:text-textColor">
+                  {t('privacy_quoted', '《隐私政策》')}
                 </a>
-                &nbsp;
-              </div>
-              <div className="text-center mt-6">
-                <div className="w-full flex">
-                  <Button
-                    type="submit"
-                    className="flex-1 rounded-[10px] !h-[52px]"
-                    loading={loading}
-                  >
-                    {t('create_account', 'Create Account')}
-                  </Button>
-                </div>
-                <p className="mt-4 text-sm">
-                  {t('already_have_an_account', 'Already Have An Account?')}
-                  &nbsp;
-                  <Link
-                    href="/auth/login"
-                    className="underline  cursor-pointer"
-                  >
-                    {t('sign_in', 'Sign In')}
-                  </Link>
-                </p>
-              </div>
+              </p>
             </div>
           </div>
         </div>

@@ -63,7 +63,7 @@ export const CreationComponent: FC = () => {
   return (
     <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
-        <h2 className="hidden md:block text-[24px] font-semibold">{t('creation', 'AI 创作')}</h2>
+        <h2 className="sr-only">{t('creation', 'AI 创作')}</h2>
         <nav className="flex gap-[4px] max-w-full overflow-x-auto" role="tablist">
           {TABS.map((x) => (
             <button

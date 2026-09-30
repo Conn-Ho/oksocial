@@ -52,7 +52,7 @@ export const Input: FC<
   return (
     <div className="flex flex-col gap-[6px]">
       {!!label && (
-        <div className={`text-[14px]`}>
+        <div className="text-[13px] font-[600] text-textColor">
           <TranslatedLabel
             label={label}
             translationKey={translationKey}
@@ -62,14 +62,16 @@ export const Input: FC<
       )}
       <div
         className={clsx(
-          'bg-newBgColorInner h-[42px] border-newTableBorder border rounded-[8px] text-textColor placeholder-textColor flex items-center justify-center',
+          'bg-newBgColorInner h-[42px] border-newTableBorder border rounded-[8px] text-textColor flex items-center justify-center',
+          // the ring sits on the frame, around the icon too
+          'transition-[border-color,box-shadow] duration-150 focus-within:border-btnPrimary focus-within:ring-[3px] focus-within:ring-btnPrimary/15',
           className
         )}
       >
         {icon && <div className="ps-[16px]">{icon}</div>}
         <input
           className={clsx(
-            'h-full bg-transparent outline-none flex-1 text-[14px] text-textColor',
+            'h-full bg-transparent outline-none focus-visible:outline-none flex-1 text-[14px] text-textColor placeholder:text-textItemBlur',
             icon ? 'pl-[8px] pe-[16px]' : 'px-[16px]'
           )}
           {...(disableForm ? {} : form.register(props.name))}

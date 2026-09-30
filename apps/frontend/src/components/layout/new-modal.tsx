@@ -197,8 +197,8 @@ export const Component: FC<{
             <div
               className={clsx(
                 // phones: the dialog takes the screen width (less a margin) and never forces sideways scroll
-                !modal.removeLayout && 'gap-[20px] p-[20px] md:gap-[40px] md:p-[32px]',
-                'bg-newBgColorInner mx-auto flex flex-col w-full md:w-fit max-w-[calc(100vw-24px)] md:max-w-none rounded-[24px] relative',
+                !modal.removeLayout && 'gap-[18px] p-[20px] md:gap-[24px] md:p-[28px]',
+                'bg-newBgColorInner mx-auto flex flex-col w-full md:w-fit max-w-[calc(100vw-24px)] md:max-w-none rounded-[16px] relative ring-1 ring-newBorder shadow-[0_24px_64px_-16px_rgba(10,15,30,0.28)]',
                 modal.size ? '' : 'md:min-w-[600px]',
                 modal.fullScreen && 'h-full'
               )}
@@ -212,15 +212,16 @@ export const Component: FC<{
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center">
-                <div className="text-[20px] md:text-[24px] font-[600] flex-1 pe-[28px] md:pe-0">
+                <div className="text-[18px] md:text-[20px] font-[700] flex-1 pe-[36px] text-textColor">
                   {modal.title}
                 </div>
                 {typeof modal.withCloseButton === 'undefined' ||
                 modal.withCloseButton ? (
                   <div className="cursor-pointer">
                     <button
-                      className="outline-none absolute end-[20px] top-[20px] mantine-UnstyledButton-root mantine-ActionIcon-root hover:bg-tableBorder cursor-pointer mantine-Modal-close mantine-1dcetaa"
+                      className="absolute end-[16px] top-[16px] w-[32px] h-[32px] rounded-full flex items-center justify-center text-textItemBlur hover:text-textColor hover:bg-boxHover transition-colors cursor-pointer"
                       type="button"
+                      aria-label="关闭"
                       onClick={closeModalFunction}
                     >
                       <svg

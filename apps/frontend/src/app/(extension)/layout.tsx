@@ -1,21 +1,18 @@
+import { cookies } from 'next/headers';
 export const dynamic = 'force-dynamic';
 import '../global.scss';
 import 'react-tooltip/dist/react-tooltip.css';
 import '@copilotkit/react-ui/styles.css';
 import LayoutContext from '@gitroom/frontend/components/layout/layout.context';
 import { ReactNode } from 'react';
-import { Plus_Jakarta_Sans } from 'next/font/google';
 import clsx from 'clsx';
 import { VariableContextComponent } from '@gitroom/react/helpers/variable.context';
 import UtmSaver from '@gitroom/helpers/utils/utm.saver';
 
-const jakartaSans = Plus_Jakarta_Sans({
-  weight: ['600', '500'],
-  style: ['normal', 'italic'],
-  subsets: ['latin'],
-});
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  // the theme the mode switch stored; light by default
+  const themeClass = (await cookies()).get('mode')?.value === 'dark' ? 'dark' : 'light';
   return (
     <html>
       <head>
@@ -23,7 +20,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />
       </head>
       <body
-        className={clsx(jakartaSans.className, 'dark text-primary !bg-primary')}
+        className={clsx(themeClass, 'text-primary !bg-primary')}
       >
         <VariableContextComponent
           language="en"

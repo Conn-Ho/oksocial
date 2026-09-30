@@ -244,7 +244,7 @@ export const ImportDebugPostModal: FC<{ close: () => void }> = ({ close }) => {
             onClick={handleImport}
             loading={importing}
             disabled={!selectedIntegrationId}
-            className="rounded-[4px]"
+            
           >
             {t('import_as_draft', 'Import as Draft')}
           </Button>

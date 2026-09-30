@@ -46,7 +46,7 @@ export const Select: FC<
   }, [form?.formState?.errors?.[props?.name!]?.message, error]);
   return (
     <div className={clsx('flex flex-col', label ? 'gap-[6px]' : '')}>
-      <div className={`text-[14px]`}>
+      <div className="text-[13px] font-[600] text-textColor">
         <TranslatedLabel
           label={label}
           translationKey={translationKey}
@@ -57,7 +57,7 @@ export const Select: FC<
         ref={ref}
         {...(disableForm ? {} : form.register(props.name, extraForm))}
         className={clsx(
-          'h-[42px] bg-newBgColorInner px-[16px] outline-none border-newTableBorder border rounded-[8px] text-[14px]',
+          'h-[42px] bg-newBgColorInner px-[14px] outline-none border-newTableBorder border rounded-[8px] text-[14px] text-textColor transition-[border-color,box-shadow] duration-150 focus-visible:outline-none focus:border-btnPrimary focus:ring-[3px] focus:ring-btnPrimary/15',
           className
         )}
         {...rest}
