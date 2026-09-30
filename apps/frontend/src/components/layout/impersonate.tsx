@@ -1104,7 +1104,7 @@ export const Impersonate = () => {
                 <div className="flex-1 min-w-[180px]">
                   <Input
                     autoComplete="off"
-                    placeholder="Write the user details"
+                    placeholder={t('impersonate_search', '输入用户邮箱或名字')}
                     name="impersonate"
                     disableForm={true}
                     label=""

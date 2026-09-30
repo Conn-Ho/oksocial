@@ -2,6 +2,7 @@
 
 import React, { FC, useEffect, useState } from 'react';
 import dayjs from 'dayjs';
+import { platformTimeLabel } from '@gitroom/helpers/utils/platform.time';
 import clsx from 'clsx';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { Tag } from '@gitroom/frontend/components/inbox/inbox.detail';
@@ -91,7 +92,7 @@ export const MonitorItems: FC<{
               )}
               {item.intent && item.intent !== 'other' && <Tag tone={item.intent === 'lead' ? 'good' : 'plain'}>{INTENT_LABELS[item.intent] ?? item.intent}</Tag>}
               <span className="ms-auto text-[12px] text-textColor/50 shrink-0">
-                {item.publishedAt ? dayjs(item.publishedAt).format('MM-DD HH:mm') : item.platformTime || dayjs(item.createdAt).format('MM-DD HH:mm')}
+                {item.publishedAt ? dayjs(item.publishedAt).format('MM-DD HH:mm') : platformTimeLabel(item.platformTime) || dayjs(item.createdAt).format('MM-DD HH:mm')}
               </span>
             </div>
             {kind !== 'COMMENT' && item.title && item.title !== item.content && <p className="text-[14px] font-medium">{item.title}</p>}

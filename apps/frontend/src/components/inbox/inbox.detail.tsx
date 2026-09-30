@@ -2,6 +2,7 @@
 
 import React, { FC, useCallback, useEffect, useState } from 'react';
 import dayjs from 'dayjs';
+import { platformTimeLabel } from '@gitroom/helpers/utils/platform.time';
 import clsx from 'clsx';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
@@ -138,7 +139,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
         <span className="text-textColor/70 text-[13px]">{item.integration.name}</span>
         <span className="text-textColor/50 text-[13px]">· {KIND_TEXT[item.kind]}</span>
         <span className="ms-auto text-textColor/50 text-[12px]">
-          {item.platformTime || dayjs(item.createdAt).format('MM-DD HH:mm')}
+          {platformTimeLabel(item.platformTime) || dayjs(item.createdAt).format('MM-DD HH:mm')}
         </span>
       </header>
       <div className="flex flex-col gap-[6px]">

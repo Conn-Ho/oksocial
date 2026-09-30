@@ -2,7 +2,7 @@
 
 import useSWR from 'swr';
 import { useCallback, useMemo, useState } from 'react';
-import { capitalize, orderBy } from 'lodash';
+import { orderBy } from 'lodash';
 import clsx from 'clsx';
 import ImageWithFallback from '@gitroom/react/helpers/image.with.fallback';
 import SafeImage from '@gitroom/react/helpers/safe.image';
@@ -30,6 +30,8 @@ const allowedIntegrations = [
   'threads',
   'x',
 ];
+// what the platforms of allowedIntegrations are called in the empty state
+const OFFICIAL_ANALYTICS = ['Facebook', 'Instagram', 'LinkedIn 公司主页', 'TikTok', 'YouTube', 'Google 商家', 'Pinterest', 'Threads', 'X（官方授权）'];
 export const PlatformAnalytics = () => {
   const fetch = useFetch();
   const t = useT();
@@ -147,29 +149,28 @@ export const PlatformAnalytics = () => {
   }
 
   if (!sortedIntegrations.length && !isLoading) {
+    // browser channels (小红书、抖音、微博、X 浏览器) have their numbers in 报告, not here
     return (
-      <div className="bg-newBgColorInner p-[20px] flex flex-col gap-[15px] transition-all flex-1 justify-center items-center text-center">
+      <div className="bg-newBgColorInner p-[20px] flex flex-col gap-[16px] transition-all flex-1 justify-center items-center text-center">
         <div>
-          <img src="/peoplemarketplace.svg" />
+          <img src="/peoplemarketplace.svg" alt="" />
         </div>
-        <div className="text-[48px]">
-          {t('can_t_show_analytics_yet', "Can't show analytics yet")}
-          <br />
+        <h2 className="text-[28px] md:text-[36px] font-[700] max-w-[680px] leading-[1.3]">
+          {t('analytics_official_only', '这里是官方授权账号的平台分析')}
+        </h2>
+        <p className="text-[15px] text-textColor/70 max-w-[620px] leading-[1.7]">
           {t(
-            'you_have_to_add_social_media_channels',
-            'You have to add Social Media channels'
+            'analytics_browser_in_reports',
+            '小红书、抖音、微博和浏览器登录的 X 账号，粉丝、曝光、互动和每条帖子的数据都在「报告」里。这里只显示通过官方授权连接的账号：{{list}}。',
+            { list: OFFICIAL_ANALYTICS.join('、') }
           )}
+        </p>
+        <div className="flex gap-[12px] flex-wrap justify-center">
+          <Button onClick={() => router.push('/reports')}>{t('analytics_go_reports', '去看报告')}</Button>
+          <Button secondary={true} onClick={() => router.push('/launches')}>
+            {t('go_to_the_calendar_to_add_channels', '前往日历添加频道')}
+          </Button>
         </div>
-        <div className="text-[20px]">
-          {t('supported', 'Supported:')}
-          {allowedIntegrations.map((p) => capitalize(p)).join(', ')}
-        </div>
-        <Button onClick={() => router.push('/launches')}>
-          {t(
-            'go_to_the_calendar_to_add_channels',
-            'Go to the calendar to add channels'
-          )}
-        </Button>
       </div>
     );
   }

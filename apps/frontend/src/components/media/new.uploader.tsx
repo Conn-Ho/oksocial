@@ -8,6 +8,7 @@ import {
   WaitForMediaProcessing,
 } from '@gitroom/react/helpers/uppy.upload';
 import { Dashboard, FileInput, ProgressBar } from '@uppy/react';
+import zh_CN from '@uppy/locales/lib/zh_CN';
 
 // Uppy styles
 import { useVariables } from '@gitroom/react/helpers/variable.context';
@@ -62,6 +63,7 @@ export function useUppyUploader(props: {
     let fileOrderIndex = 0;
 
     const uppy2 = new Uppy({
+      locale: zh_CN,
       autoProceed: true,
       restrictions: {
         // maxNumberOfFiles: 5,

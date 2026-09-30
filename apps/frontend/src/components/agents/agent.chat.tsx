@@ -39,6 +39,7 @@ import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { ExistingDataContextProvider } from '@gitroom/frontend/components/launches/helpers/use.existing.data';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { copilotLabels } from '@gitroom/frontend/components/agents/copilot.labels';
 
 export const AgentChat: FC = () => {
   const { backendUrl } = useVariables();
@@ -73,7 +74,8 @@ export const AgentChat: FC = () => {
           <CopilotChat
             className="w-full h-full"
             labels={{
-              title: t('your_assistant', 'Your Assistant'),
+              ...copilotLabels(t),
+              title: t('your_assistant', '你的助手'),
               initial: t('agent_welcome_message', `Hello, I am your oksocial agent 🙌🏻.
               
 I can schedule a post or multiple posts to multiple channels and generate pictures and videos.

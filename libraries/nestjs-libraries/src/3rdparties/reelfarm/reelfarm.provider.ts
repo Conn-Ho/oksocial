@@ -9,7 +9,7 @@ const BASE_URL = 'https://reel.farm/api/v1';
   identifier: 'reelfarm',
   title: 'Reel.Farm',
   description:
-    'Import UGC and greenscreen videos from your Reel.Farm account.',
+    '从你的 Reel.Farm 账号导入 UGC 和绿幕视频（需要你自己的 Reel.Farm API Key）。',
   position: 'media-library',
   fields: [],
 })

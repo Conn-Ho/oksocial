@@ -8,7 +8,7 @@ import { timer } from '@gitroom/helpers/utils/timer';
 @ThirdParty({
   identifier: 'heygen',
   title: 'HeyGen',
-  description: 'HeyGen is a platform for creating AI-generated avatars videos.',
+  description: '用 AI 数字人生成口播视频（需要你自己的 HeyGen API Key）。',
   position: 'media',
   fields: [],
 })

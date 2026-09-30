@@ -43,6 +43,7 @@ import { useHasScroll } from '@gitroom/frontend/components/ui/is.scroll.hook';
 import { useShortlinkPreference } from '@gitroom/frontend/components/settings/shortlink-preference.component';
 import dayjs from 'dayjs';
 import { Button } from '@gitroom/react/form/button';
+import { copilotLabels } from '@gitroom/frontend/components/agents/copilot.labels';
 
 export const ManageModal: FC<AddEditModalProps> = (props) => {
   const t = useT();
@@ -722,7 +723,8 @@ Post content can be added using the addPostContentFor{num} function.
 After using the addPostFor{num} it will create a new addPostContentFor{num+ 1} function.
 `}
         labels={{
-          title: t('your_assistant', 'Your Assistant'),
+          ...copilotLabels(t),
+          title: t('your_assistant', '你的助手'),
           initial: t(
             'assistant_initial_message',
             'Hi! I can help you to refine your social media posts.'

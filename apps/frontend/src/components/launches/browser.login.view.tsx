@@ -108,9 +108,16 @@ export const BrowserLoginView: FC<{
       <div className="flex flex-col gap-[14px] justify-center text-[14px]">
         <ol className="flex flex-col gap-[10px] list-decimal ps-[20px] text-textColor/90">
           <li>{t('browser_login_qr_step1', '打开手机上的{{app}} App', { app })}</li>
-          <li>{t('browser_login_qr_step2', '用「扫一扫」扫描左边的二维码')}</li>
+          <li>{t('browser_login_qr_step2', '用「扫一扫」扫描这个二维码')}</li>
           <li>{t('browser_login_qr_step3', '在手机上点「确认登录」，这里会自动连接')}</li>
         </ol>
+        <p className="md:hidden text-[13px] text-textColor/80">
+          {t(
+            'browser_login_qr_same_phone',
+            '就在这台手机上看？长按或截图保存二维码，再到{{app}} App 的「扫一扫」里点「相册」识别。',
+            { app }
+          )}
+        </p>
         <p className="text-[13px] text-textColor/60">
           {t(
             'browser_login_qr_refresh',

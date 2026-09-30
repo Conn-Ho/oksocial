@@ -49,7 +49,7 @@ export const ApiModal: FC<{
       });
 
       if (add.ok) {
-        toaster.show('Integration added successfully', 'success');
+        toaster.show(t('third_party_added', '已添加集成'), 'success');
         if (closePopup) {
           closePopup();
         } else {
@@ -95,6 +95,7 @@ export const ApiModal: FC<{
 };
 
 export const ThirdPartyListComponent: FC<{ reload: () => void }> = (props) => {
+  const t = useT();
   const fetch = useFetch();
   const modals = useModals();
   const { reload } = props;
@@ -115,7 +116,7 @@ export const ThirdPartyListComponent: FC<{ reload: () => void }> = (props) => {
   const addApiKey = useCallback(
     (title: string, identifier: string) => () => {
       modals.openModal({
-        title: `Add API key for ${title}`,
+        title: t('third_party_add_key', '添加 {{title}} 的 API Key', { title }),
         withCloseButton: false,
         children: (
           <ApiModal identifier={identifier} title={title} update={reload} />
@@ -142,7 +143,7 @@ export const ThirdPartyListComponent: FC<{ reload: () => void }> = (props) => {
           <div className="whitespace-pre-wrap text-left text-lg">{p.title}</div>
           <div className="whitespace-pre-wrap text-left">{p.description}</div>
           <div className="w-full flex">
-            <Button className="w-full">Add</Button>
+            <Button className="w-full">{t('add', '添加')}</Button>
           </div>
         </div>
       ))}
