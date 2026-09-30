@@ -9,6 +9,7 @@ import type { MediaFetcher } from '../src/media.ts';
 import type { Opencli, ProfileStatus, RunOutcome } from '../src/opencli.ts';
 import { KeyedQueue } from '../src/queue.ts';
 import { createSlotRunner } from '../src/runner.ts';
+import { withSimulatedSlots } from '../src/sim.ts';
 import { createSlotsService } from '../src/slots.ts';
 import type { SlotsService } from '../src/slots.ts';
 
@@ -140,6 +141,8 @@ export interface TestApp {
   app: FastifyInstance;
   ctl: FakeCtl;
   opencli: FakeOpencli;
+  /** The simulator's runner; only used when built with `sim: true`. */
+  simOpencli: FakeOpencli;
   slots: SlotsService;
   clock: ReturnType<typeof fakeClock>;
   queue: KeyedQueue;
@@ -151,13 +154,17 @@ export async function buildTestApp({
   outcomes,
   deps = {},
   probe = async () => true,
-}: { slots?: Slot[]; outcomes?: RunOutcome[]; deps?: Partial<AppDeps>; probe?: (port: number) => Promise<boolean> } = {}): Promise<TestApp> {
+  sim = false,
+  simOutcomes,
+}: { slots?: Slot[]; outcomes?: RunOutcome[]; deps?: Partial<AppDeps>; probe?: (port: number) => Promise<boolean>; sim?: boolean; simOutcomes?: RunOutcome[] } = {}): Promise<TestApp> {
   const clock = fakeClock();
   const ctl = createFakeCtl(initial);
   const opencli = createFakeOpencli(outcomes);
-  const slots = createSlotsService({ ctl, clock, probe });
+  const simOpencli = createFakeOpencli(simOutcomes);
+  const realSlots = createSlotsService({ ctl, clock, probe });
+  const slots = sim ? withSimulatedSlots(realSlots) : realSlots;
   const queue = new KeyedQueue({ maxConcurrent: 3, maxPendingPerKey: 2 });
-  const runner = createSlotRunner({ opencli, slots, queue, clock });
+  const runner = createSlotRunner({ opencli, sim: sim ? simOpencli : undefined, slots, queue, clock });
   const opened: Array<{ cdp: number; url: string }> = [];
   const app = await buildApp({
     token: TOKEN,
@@ -172,5 +179,5 @@ export async function buildTestApp({
     media: noMedia,
     ...deps,
   });
-  return { app, ctl, opencli, slots, clock, queue, opened };
+  return { app, ctl, opencli, simOpencli, slots, clock, queue, opened };
 }

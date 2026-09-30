@@ -8,6 +8,7 @@ import type { AppDeps } from '../app.ts';
 import { TOKEN_HEADER } from '../auth.ts';
 import { HttpError, notFound } from '../errors.ts';
 import { slotParam } from '../schemas.ts';
+import { simulatedSlotError } from '../sim.ts';
 
 type SlotParams = { Params: { slot: string } };
 
@@ -39,6 +40,7 @@ export async function registerScreenRoutes(app: FastifyInstance, { slots }: AppD
     disableRequestLogging: true,
     preHandler: async (req: FastifyRequest) => {
       const name = slotParam((req.params as { slot?: string }).slot);
+      if (slots.isSimulated(name)) throw simulatedSlotError(name);
       const slot = await slots.get(name, SCREEN_STATE_MAX_AGE_MS);
       if (!slot) throw notFound(`slot ${name}`);
       if (!slot.screen) throw new HttpError(502, 'SCREEN_NOT_RUNNING', `screen for slot ${name} is not running (POST /slots/${name}/screen)`);

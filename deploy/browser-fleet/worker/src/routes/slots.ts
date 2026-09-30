@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app.ts';
 import { HttpError } from '../errors.ts';
 import { CreateSlotBody, OpenBody, parseOrThrow, ProxyBody, slotParam } from '../schemas.ts';
+import { simulatedSlotError } from '../sim.ts';
 
 type SlotParams = { Params: { slot: string } };
 
@@ -35,6 +36,7 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: App
   app.post<SlotParams>('/slots/:slot/open', async (req) => {
     const name = slotParam(req.params.slot);
     const { url } = parseOrThrow(OpenBody, req.body);
+    if (slots.isSimulated(name)) throw simulatedSlotError(name);
     const slot = await slots.require(name);
     if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
     const tab = await openTab(slot.cdp, url);

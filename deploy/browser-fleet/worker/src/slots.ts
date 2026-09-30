@@ -32,6 +32,8 @@ export interface SlotsService {
   remove(name: string, purge: boolean): Promise<void>;
   startScreen(name: string): Promise<Slot>;
   stopScreen(name: string): Promise<void>;
+  /** True when the name is a simulated slot (see sim.ts); always false for the account-ctl service. */
+  isSimulated(name: string): boolean;
 }
 
 /** account-ctl failures as HTTP errors. Pure. */
@@ -146,5 +148,6 @@ export function createSlotsService({ ctl, clock, probe, cacheTtlMs = 3_000, acti
       await require(name, 0);
       await mutate(() => ctl.unscreen(name));
     },
+    isSimulated: () => false,
   };
 }
