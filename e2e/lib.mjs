@@ -45,7 +45,12 @@ export async function ok(path, opts) {
 /** Runs a shell command on the server. */
 export function remote(cmd) {
   assert.ok(SSH.length, 'E2E_SSH is not set');
-  return execFileSync(SSH[0], [...SSH.slice(1), cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  try {
+    return execFileSync(SSH[0], [...SSH.slice(1), cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (err) {
+    // a failed command (e.g. a SQL error) must fail the test, with what the server said
+    throw new Error(`remote command failed: ${String(err.stderr || err.message).trim().slice(0, 500)}`);
+  }
 }
 
 /** Write commands the simulator recorded for a slot (or all), newest last. */
@@ -90,7 +95,7 @@ export async function syncInbox(integrationId) {
 export function sql(query) {
   const b64 = Buffer.from(`SELECT coalesce(json_agg(t), '[]'::json) FROM (${query}) t`).toString('base64');
   const out = remote(
-    `echo ${b64} | base64 -d | (cd ~/oksocial/deploy && docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -f -')`
+    `echo ${b64} | base64 -d | (cd ~/oksocial/deploy && docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -f -')`
   );
   return JSON.parse(out || '[]');
 }
@@ -126,7 +131,7 @@ export function slotOf(channelId) {
 export function sqlExec(statement) {
   const b64 = Buffer.from(statement).toString('base64');
   return remote(
-    `echo ${b64} | base64 -d | (cd ~/oksocial/deploy && docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -f -')`
+    `echo ${b64} | base64 -d | (cd ~/oksocial/deploy && docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -f -')`
   );
 }
 

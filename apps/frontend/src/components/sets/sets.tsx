@@ -111,7 +111,7 @@ export const Sets: FC = () => {
             {...(params?.id ? { set: JSON.parse(params.content) } : {})}
             addEditSets={(data) => {
               modal.openModal({
-                title: 'Save as Set',
+                title: t('save_as_set', '存为集合'),
                 children: (
                   <SaveSetModal
                     initialValue={params?.name || ''}
@@ -128,9 +128,9 @@ export const Sets: FC = () => {
                         });
                         modal.closeAll();
                         mutate();
-                        toaster.show('Set saved successfully', 'success');
+                        toaster.show(t('set_saved', '集合已保存'), 'success');
                       } catch (error) {
-                        toaster.show('Failed to save set', 'warning');
+                        toaster.show(t('set_save_failed', '集合保存失败'), 'warning');
                       }
                     }}
                     onCancel={() => modal.closeAll()}
@@ -152,12 +152,12 @@ export const Sets: FC = () => {
 
   const deleteSet = useCallback(
     (data: any) => async () => {
-      if (await deleteDialog(`Are you sure you want to delete ${data.name}?`)) {
+      if (await deleteDialog(t('set_delete_confirm', '确定删除集合「{{name}}」吗？', { name: data.name }))) {
         await fetch(`/sets/${data.id}`, {
           method: 'DELETE',
         });
         mutate();
-        toaster.show('Set deleted successfully', 'success');
+        toaster.show(t('set_deleted', '集合已删除'), 'success');
       }
     },
     []
@@ -167,9 +167,9 @@ export const Sets: FC = () => {
 
   return (
     <div className="flex flex-col">
-      <h3 className="text-[20px]">Sets ({data?.length || 0})</h3>
+      <h3 className="text-[20px]">{t('sets_title', '集合（{{n}}）', { n: data?.length || 0 })}</h3>
       <div className="text-customColor18 mt-[4px]">
-        Manage your content sets for easy reuse across posts.
+        {t('sets_description', '把常用的账号组合和内容设置存成集合，发帖时一键套用。')}
       </div>
       <div className="my-[16px] mt-[16px] bg-sixth border-fifth items-center border rounded-[4px] p-[24px] flex gap-[24px]">
         <div className="flex flex-col w-full">
@@ -202,7 +202,7 @@ export const Sets: FC = () => {
               onClick={addSet()}
               className={clsx((data?.length || 0) > 0 && 'my-[16px]')}
             >
-              Add a set
+              {t('add_set', '新建集合')}
             </Button>
           </div>
         </div>
