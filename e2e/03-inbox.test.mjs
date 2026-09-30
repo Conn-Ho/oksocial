@@ -12,13 +12,14 @@ test('syncing pulls comments, @mentions and DMs of every simulated account and t
     const r = await ok('/inbox/sync', { method: 'POST', body: { integrationId: ch[p].id } });
     assert.ok(r.fetched > 0, `${p} fetched ${JSON.stringify(r)}`);
   }
+  // each kind on its own: page 1 holds the newest items, which earlier runs may have filled with comments
+  for (const k of ['COMMENT', 'DM', 'MENTION']) assert.ok((await ok(`/inbox?kind=${k}`)).items.length > 0, `has ${k}`);
   const list = await ok('/inbox?page=1');
-  const kinds = new Set(list.items.map((i) => i.kind));
-  for (const k of ['COMMENT', 'DM', 'MENTION']) assert.ok(kinds.has(k), `has ${k}`);
   const tagged = list.items.filter((i) => i.sentiment);
   assert.ok(tagged.length > 0, 'AI sentiment tags were written');
   // the purchase-intent comments are tagged as leads
-  assert.ok(list.items.some((i) => /购买|多少钱|价格/.test(i.content) && i.intent === 'lead'), 'a buying question is tagged 高意向');
+  const leads = await ok('/inbox?intent=lead');
+  assert.ok(leads.items.some((i) => /购买|多少钱|价格/.test(i.content)), 'a buying question is tagged 高意向');
   // a second sync adds nothing twice
   const again = await ok('/inbox/sync', { method: 'POST', body: { integrationId: ch.xiaohongshu.id } });
   const dup = sql(`SELECT "externalId", count(*)::int n FROM "InboxItem" WHERE "integrationId"='${ch.xiaohongshu.id}' GROUP BY 1 HAVING count(*) > 1`);
