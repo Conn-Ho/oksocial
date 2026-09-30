@@ -72,6 +72,9 @@ export type BrowserSession = {
   whoami: string[];
   // Maps the whoami rows to an identity, or null when the browser is not logged in.
   identity(rows: unknown): BrowserSessionIdentity | null;
+  // Cookies that only exist after a real login. While someone scans the QR code the check only
+  // reads these (whoami would navigate the very page they are looking at).
+  loginCookies?: { domain: string; names: string[] };
 };
 
 export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';

@@ -27,7 +27,7 @@ const provider = {
   },
 };
 
-const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean } = {}) => {
+const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any } = {}) => {
   const fleet = {
     configured: true,
     ensureSlot: jest.fn(async () => ({})),
@@ -37,6 +37,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
     removeSlot: jest.fn(async () => ({ ok: true })),
     setProxy: jest.fn(async () => ({})),
     run: jest.fn(overrides.run ?? (async () => ({ ok: true, data: [{ logged_in: false }], durationMs: 1 }))),
+    loginCookies: jest.fn(overrides.cookies ?? (async () => [] as string[])),
   };
   const repo = {
     createPending: jest.fn(async (org: string, prov: string, slot: string) => ({
@@ -62,7 +63,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
     createOrUpdateIntegration: jest.fn(async () => ({ id: 'int1' })),
     getIntegrationById: jest.fn(async () => overrides.integration ?? null),
   };
-  const manager = { getSocialIntegration: jest.fn(() => provider) };
+  const manager = { getSocialIntegration: jest.fn(() => overrides.provider ?? provider) };
   const refresh = { startRefreshWorkflow: jest.fn(async () => ({})) };
   const plans = {
     assertWithinLimit: jest.fn(async () => {
@@ -153,6 +154,59 @@ describe('BrowserSlotService', () => {
     expect(repo.activate).toHaveBeenCalledWith('row1', 'int1');
     expect(refresh.startRefreshWorkflow).toHaveBeenCalledWith('org1', 'int1', provider);
     expect(fleet.stopScreen).toHaveBeenCalledWith('s1');
+  });
+
+  describe('while someone scans the QR code', () => {
+    const withCookies = { ...provider, browserSession: { ...provider.browserSession, loginCookies: { domain: 'xiaohongshu.com', names: ['galaxy_creator_session_id'] } } };
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
+    const loggedIn = async () => ({ ok: true, data: [{ logged_in: true, user_id: 'u1', name: 'WenWen', red_id: 'WenBuilds' }] });
+
+    it('does not run opencli (which would reload their page) until a login cookie exists', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: loggedIn });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
+      expect(fleet.loginCookies).toHaveBeenCalledWith('s1', 'xiaohongshu.com', ['galaxy_creator_session_id']);
+      expect(fleet.run).not.toHaveBeenCalled();
+    });
+
+    it('identifies the account once the login cookie appears', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: loggedIn, cookies: async () => ['galaxy_creator_session_id'] });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'connected', integrationId: 'int1' });
+      expect(fleet.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps waiting when the cookie probe fails (Chrome still starting)', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: loggedIn, cookies: async () => { throw new Error('CHROME_UNREACHABLE'); } });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
+      expect(fleet.run).not.toHaveBeenCalled();
+    });
+
+    it('「我已登录」 forces a whoami even without the cookie', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: loggedIn });
+      expect(await service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'connected', integrationId: 'int1' });
+      expect(fleet.loginCookies).not.toHaveBeenCalled();
+      expect(fleet.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('a check still running answers waiting at once instead of piling up', async () => {
+      let finish: (v: any) => void = () => undefined;
+      const slow = () => new Promise((resolve) => (finish = resolve));
+      const { service, fleet } = setup({ slotRow: pending, run: slow });
+      const first = service.checkLogin('org1', 'row1');
+      await new Promise((r) => setImmediate(r));
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
+      finish({ ok: true, data: [{ logged_in: false }] });
+      expect(await first).toEqual({ status: 'waiting' });
+      expect(fleet.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs whoami at most every 20 s unless forced', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, cookies: async () => ['galaxy_creator_session_id'] });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'waiting' });
+      expect(fleet.run).toHaveBeenCalledTimes(1);
+      await service.checkLogin('org1', 'row1', undefined, true);
+      expect(fleet.run).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('checkLogin refuses a reconnect that logged into a different account', async () => {

@@ -45,6 +45,11 @@ export class XiaohongshuWebProvider
   browserSession = {
     loginUrl: 'https://creator.xiaohongshu.com/login',
     whoami: ['xhs2', 'me'],
+    // set by the creator-center login (web_session exists for guests too, so it proves nothing)
+    loginCookies: {
+      domain: 'xiaohongshu.com',
+      names: ['galaxy_creator_session_id', 'access-token-creator.xiaohongshu.com', 'customer-sso-sid'],
+    },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
       if (!me?.logged_in || !me.user_id) {

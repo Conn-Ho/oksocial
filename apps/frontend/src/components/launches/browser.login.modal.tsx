@@ -36,12 +36,12 @@ export const BrowserLoginModal: FC<{
   const session = useRef<string>('');
   const connected = useRef(false);
 
-  const check = useCallback(async () => {
+  const check = useCallback(async (force = false) => {
     if (!session.current || connected.current) {
       return;
     }
     const res = await fetch(
-      `/browser-sessions/${session.current}?timezone=${dayjs.tz().utcOffset()}`
+      `/browser-sessions/${session.current}?timezone=${dayjs.tz().utcOffset()}${force ? '&force=1' : ''}`
     );
     if (!res.ok) {
       return;
@@ -103,13 +103,25 @@ export const BrowserLoginModal: FC<{
     if (phase !== 'waiting' && phase !== 'mismatch') {
       return;
     }
-    const timer = setInterval(check, POLL_MS);
-    return () => clearInterval(timer);
+    // one check at a time: the next one waits POLL_MS after the previous answer
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = async () => {
+      await check().catch(() => undefined);
+      if (!stopped) {
+        timer = setTimeout(loop, POLL_MS);
+      }
+    };
+    timer = setTimeout(loop, POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [phase, check]);
 
   const checkNow = useCallback(async () => {
     setPhase('checking');
-    await check();
+    await check(true);
     if (!connected.current) {
       setPhase((p) => (p === 'checking' ? 'waiting' : p));
     }
@@ -143,7 +155,7 @@ export const BrowserLoginModal: FC<{
       <div className="flex items-center gap-[12px] min-h-[40px]">
         <div className="flex-1 text-[13px] text-textColor/70" aria-live="polite">
           {phase === 'waiting' &&
-            t('browser_login_waiting', '等待登录中，每 3 秒自动检测一次')}
+            t('browser_login_waiting', '等待登录中，登录成功后会自动连接；扫码后没反应可以点「我已登录」')}
           {phase === 'checking' && t('browser_login_checking', '正在检测登录状态…')}
           {phase === 'mismatch' && <span className="text-red-400">{message}</span>}
           {phase === 'error' && screen && (

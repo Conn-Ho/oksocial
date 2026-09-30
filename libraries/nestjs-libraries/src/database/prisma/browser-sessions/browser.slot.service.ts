@@ -10,11 +10,14 @@ import {
   isRunFailure,
 } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
+import { SocialProvider } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
 // A login session nobody finished (closed the dialog, never scanned) is cleaned up after this.
 export const PENDING_SLOT_TTL_MS = 30 * 60 * 1000;
+// whoami opens the platform in the account's browser: at most this often per login session
+export const WHOAMI_EVERY_MS = 20_000;
 
 export type BrowserLoginCheck =
   | { status: 'waiting' }
@@ -77,21 +80,65 @@ export class BrowserSlotService {
   }
 
   /** Polled by the login dialog: links the channel as soon as the browser is logged in. */
-  async checkLogin(orgId: string, id: string, timezone?: number): Promise<BrowserLoginCheck> {
+  // Login sessions being checked right now, and when each last ran whoami (this process).
+  private _checking = new Set<string>();
+  private _lastWhoami = new Map<string, number>();
+
+  /**
+   * Polled every few seconds while someone logs in. Answers at once while a check is still running
+   * (polls must not pile up on the worker), `force` is the 我已登录 button.
+   */
+  async checkLogin(orgId: string, id: string, timezone?: number, force = false): Promise<BrowserLoginCheck> {
     const row = await this._repository.getById(orgId, id);
     if (!row || row.status === 'RELEASED') {
       throw new HttpException('Login session not found', 404);
     }
-    const provider = this.browserProvider(row.providerIdentifier);
+    if (this._checking.has(row.id)) {
+      return { status: 'waiting' };
+    }
+    this._checking.add(row.id);
+    try {
+      return await this.check(orgId, row, timezone, force);
+    } finally {
+      this._checking.delete(row.id);
+    }
+  }
+
+  /** The logged-in account, or null. Reads only login cookies until one exists, then whoami (throttled). */
+  private async identify(row: { id: string; slot: string }, provider: SocialProvider, force: boolean) {
+    const session = provider.browserSession!;
+    if (!force && session.loginCookies) {
+      const present = await this.fleet
+        .loginCookies(row.slot, session.loginCookies.domain, session.loginCookies.names)
+        // Chrome still starting, or a worker without the probe: keep waiting
+        .catch(() => [] as string[]);
+      if (!present.length) {
+        return null;
+      }
+    }
+    if (!force && Date.now() - (this._lastWhoami.get(row.id) ?? 0) < WHOAMI_EVERY_MS) {
+      return null;
+    }
+    this._lastWhoami.set(row.id, Date.now());
     const res = await this.fleet
-      .run(row.slot, provider.browserSession!.whoami, 60_000)
+      .run(row.slot, session.whoami, 60_000)
       // the slot has no bridge profile yet while Chrome starts: keep waiting
       .catch(() => null);
-    const identity =
-      res && !isRunFailure(res) ? provider.browserSession!.identity(res.data) : null;
+    return res && !isRunFailure(res) ? session.identity(res.data) : null;
+  }
+
+  private async check(
+    orgId: string,
+    row: NonNullable<Awaited<ReturnType<BrowserSlotRepository['getById']>>>,
+    timezone: number | undefined,
+    force: boolean
+  ): Promise<BrowserLoginCheck> {
+    const provider = this.browserProvider(row.providerIdentifier);
+    const identity = await this.identify(row, provider, force);
     if (!identity) {
       return { status: 'waiting' };
     }
+    this._lastWhoami.delete(row.id);
 
     const existing = row.integrationId
       ? await this._integrationService.getIntegrationById(orgId, row.integrationId)

@@ -64,6 +64,8 @@ export class WeiboWebProvider
   browserSession = {
     loginUrl: 'https://weibo.com/login.php',
     whoami: ['weibo', 'me'],
+    // SUB/SUBP are handed to visitors too; these come with a real login
+    loginCookies: { domain: 'weibo.com', names: ['ALF', 'SSOLoginState', 'SCF'] },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
       if (!me?.uid) {

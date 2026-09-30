@@ -72,6 +72,7 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
   browserSession = {
     loginUrl: 'https://x.com/i/flow/login',
     whoami: ['twitter', 'whoami'],
+    loginCookies: { domain: 'x.com', names: ['auth_token'] },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
       if (!me?.logged_in || !me.username) {

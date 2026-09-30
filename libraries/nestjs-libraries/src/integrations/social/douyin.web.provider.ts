@@ -73,6 +73,7 @@ export class DouyinWebProvider
   browserSession = {
     loginUrl: 'https://creator.douyin.com/',
     whoami: ['douyin', 'whoami'],
+    loginCookies: { domain: 'douyin.com', names: ['sessionid', 'sessionid_ss', 'sid_tt'] },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
       if (!me?.logged_in || !me.id) {

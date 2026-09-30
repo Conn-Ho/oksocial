@@ -126,6 +126,12 @@ export class BrowserFleetClient {
     return this.call<{ ok: boolean }>('POST', `/slots/${slot}/open`, { url });
   }
 
+  /** Which of these login cookies the slot's browser holds (names only), read without touching a tab. */
+  async loginCookies(slot: string, domain: string, names: string[]) {
+    const query = new URLSearchParams({ domain, names: names.join(',') });
+    return (await this.call<{ present: string[] }>('GET', `/slots/${slot}/login-cookies?${query}`, undefined, 10_000)).present;
+  }
+
   startScreen(slot: string) {
     return this.call<{ path: string }>('POST', `/slots/${slot}/screen`, {});
   }

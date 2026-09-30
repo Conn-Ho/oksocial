@@ -107,12 +107,15 @@ export class BrowserSessionsController {
   checkLogin(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
-    @Query('timezone') timezone?: string
+    @Query('timezone') timezone?: string,
+    // 我已登录: check with whoami right away instead of waiting for the login cookie
+    @Query('force') force?: string
   ) {
     return this._browserSlotService.checkLogin(
       org.id,
       id,
-      timezone !== undefined ? Number(timezone) : undefined
+      timezone !== undefined ? Number(timezone) : undefined,
+      force === '1'
     );
   }
 
