@@ -18,6 +18,7 @@ import {
   firstRow,
   metricRowsToAnalytics,
   sumOf,
+  timeText,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -126,7 +127,7 @@ export class XiaohongshuWebProvider
 
   private async notifications(slot: string): Promise<InboxFetched[]> {
     const rows = await this.exec<
-      Array<{ user: string; action: string; content: string; note: string; time: string }>
+      Array<{ user: string; action: string; content: string; note: string; time: string | number }>
     >(slot, ['xiaohongshu', 'notifications', '--type', 'mentions', '--limit', '30'], 120_000);
     return (rows || [])
       .filter((r) => r.user && r.content)
@@ -136,7 +137,8 @@ export class XiaohongshuWebProvider
         threadTitle: r.note || undefined,
         authorName: r.user,
         content: r.content,
-        platformTime: r.time || undefined,
+        // the API gives unix seconds, which the text column would reject
+        platformTime: timeText(r.time),
       }));
   }
 
@@ -159,7 +161,8 @@ export class XiaohongshuWebProvider
         }
         items.push({
           kind: 'DM',
-          externalId: contentId(conv.id, m.time, m.from, m.text),
+          // not the time: the web IM shows it relative (昨天 14:05), so it changes from day to day
+          externalId: contentId(conv.id, m.from, m.text),
           threadId: conv.id,
           threadTitle: conv.name,
           replyTarget: conv.id,

@@ -180,12 +180,33 @@ export const firstRow = <T = Record<string, any>>(rows: unknown): T | null =>
   Array.isArray(rows) ? ((rows[0] as T) ?? null) : ((rows as T) ?? null);
 
 /** Title for platforms that require one: the first non-empty line, cut to the platform limit. */
-export const titleFrom = (text: string, max: number) =>
-  Array.from(
-    (text.split('\n').find((line) => line.trim()) || text).trim()
-  )
-    .slice(0, max)
-    .join('');
+/**
+ * The first non-empty line, cut to `max` UTF-16 units: the limit platforms (and opencli's
+ * `title.length` checks) apply, where an emoji counts two. A character is never split.
+ */
+export const titleFrom = (text: string, max: number) => {
+  let out = '';
+  for (const ch of (text.split('\n').find((line) => line.trim()) || text).trim()) {
+    if (out.length + ch.length > max) {
+      break;
+    }
+    out += ch;
+  }
+  return out;
+};
+
+/** A platform time as text: unix seconds / ms become Beijing time, anything else is kept. Pure. */
+export const timeText = (value: unknown): string | undefined => {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const s = String(value);
+  if (!/^\d{10,13}$/.test(s)) {
+    return s;
+  }
+  const ms = s.length === 13 ? Number(s) : Number(s) * 1000;
+  return new Date(ms + 8 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+};
 
 /** Field/value rows (opencli detail commands) as one object. */
 export const fieldsOf = (rows: unknown): Record<string, string> =>

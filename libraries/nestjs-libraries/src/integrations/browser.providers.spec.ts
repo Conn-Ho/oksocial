@@ -45,6 +45,13 @@ describe('helpers', () => {
     expect(titleFrom('hi', 20)).toBe('hi');
   });
 
+  it('titleFrom stays within the limit in UTF-16 units (an emoji counts two) and never splits one', () => {
+    const title = titleFrom('5个封面技巧🎉让点击率翻倍🎉真的好用好用好用', 20);
+    expect(title.length).toBeLessThanOrEqual(20);
+    expect(title).toBe('5个封面技巧🎉让点击率翻倍🎉真的好用');
+    expect(titleFrom('一二三四五六七八九十一二三四五六七八九🎉', 20)).toBe('一二三四五六七八九十一二三四五六七八九');
+  });
+
   it('firstRow accepts a row array or a single object', () => {
     expect(firstRow([{ a: 1 }, { a: 2 }])).toEqual({ a: 1 });
     expect(firstRow({ a: 3 })).toEqual({ a: 3 });
@@ -312,6 +319,20 @@ describe('inbox fetch mapping', () => {
     ])).inbox.fetch('s1', {} as any))[0].externalId).toBe(items[0].externalId);
     expect(p.inbox.reply?.COMMENT).toBeUndefined();
     expect(typeof p.inbox.reply?.DM).toBe('function');
+  });
+
+  it('Xiaohongshu stores notification unix times as text and keeps DM ids stable across days', async () => {
+    const read = (dmTime: string) =>
+      withFleet(new XiaohongshuWebProvider(), fakeFleet([
+        { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: 1790740800 }] },
+        { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
+        { ok: true, data: [{ time: dmTime, from: '小C', mine: false, text: '在吗' }] },
+      ])).inbox.fetch('s1', {} as any);
+    const today = await read('10:00');
+    expect(typeof today[0].platformTime).toBe('string');
+    expect(today[0].platformTime).toMatch(/^2026-09-30 \d{2}:\d{2}$/);
+    const tomorrow = await read('昨天 10:00');
+    expect(tomorrow[1].externalId).toBe(today[1].externalId);
   });
 
   it('Weibo reads comments only for posts that have some', async () => {
