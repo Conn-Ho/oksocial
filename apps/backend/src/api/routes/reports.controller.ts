@@ -4,6 +4,7 @@ import { Organization } from '@prisma/client';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
 import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 import {
   CreateReportShareDto,
   ReportQueryDto,
@@ -14,7 +15,17 @@ import {
 @ApiTags('Reports')
 @Controller('/reports')
 export class ReportsController {
-  constructor(private _reportService: ReportService) {}
+  constructor(
+    private _reportService: ReportService,
+    private _channelStats: ChannelStatsService
+  ) {}
+
+  @Post('/refresh')
+  @RequireRoles('ADMIN', 'MANAGER')
+  @ApiOperation({ summary: '立即更新数据', description: '马上读取本团队各账号的数据（每个团队 10 分钟一次），不用等每 3 小时的自动采集。' })
+  refresh(@GetOrgFromRequest() org: Organization) {
+    return this._channelStats.collectOrg(org.id);
+  }
 
   @Get('/overview')
   @ApiOperation({ summary: '跨账号报告', description: '近 7 / 30 / 90 天的总粉丝、发布数、曝光和互动（含环比）以及每个账号的明细。' })

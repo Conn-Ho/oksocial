@@ -43,11 +43,26 @@ export const ReportsComponent: FC = () => {
   const user = useUser();
   const canManage = canManageChannels(user?.role);
   const [days, setDays] = useState<(typeof PERIODS)[number]>(7);
-  const { data: report } = useReport(days);
+  const { data: report, mutate: mutateReport } = useReport(days);
+  const [refreshing, setRefreshing] = useState(false);
   const { data: shares, mutate: mutateShares } = useShares();
   const { data: weekly, mutate: mutateWeekly } = useWeeklyEmail();
   const [password, setPassword] = useState('');
   const [expires, setExpires] = useState<number>(7);
+
+  // 立即更新: read the accounts now instead of waiting for the 3-hourly collection
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    const res = await fetch('/reports/refresh', { method: 'POST' });
+    setRefreshing(false);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toaster.show(body?.message || t('refresh_failed', '更新失败，请稍后再试'), 'warning');
+      return;
+    }
+    toaster.show(t('refresh_done', '已更新 {{n}} 个账号的数据', { n: body.collected ?? 0 }), 'success');
+    mutateReport();
+  }, [mutateReport]);
 
   const createShare = useCallback(async () => {
     const res = await fetch('/reports/shares', {
@@ -98,6 +113,11 @@ export const ReportsComponent: FC = () => {
               {t('last_n_days', '近 {{n}} 天', { n: p })}
             </button>
           ))}
+          {canManage && (
+            <Button className="shrink-0 ms-[8px]" secondary={true} loading={refreshing} onClick={refresh}>
+              {t('refresh_now', '立即更新')}
+            </Button>
+          )}
         </div>
       </header>
 

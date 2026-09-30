@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
 import { Integration } from '@prisma/client';
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
@@ -12,6 +12,9 @@ import {
   ChannelStatKey,
   ChannelStats,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+
+// 立即更新: at most this often per team
+export const REFRESH_EVERY_MS = 10 * 60_000;
 
 export const STAT_LABELS: Record<ChannelStatKey, string> = {
   followers: '粉丝',
@@ -82,8 +85,27 @@ export class ChannelStatsService {
 
   /** Every usable channel whose provider reports stats, one after another. */
   async collectAll() {
-    const identifiers = socialIntegrationList.filter((p) => p.stats).map((p) => p.identifier);
-    const channels = await this._repository.statChannels(identifiers);
+    return this.collectChannels(await this._repository.statChannels(this.statIdentifiers()));
+  }
+
+  // when each team last pressed 立即更新 (this process); every read opens the account's browser
+  private _lastRefresh = new Map<string, number>();
+
+  /** 立即更新 on the report page: this team's channels now, at most every REFRESH_EVERY_MS. */
+  async collectOrg(orgId: string) {
+    const last = this._lastRefresh.get(orgId) ?? 0;
+    if (Date.now() - last < REFRESH_EVERY_MS) {
+      throw new HttpException(`数据刚刚更新过，${Math.ceil((REFRESH_EVERY_MS - (Date.now() - last)) / 60_000)} 分钟后可以再更新`, 429);
+    }
+    this._lastRefresh.set(orgId, Date.now());
+    return this.collectChannels(await this._repository.statChannels(this.statIdentifiers(), orgId));
+  }
+
+  private statIdentifiers() {
+    return socialIntegrationList.filter((p) => p.stats).map((p) => p.identifier);
+  }
+
+  private async collectChannels(channels: Integration[]) {
     let collected = 0;
     for (const channel of channels) {
       try {

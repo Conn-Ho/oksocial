@@ -79,6 +79,15 @@ describe('ChannelStatsService', () => {
     expect(repo.statChannels).toHaveBeenCalledWith(['xiaohongshu', 'weibo']);
   });
 
+  it('立即更新 collects only that team, at most every 10 minutes per team', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const { service, repo } = setup(stats);
+    expect(await service.collectOrg('o1')).toEqual({ channels: 2, collected: 2 });
+    expect(repo.statChannels).toHaveBeenCalledWith(expect.any(Array), 'o1');
+    await expect(service.collectOrg('o1')).rejects.toMatchObject({ status: 429 });
+    await expect(service.collectOrg('o2')).resolves.toMatchObject({ collected: 2 });
+  });
+
   it('usesSnapshots follows the provider capability', () => {
     expect(setup(jest.fn()).service.usesSnapshots('xiaohongshu')).toBe(true);
     expect(setup().service.usesSnapshots('linkedin')).toBe(false);

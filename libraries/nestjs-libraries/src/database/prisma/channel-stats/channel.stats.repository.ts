@@ -110,9 +110,10 @@ export class ChannelStatsRepository {
     });
   }
 
-  statChannels(identifiers: string[]) {
+  statChannels(identifiers: string[], orgId?: string) {
     return this._integrations.model.integration.findMany({
       where: {
+        ...(orgId ? { organizationId: orgId } : {}),
         providerIdentifier: { in: identifiers },
         deletedAt: null,
         disabled: false,
