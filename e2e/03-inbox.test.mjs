@@ -37,8 +37,11 @@ test('filters, counts, AI reply suggestion and translation work on a real item',
   assert.ok(String(suggestion.text ?? suggestion.content ?? suggestion).length > 2, `suggestion: ${JSON.stringify(suggestion)}`);
   const translated = await ok(`/inbox/${item.id}/translate`, { method: 'POST', body: { target: 'en' } });
   assert.match(JSON.stringify(translated), /[A-Za-z]{3}/, 'English translation');
-  const q = await ok(`/inbox?q=${encodeURIComponent(item.content.slice(0, 2))}`);
+  // a distinctive query: after many runs a two-character one matches more than a page
+  const q = await ok(`/inbox?kind=DM&integrationId=${ch.xiaohongshu.id}&q=${encodeURIComponent(item.content.slice(0, 12))}`);
   assert.ok(q.items.some((i) => i.id === item.id), 'keyword search finds it');
+  const none = await ok(`/inbox?kind=DM&integrationId=${ch.xiaohongshu.id}&q=${encodeURIComponent('不会出现的词' + Date.now())}`);
+  assert.equal(none.items.length, 0, 'a query nothing contains finds nothing');
 });
 
 test('replying to a 小红书 DM and an X comment goes out through the account and is logged', async () => {
