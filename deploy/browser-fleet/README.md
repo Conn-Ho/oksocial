@@ -199,6 +199,63 @@ and 100 wait (then 429). `MEDIA_DIR` must be a real directory owned by `mac` (a 
 e.g. one pre-created in `/tmp`, is refused) and is kept at 0700. There is no total size quota: disk use is bounded
 only by what the app requests within 24 h.
 
+## Simulated accounts (E2E)
+
+End-to-end tests of oksocial's real pipelines (login keep-alive, publishing, inbox sync, 监控, 竞品 VS, interact) without
+real social-media accounts. Only the browser is fake: backend, Temporal workflows, provider parsing, DB and
+notifications all run for real. **Never enable this on the production host.**
+
+**Worker.** Set `SIM_OPENCLI_BIN` to the simulator, `worker/sim/sim-opencli.mjs` (plain Node, no dependencies, never
+touches the network; executable in git), and optionally `SIM_STATE_DIR` (default `/tmp/oksocial-sim`). Every slot named
+`sim-*` is then virtual; every other slot behaves exactly as before, and with `SIM_OPENCLI_BIN` unset `sim-*` names are
+ordinary slots.
+
+- `GET /slots/:slot` and `POST /slots` return `{…, chrome:"active", unit:"simulated", profileId:<slot name>}`; proxy set/clear,
+  start, stop and `DELETE` are no-op successes (state files are kept). Nothing reaches account-ctl, and sim slots are not
+  listed by `GET /slots` or counted by `/health`.
+- `open`, `POST`/`DELETE /slots/:slot/screen` and `/screen/<slot>/*` answer `400 SIMULATED_SLOT`.
+- `/run` keeps its validation, `RUN_ALLOWED_SITES` (include `xhsdm` if you set it) and the per-slot queue, but runs the
+  simulator with `OPENCLI_PROFILE=<slot>` and `SIM_STATE_DIR`; no Chrome healing, no retries.
+- `/media/fetch` is unchanged: publishing downloads the media first, and the simulator checks the files exist.
+
+**Backend.** Set `OKSOCIAL_SIM_ACCOUNTS=1`. A superadmin then creates a simulated channel through the normal login
+pipeline (anyone else, or without the flag: `403`; there is no UI for it). `provider` is `xiaohongshu`, `weibo`, `douyin`
+or `xweb`; `$BACKEND` is `NEXT_PUBLIC_BACKEND_URL` (e.g. `https://oksocial.online/api`) and `$JWT` the `auth` cookie.
+
+```bash
+curl -s -X POST "$BACKEND/browser-sessions" -H "auth: $JWT" -H 'content-type: application/json' \
+  -d '{"provider":"xiaohongshu","simulated":true}'
+# {"id":"<session>","screenPath":null,"simulated":true}      slot: sim-xiaohongshu-<8 random chars>
+curl -s "$BACKEND/browser-sessions/<session>?timezone=480" -H "auth: $JWT"
+# {"status":"connected","integrationId":"<channel>"}         whoami answered by the simulator
+```
+
+The channel is created exactly like a real one (Integration with the slot as token, keep-alive refresh workflow).
+
+**What the simulator plays.** Each slot is one account per platform, derived from the slot name (names start with
+`模拟`). Its state lives in `SIM_STATE_DIR/<slot>.state.json`:
+
+- publishes (`xiaohongshu publish`, `weibo publish`, `douyin publish`, `xq post`/`reply`) add to the account's own posts,
+  so the providers' follow-up lookups find the new id; the real adapters' argument checks are mirrored (Xiaohongshu
+  title ≤ 20 UTF-16 units, files must exist, Douyin schedule 2 h to 14 days ahead);
+- own posts gain views/likes/collects/shares on every read, followers creep up;
+- a seeded inbox (comments, @mentions, Xiaohongshu DMs; buyers asking "请问怎么购买？多少钱" and a complaint), plus a new
+  comment every `SIM_NEW_COMMENT_EVERY` reads (default 3);
+- other accounts, searches, notes/posts/threads and their comments are deterministic per id or keyword, published on a
+  fixed timetable so new ones keep appearing; X followers/following include people not followed back.
+
+**Control file** `SIM_STATE_DIR/<slot>.control.json` (optional, written by the test harness):
+
+| Content | Effect |
+|---|---|
+| `{"loggedOut": true}` | every command fails `NOT_LOGGED_IN` (exit 77): keep-alive marks the channel for re-login |
+| `{"challenge": true}` | write commands fail with an `ACCOUNT_CHALLENGE` message: the worker returns `CHALLENGE` |
+| `{"failNext": "message"}` | the next command fails once (`FAILED`, exit 1); the key is removed, other keys stay |
+
+**writes.jsonl.** Every successful write (publish, `xq post`/`reply`, `xhsdm send`, `twitter like`/`bookmark`/`follow`)
+appends `{"time","slot","args"}` to `SIM_STATE_DIR/writes.jsonl` (`args` without the `-f json`), so tests can assert
+what was done.
+
 ## Development
 
 ```bash
@@ -212,4 +269,6 @@ npm run typecheck   # tsc --noEmit
 Route tests use Fastify `inject` with fake account-ctl / opencli; the screen proxy and media tests run against local
 `node:http` servers; `test/shell.test.ts` runs `bash -n`, shellcheck (skipped if not installed) and exercises
 account-ctl against stub `sudo`/`systemctl` in a temp directory (`ACCOUNT_CTL_BASE`, `ACCOUNT_CTL_UNIT_DIR`,
-`ACCOUNT_CTL_GOST` exist only for that).
+`ACCOUNT_CTL_GOST` exist only for that). `test/sim-opencli.test.ts` drives the simulator through the worker's own opencli
+runner; `libraries/nestjs-libraries/src/integrations/browser.simulator.spec.ts` (repo root `npx jest`) feeds its output
+to the four browser providers.
