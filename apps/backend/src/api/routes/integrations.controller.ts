@@ -1,3 +1,4 @@
+import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import {
   Body,
   Controller,
@@ -48,7 +49,8 @@ export class IntegrationsController {
     private _integrationService: IntegrationService,
     private _postService: PostsService,
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _planService: PlanService
+    private _planService: PlanService,
+    private _browserSlotService: BrowserSlotService
   ) {}
 
   @Post('/provider/:id/connect')
@@ -450,7 +452,12 @@ export class IntegrationsController {
       }
     }
 
-    return this._integrationService.deleteChannel(org.id, id);
+    const deleted = await this._integrationService.deleteChannel(org.id, id);
+    // a browser channel's Chrome keeps the account logged in: remove it with the channel
+    await this._browserSlotService
+      .releaseForIntegration(org.id, id)
+      .catch((err) => console.log(`browser slot of ${id}`, (err as Error)?.message));
+    return deleted;
   }
 
   @Get('/plug/list')

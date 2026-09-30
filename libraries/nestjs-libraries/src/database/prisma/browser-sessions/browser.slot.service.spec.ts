@@ -224,6 +224,18 @@ describe('BrowserSlotService', () => {
     await expect(service.checkLogin('org1', 'nope')).rejects.toMatchObject({ status: 404 });
   });
 
+  it('deleting a channel removes its browser and everything logged in there', async () => {
+    const { service, fleet, repo } = setup({ slotRow: { id: 'r3', slot: 's3', status: 'ACTIVE', integrationId: 'int3' } });
+    await service.releaseForIntegration('org1', 'int3');
+    expect(repo.getByIntegration).toHaveBeenCalledWith('org1', 'int3');
+    expect(fleet.stopScreen).toHaveBeenCalledWith('s3');
+    expect(fleet.removeSlot).toHaveBeenCalledWith('s3', true);
+    expect(repo.release).toHaveBeenCalledWith('r3');
+    const none = setup({ slotRow: null });
+    await expect(none.service.releaseForIntegration('org1', 'api-channel')).resolves.toEqual({ ok: true });
+    expect(none.fleet.removeSlot).not.toHaveBeenCalled();
+  });
+
   it('cancelLogin removes a pending browser but keeps a connected one', async () => {
     const pending = setup({ slotRow: { id: 'r1', slot: 's1', status: 'PENDING' } });
     await pending.service.cancelLogin('org1', 'r1');

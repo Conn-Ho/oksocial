@@ -186,6 +186,18 @@ export class BrowserSlotService {
     return { ok: true };
   }
 
+  /** A channel was deleted: its browser (and the login kept in it) goes too. */
+  async releaseForIntegration(orgId: string, integrationId: string) {
+    const row = await this._repository.getByIntegration(orgId, integrationId);
+    if (!row) {
+      return { ok: true };
+    }
+    await this.fleet.stopScreen(row.slot).catch(() => undefined);
+    await this.fleet.removeSlot(row.slot, true);
+    await this._repository.release(row.id);
+    return { ok: true };
+  }
+
   /** Caddy forward_auth for /screen/<slot>/...: only members of the owning org may watch it. */
   async canWatch(orgId: string, slot: string) {
     return !!(await this._repository.getBySlotName(orgId, slot));
