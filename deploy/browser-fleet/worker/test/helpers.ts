@@ -156,7 +156,8 @@ export async function buildTestApp({
   probe = async () => true,
   sim = false,
   simOutcomes,
-}: { slots?: Slot[]; outcomes?: RunOutcome[]; deps?: Partial<AppDeps>; probe?: (port: number) => Promise<boolean>; sim?: boolean; simOutcomes?: RunOutcome[] } = {}): Promise<TestApp> {
+  simCli,
+}: { slots?: Slot[]; outcomes?: RunOutcome[]; deps?: Partial<AppDeps>; probe?: (port: number) => Promise<boolean>; sim?: boolean; simOutcomes?: RunOutcome[]; simCli?: Opencli } = {}): Promise<TestApp> {
   const clock = fakeClock();
   const ctl = createFakeCtl(initial);
   const opencli = createFakeOpencli(outcomes);
@@ -164,7 +165,7 @@ export async function buildTestApp({
   const realSlots = createSlotsService({ ctl, clock, probe });
   const slots = sim ? withSimulatedSlots(realSlots) : realSlots;
   const queue = new KeyedQueue({ maxConcurrent: 3, maxPendingPerKey: 2 });
-  const runner = createSlotRunner({ opencli, sim: sim ? simOpencli : undefined, slots, queue, clock });
+  const runner = createSlotRunner({ opencli, sim: sim ? (simCli ?? simOpencli) : undefined, slots, queue, clock });
   const opened: Array<{ cdp: number; url: string }> = [];
   const app = await buildApp({
     token: TOKEN,
