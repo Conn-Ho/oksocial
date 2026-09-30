@@ -200,10 +200,23 @@ function follow({ acct, args }) {
   return [{ status: 'success', message: `Successfully followed @${handle}.` }];
 }
 
+// Someone new follows the account at most this often, so 回关 always finds work on a later run.
+const NEW_FOLLOWER_EVERY_S = 10 * 60;
+
+function growFollowers(acct) {
+  const now = nowSec();
+  if (now - (acct.lastNewFollowerAt ?? 0) < NEW_FOLLOWER_EVERY_S) return;
+  acct.newFollowers = (acct.newFollowers ?? 0) + 1;
+  acct.followerList.unshift(handleFor(100 + acct.newFollowers));
+  acct.followers += 1;
+  acct.lastNewFollowerAt = now;
+}
+
 function people(which) {
   return ({ acct, args, opts }) => {
     const handle = handleOf(args[0]);
     const limit = intOpt(opts, 'limit', 50);
+    if (which === 'followers' && isMe(acct, handle)) growFollowers(acct);
     const list = isMe(acct, handle)
       ? acct[which === 'followers' ? 'followerList' : 'followingList']
       : Array.from({ length: 12 }, (_, j) => handleFor(hash32(which, handle.toLowerCase(), j) % 4096));

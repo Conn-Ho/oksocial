@@ -268,6 +268,25 @@ describe("other accounts' content", () => {
   });
 });
 
+describe('x audience over time', () => {
+  it('someone new follows the account now and then, so follow-back always has work', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oksocial-sim-'));
+    const at = (ms: number) => createOpencli(SIM_BIN, { env: { ...process.env, SIM_STATE_DIR: dir, SIM_NOW_MS: String(ms) } });
+    const followers = async (ms: number) => {
+      const cli = at(ms);
+      const me = await cli.run(['twitter', 'whoami'], { profileId: X, timeoutMs: 20_000 });
+      const handle = String((me as { data: Row }).data.username);
+      const out = await cli.run(['twitter', 'followers', handle, '--limit', '50'], { profileId: X, timeoutMs: 20_000 });
+      return (out as { data: Row[] }).data.map((r) => String(r.screen_name));
+    };
+    const first = await followers(NOW_MS);
+    assert.deepEqual(await followers(NOW_MS + 60_000), first, 'not within ten minutes');
+    const later = await followers(NOW_MS + 11 * 60_000);
+    assert.equal(later.length, first.length + 1);
+    assert.ok(!first.includes(later[0] ?? ''), 'the newest follower comes first');
+  });
+});
+
 describe('control file and writes.jsonl', () => {
   it('loggedOut fails every command with NOT_LOGGED_IN (exit 77)', async () => {
     const sim = simEnv();
