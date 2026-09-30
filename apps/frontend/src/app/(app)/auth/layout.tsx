@@ -26,8 +26,6 @@ export default async function AuthLayout({
             <div className="flex">{children}</div>
           </div>
           <p className="mt-[24px] text-center text-[12px] text-white/50">
-            {t('auth_agpl_notice', 'oksocial 基于开源项目 Postiz，按 AGPL-3.0 协议开源')}
-            {' · '}
             <a
               href="https://github.com/Conn-Ho/oksocial"
               target="_blank"

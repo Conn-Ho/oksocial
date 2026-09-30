@@ -36,8 +36,7 @@ export const OnboardingModal: FC<OnboardingModalProps> = ({ onClose }) => {
   const steps = useMemo(
     () => [
       t('connect_channels', 'Connect Channels'),
-      t('connect_agents', 'Connect Agents'),
-      t('watch_tutorial', 'Watch Tutorial'),
+      t('onboarding_get_started', '开始使用'),
     ],
     [t]
   );
@@ -106,14 +105,9 @@ export const OnboardingModal: FC<OnboardingModalProps> = ({ onClose }) => {
                 onSkip={() => setStep(2)}
               />
             )}
+            {/* the AI agent (MCP) setup lives in 设置 → 开发者; the upstream tutorial video is not ours */}
             {step === 2 && (
-              <OnboardingStep2
-                onBack={() => setStep(1)}
-                onNext={() => setStep(3)}
-              />
-            )}
-            {step === 3 && (
-              <OnboardingStep3 onBack={() => setStep(2)} onFinish={onClose} />
+              <OnboardingStep3 onBack={() => setStep(1)} onFinish={onClose} />
             )}
           </div>
         </div>
@@ -339,7 +333,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
         <div className="text-[13px] text-customColor18 mt-[2px]">
           {t(
             'chat_onboarding_description',
-            'No MCP or CLI settings needed. Paste this into the chat, the agent installs the Postiz CLI and asks you for your API key.'
+            'No MCP or CLI settings needed. Paste this into the chat, the agent installs the oksocial CLI and asks you for your API key.'
           )}
         </div>
       </div>
@@ -384,13 +378,13 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
           <div className="text-[13px] text-customColor18 mt-[2px]">
             {t(
               'api_onboarding_description',
-              'Use the Postiz API from your own code, n8n or any other automation'
+              'Use the oksocial API from your own code, n8n or any other automation'
             )}
           </div>
         </div>
         <a
           className="cursor-pointer px-[24px] h-[44px] bg-[#612BD3] hover:bg-[#5520CB] text-white transition-colors rounded-[8px] text-[14px] font-[600] flex items-center gap-[8px] shrink-0"
-          href="https://docs.postiz.com/public-api/introduction"
+          href="/api/docs"
           target="_blank"
         >
           <McpClientIcon client={apiTab} size={18} />
@@ -437,7 +431,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
         <div className="text-[13px] text-customColor18 mt-[2px]">
           {t(
             'connector_onboarding_description',
-            'The fastest way: add Postiz with one click, you will be asked to sign in'
+            'The fastest way: add oksocial with one click, you will be asked to sign in'
           )}
         </div>
       </div>
@@ -459,7 +453,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
         <div className="text-[13px] text-customColor18 mt-[2px]">
           {t(
             'mcp_onboarding_description',
-            'Give your agent Postiz tools to create, schedule and manage posts'
+            'Give your agent oksocial tools to create, schedule and manage posts'
           )}
         </div>
       </div>
@@ -482,7 +476,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
                 onClick={() => setAuth(m)}
               >
                 {m === 'oauth'
-                  ? t('sign_in_no_api_key', 'Sign in with Postiz (no API key)')
+                  ? t('sign_in_no_api_key', 'Sign in with oksocial (no API key)')
                   : t('api_key', 'API Key')}
               </button>
             ))}
@@ -494,7 +488,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
             {auth === 'oauth' &&
               ` ${t(
                 'oauth_sign_in_hint',
-                'Your agent will open a browser window to sign in to Postiz.'
+                'Your agent will open a browser window to sign in to oksocial.'
               )}`}
           </div>
           <pre className="bg-newBgColorInner border border-newBorder rounded-[8px] p-[12px] text-[12px] whitespace-pre-wrap break-all overflow-x-auto leading-[1.5]">
@@ -524,7 +518,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
         <div className="text-[13px] text-customColor18 mt-[2px]">
           {t(
             'cli_onboarding_description',
-            'Install the Postiz CLI and the skill that teaches your agent how to use it'
+            'Install the oksocial CLI and the skill that teaches your agent how to use it'
           )}
         </div>
       </div>
@@ -690,28 +684,32 @@ const OnboardingStep3: FC<{ onBack: () => void; onFinish: () => void }> = ({
     <div className="flex flex-col gap-[24px] flex-1">
       <div className="flex gap-[4px] flex-col text-center">
         <div className="text-[24px] font-semibold">
-          {t('watch_tutorial_title', 'Learn How to Use Postiz')}
+          {t('quick_start_title', '几步用起来')}
         </div>
         <div className="text-[14px] text-customColor18">
           {t(
-            'watch_tutorial_description',
-            'Watch this short video to learn how to get the most out of Postiz'
+            'quick_start_description',
+            '下面这些随时都可以在左侧菜单里找到'
           )}
         </div>
       </div>
 
-      {/* YouTube Video Embed */}
-      <div className="relative flex-1 rounded-[12px] overflow-hidden">
-        <div className="absolute left-0 top-0 w-full h-full flex justify-center">
-          <iframe
-            className="h-full aspect-video"
-            src="https://www.youtube.com/embed/BdsCVvEYgHU?si=vvhaZJ8I5oXXvVJS?autoplay=1"
-            title="Postiz Tutorial"
-            allow="autoplay"
-            allowFullScreen
-          />
-        </div>
-      </div>
+      <ol className="mx-auto w-full max-w-[560px] flex flex-col gap-[14px] text-[15px] leading-[1.6]">
+        {[
+          t('quick_start_1', '在「设置 → 出口代理」给要做自动化的账号绑定独立代理，降低被风控的概率'),
+          t('quick_start_2', '在「日历」写第一篇帖子：一稿多发、按平台改写、定时发布，也可以先存草稿'),
+          t('quick_start_3', '在「互动」集中查看和回复评论、私信，AI 会给出回复建议'),
+          t('quick_start_4', '在「监控」添加竞品账号、爆款帖子和关键词，看到好内容可以一键复刻'),
+          t('quick_start_5', '在「自动化」开启 AI 评论助手等功能，建议先打开审核模式，确认后再执行'),
+        ].map((line, i) => (
+          <li key={i} className="flex gap-[12px] items-start rounded-[12px] bg-boxFocused/40 px-[16px] py-[12px]">
+            <span className="shrink-0 w-[24px] h-[24px] rounded-full bg-[#612BD3] text-white text-[13px] flex items-center justify-center">
+              {i + 1}
+            </span>
+            <span>{line}</span>
+          </li>
+        ))}
+      </ol>
 
       {/* Action buttons */}
       <div className="flex justify-between pt-[24px] mt-[8px]">

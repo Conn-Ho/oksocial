@@ -116,7 +116,7 @@ export class EmailService {
                         margin: 0;
                     ">${process.env.EMAIL_FROM_NAME}</h2>
                     <div style="font-size: 12px">
-                      You can change your notification preferences in your <a href="${process.env.FRONTEND_URL}/settings">account settings.</a>
+                      邮件通知可以在<a href="${process.env.FRONTEND_URL}/settings">账号设置</a>里调整。
                      </div>
                 </div>
             </div>

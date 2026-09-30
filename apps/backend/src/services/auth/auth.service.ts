@@ -75,8 +75,8 @@ export class AuthService {
         const obj = { addedOrg, jwt: await this.jwt(create.users[0].user) };
         await this._emailService.sendEmail(
           body.email,
-          'Activate your account',
-          `Click <a href="${process.env.FRONTEND_URL}/auth/activate/${obj.jwt}">here</a> to activate your account`,
+          '激活你的 oksocial 账号',
+          `欢迎使用 oksocial！<br />请<a href="${process.env.FRONTEND_URL}/auth/activate/${obj.jwt}">点击这里激活账号</a>。<br />如果不是你本人注册，忽略这封邮件即可。`,
           'top'
         );
         return obj;
@@ -227,8 +227,8 @@ export class AuthService {
 
     await this._notificationService.sendEmail(
       user.email,
-      'Reset your password',
-      `You have requested to reset your passsord. <br />Click <a href="${process.env.FRONTEND_URL}/auth/forgot/${resetValues}">here</a> to reset your password<br />The link will expire in 20 minutes`
+      '重置你的 oksocial 密码',
+      `你申请了重置密码。<br />请在 20 分钟内<a href="${process.env.FRONTEND_URL}/auth/forgot/${resetValues}">点击这里设置新密码</a>。<br />如果不是你本人操作，忽略这封邮件即可，密码不会改变。`
     );
   }
 
@@ -280,8 +280,8 @@ export class AuthService {
 
     await this._emailService.sendEmail(
       user.email,
-      'Activate your account',
-      `Click <a href="${process.env.FRONTEND_URL}/auth/activate/${jwt}">here</a> to activate your account`,
+      '激活你的 oksocial 账号',
+      `欢迎使用 oksocial！<br />请<a href="${process.env.FRONTEND_URL}/auth/activate/${jwt}">点击这里激活账号</a>。<br />如果不是你本人注册，忽略这封邮件即可。`,
       'top'
     );
 

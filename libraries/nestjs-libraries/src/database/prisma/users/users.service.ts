@@ -67,12 +67,9 @@ export class UsersService {
           this._notificationService
             .sendEmail(
               account.email,
-              'Your oksocial login was changed',
-              `An administrator changed the login for your oksocial account. ` +
-                `You can now sign in using ${account.email}. ` +
-                `Your subscription and plan were not changed by this switch — ` +
-                `if you intended to cancel a subscription, please do that ` +
-                `separately from your billing settings.`
+              '你的 oksocial 登录邮箱已更改',
+              `管理员更改了你的 oksocial 登录邮箱，现在请用 ${account.email} 登录。` +
+                `你的套餐和订阅没有变化；如果要取消订阅，请在账单设置里单独操作。`
             )
             .catch((err) =>
               this._logger.error(`Failed to notify ${account.email}`, err)
