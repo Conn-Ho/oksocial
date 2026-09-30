@@ -132,6 +132,12 @@ export class BrowserFleetClient {
     return (await this.call<{ present: string[] }>('GET', `/slots/${slot}/login-cookies?${query}`, undefined, 10_000)).present;
   }
 
+  /** The login QR code on the slot's screen tab as a PNG data URL (`reveal` is clicked when none shows), or null. */
+  async qr(slot: string, reveal?: string) {
+    const query = reveal ? `?${new URLSearchParams({ reveal })}` : '';
+    return (await this.call<{ image: string | null }>('GET', `/slots/${slot}/qr${query}`, undefined, 20_000)).image;
+  }
+
   startScreen(slot: string) {
     return this.call<{ path: string }>('POST', `/slots/${slot}/screen`, {});
   }

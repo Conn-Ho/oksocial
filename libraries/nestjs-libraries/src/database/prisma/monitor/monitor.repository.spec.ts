@@ -166,6 +166,8 @@ describe('MonitorRepository', () => {
     });
     await repo.finishRun('t1', { lastError: 'x', nextRunAt: new Date(), succeeded: false });
     expect(monitorTarget.update.mock.calls.at(-1)[0].data.lastRunAt).toBeUndefined();
+    // every read, failed or not, records when it was tried
+    expect(monitorTarget.update.mock.calls.at(-1)[0].data.lastTriedAt).toEqual(expect.any(Date));
     await repo.getItem('o1', 'i1');
     expect(monitorItem.findFirst).toHaveBeenCalledWith({
       where: { id: 'i1', target: { organizationId: 'o1', deletedAt: null } },

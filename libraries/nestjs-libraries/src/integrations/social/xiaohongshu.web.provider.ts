@@ -21,9 +21,13 @@ import {
   timeText,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
-import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { RefreshToken, ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 const TITLE_MAX = 20;
+// What the web IM shows for a message it cannot render (image, sticker, card): a real message.
+const UNSHOWN_DM = /^暂不支持该消息类型/;
+const UNSHOWN_DM_TEXT = '（对方发来一条网页版看不到的消息，比如图片、表情或卡片，请在小红书 App 里查看）';
+const DRAFT_BOX_URL = 'https://creator.xiaohongshu.com/publish/publish?source=official&target=image';
 const IMAGES_MAX = 9;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 // DM conversations read per sync (unread first); each read is a page load in the account's browser.
@@ -35,6 +39,10 @@ const PROFILE_LINK = /xiaohongshu\.com\/user\/profile\/([0-9a-z]+)/i;
 /** Note ids are ObjectId-like: the first 8 hex digits are the creation time in unix seconds. */
 const noteTime = (id: string) => dateFrom(parseInt(id.slice(0, 8), 16));
 const noteUrl = (id: string) => `https://www.xiaohongshu.com/explore/${id}`;
+// The creator center and www.xiaohongshu.com keep separate logins; DMs, comment notifications, notes
+// and search are on www.
+export const XHS_WEB_LOGIN_NEEDED =
+  '小红书网页版（www.xiaohongshu.com）没有登录：私信和评论通知读不到。请打开账号浏览器，在网页版里扫码登录。';
 
 export class XiaohongshuWebProvider
   extends BrowserSocialAbstract
@@ -45,11 +53,20 @@ export class XiaohongshuWebProvider
   toolTip = '扫码登录小红书创作服务平台；发布图文笔记（1-9 张图），标题取正文第一行（最多 20 字）';
   browserSession = {
     loginUrl: 'https://creator.xiaohongshu.com/login',
+    // the login card opens on SMS login; its only image is the QR-code switch in the corner
+    qrReveal: '.sso-login-wrapper img',
     whoami: ['xhs2', 'me'],
     // set by the creator-center login (web_session exists for guests too, so it proves nothing)
     loginCookies: {
       domain: 'xiaohongshu.com',
       names: ['galaxy_creator_session_id', 'access-token-creator.xiaohongshu.com', 'customer-sso-sid'],
+    },
+    // DMs, notifications, search and note pages need www.xiaohongshu.com's own login (id_token)
+    web: {
+      url: 'https://www.xiaohongshu.com/explore',
+      label: '小红书网页版',
+      cookies: { domain: 'xiaohongshu.com', names: ['id_token'] },
+      verify: ['xhsdm', 'list', '--limit', '1'],
     },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
@@ -114,7 +131,27 @@ export class XiaohongshuWebProvider
 
   // Comments and @mentions from 消息 (no ids: hashed), DMs through the xhsdm plugin (web IM).
   inbox: InboxCapabilities = {
-    fetch: async (slot) => [...(await this.notifications(slot)), ...(await this.directMessages(slot))],
+    fetch: async (slot) => {
+      const warnings = new Set<string>();
+      const failures: unknown[] = [];
+      // a www read that finds the site logged out becomes a notice; another failure of one source
+      // keeps what the other read, and fails the sync only when nothing was read at all
+      const web = <T>(read: () => Promise<T[]>) =>
+        read().catch((err) => {
+          if (err instanceof RefreshToken) {
+            warnings.add(XHS_WEB_LOGIN_NEEDED);
+          } else {
+            failures.push(err);
+            console.log(`xiaohongshu inbox ${slot}`, (err as Error)?.message);
+          }
+          return [] as T[];
+        });
+      const items = [...(await web(() => this.notifications(slot))), ...(await web(() => this.directMessages(slot)))];
+      if (!items.length && failures.length) {
+        throw failures[0];
+      }
+      return { items, warnings: [...warnings] };
+    },
     reply: {
       DM: async (slot, _integration, item, text) => {
         if (!item.threadId) {
@@ -145,7 +182,7 @@ export class XiaohongshuWebProvider
   private async directMessages(slot: string): Promise<InboxFetched[]> {
     const conversations = await this.exec<
       Array<{ id: string; name: string; unread: number | string; group: boolean | string }>
-    >(slot, ['xhsdm', 'list', '--limit', '30'], 120_000).catch(() => []);
+    >(slot, ['xhsdm', 'list', '--limit', '30'], 120_000);
     const recent = (conversations || [])
       .filter((c) => String(c.group) !== 'true')
       .sort((a, b) => Number(b.unread || 0) - Number(a.unread || 0))
@@ -154,7 +191,13 @@ export class XiaohongshuWebProvider
     for (const conv of recent) {
       const messages = await this.exec<
         Array<{ time: string; from: string; mine: boolean | string; text: string }>
-      >(slot, ['xhsdm', 'read', conv.id, '--limit', '10'], 90_000).catch(() => []);
+      >(slot, ['xhsdm', 'read', conv.id, '--limit', '10'], 90_000).catch((err) => {
+        // one unreadable conversation is skipped; a logged-out site is reported by the caller
+        if (err instanceof RefreshToken) {
+          throw err;
+        }
+        return [];
+      });
       for (const m of messages || []) {
         if (String(m.mine) === 'true' || !m.text) {
           continue;
@@ -167,7 +210,7 @@ export class XiaohongshuWebProvider
           threadTitle: conv.name,
           replyTarget: conv.id,
           authorName: m.from || conv.name,
-          content: m.text,
+          content: UNSHOWN_DM.test(m.text) ? UNSHOWN_DM_TEXT : m.text,
           platformTime: m.time,
         });
       }
@@ -314,6 +357,7 @@ export class XiaohongshuWebProvider
     const [first] = postDetails;
     const title = titleFrom(first.message, TITLE_MAX);
     const images = await this.localMedia(first.media);
+    const draft = !!first.settings?.draft;
     await this.exec(
       slot,
       [
@@ -324,10 +368,14 @@ export class XiaohongshuWebProvider
         title,
         '--images',
         images.join(','),
-        ...(first.settings?.draft ? ['--draft', 'true'] : []),
+        ...(draft ? ['--draft', 'true'] : []),
       ],
       300_000
     );
+    if (draft) {
+      // A draft lives only in the account browser's 草稿箱: there is no note to look up.
+      return [{ id: first.id, postId: `xhs-draft-${Date.now()}`, releaseURL: DRAFT_BOX_URL, status: 'success' }];
+    }
     const note = await this.findNote(slot, title);
     return [
       {

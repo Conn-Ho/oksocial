@@ -112,3 +112,41 @@ export const useReplyHistory = (page: number) => {
     }>
   >(key, load);
 };
+
+export type InboxNotice = { integrationId: string; name: string; providerIdentifier: string; notice: string };
+
+export const useInboxNotices = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/notices')).json(), []);
+  return useSWR<InboxNotice[]>('/inbox/notices', load);
+};
+
+const SYNC_POLL_MS = 3000;
+// longer than any sync should take; past it the page stops asking (the sync itself goes on)
+const SYNC_POLL_MAX_MS = 10 * 60 * 1000;
+
+/**
+ * 立即更新 runs in the background on the server (reading every account can take minutes): start it,
+ * then poll until it ends. Resolves with its result, or null when the status can't be read.
+ */
+export const useInboxSync = () => {
+  const fetch = useFetch();
+  return useCallback(async (): Promise<{ added: number; failed: number } | null> => {
+    const started = await fetch('/inbox/sync', { method: 'POST', body: '{}' });
+    if (!started.ok) {
+      return null;
+    }
+    for (const until = Date.now() + SYNC_POLL_MAX_MS; Date.now() < until; ) {
+      await new Promise((r) => setTimeout(r, SYNC_POLL_MS));
+      const res = await fetch('/inbox/sync');
+      if (!res.ok) {
+        return null;
+      }
+      const status = await res.json();
+      if (!status.running) {
+        return status.last ?? null;
+      }
+    }
+    return null;
+  }, []);
+};

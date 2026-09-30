@@ -1888,6 +1888,8 @@ model BrowserSlot {
   // automation brake: set when the platform pushes back (risk control); no automated writes until then
   brakeUntil         DateTime?
   brakeReason        String?
+  // something this account's browser cannot do and the team has to fix (e.g. 小红书网页版 not logged in)
+  notice             String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   deletedAt          DateTime?
@@ -2160,7 +2162,9 @@ model MonitorTarget {
   paused          Boolean           @default(false)
   // latest metrics of a monitored post
   latest          Json?
+  // last successful read (new posts are those since then); lastTriedAt: last read, even a failed one
   lastRunAt       DateTime?
+  lastTriedAt     DateTime?
   nextRunAt       DateTime?
   lastError       String?
   createdAt       DateTime          @default(now())

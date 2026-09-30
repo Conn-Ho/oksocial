@@ -146,7 +146,7 @@ export interface TestApp {
   slots: SlotsService;
   clock: ReturnType<typeof fakeClock>;
   queue: KeyedQueue;
-  opened: Array<{ cdp: number; url: string }>;
+  opened: Array<{ cdp: number; url: string; reuse?: string }>;
 }
 
 export async function buildTestApp({
@@ -166,17 +166,18 @@ export async function buildTestApp({
   const slots = sim ? withSimulatedSlots(realSlots) : realSlots;
   const queue = new KeyedQueue({ maxConcurrent: 3, maxPendingPerKey: 2 });
   const runner = createSlotRunner({ opencli, sim: sim ? (simCli ?? simOpencli) : undefined, slots, queue, clock });
-  const opened: Array<{ cdp: number; url: string }> = [];
+  const opened: Array<{ cdp: number; url: string; reuse?: string }> = [];
   const app = await buildApp({
     token: TOKEN,
     slots,
     runner,
     runQueue: queue,
     daemonUp: async () => true,
-    openTab: async (cdp, url) => {
-      opened.push({ cdp, url });
+    openTab: async (cdp, url, reuse) => {
+      opened.push(reuse ? { cdp, url, reuse } : { cdp, url });
       return { id: 'TARGET1', url };
     },
+    captureQr: async () => ({ image: null, revealed: false }),
     media: noMedia,
     ...deps,
   });

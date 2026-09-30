@@ -203,12 +203,14 @@ export const MonitorDetail: FC<{
         {target.authorName && <p className="text-[13px] text-textColor/70">@{target.authorName}</p>}
         {target.note && <p className="text-[13px] text-textColor/70">{t('monitor_note_short', '备注')}：{target.note}</p>}
         <p className="text-[12px] text-textColor/50">
-          {target.lastRunAt ? t('monitor_last_read', '上次读取 {{time}}', { time: dayjs(target.lastRunAt).format('MM-DD HH:mm') }) : t('monitor_never_read', '还没读取过')}
+          {target.lastRunAt ? t('monitor_last_ok', '上次成功读取 {{time}}', { time: dayjs(target.lastRunAt).format('MM-DD HH:mm') }) : t('monitor_never_read', '还没读取过')}
           {!target.paused && target.nextRunAt && ` · ${t('monitor_next_read', '下次约 {{time}}', { time: dayjs(target.nextRunAt).format('MM-DD HH:mm') })}`}
         </p>
         {target.lastError && (
           <p role="alert" className="text-[13px] text-red-400 bg-red-500/10 rounded-[6px] px-[10px] py-[8px] leading-[1.5]">
-            {t('monitor_last_error', '最近一次读取失败：{{error}}', { error: target.lastError })}
+            {target.lastTriedAt
+              ? t('monitor_last_error_at', '{{time}} 读取失败：{{error}}', { time: dayjs(target.lastTriedAt).format('MM-DD HH:mm'), error: target.lastError })
+              : t('monitor_last_error', '最近一次读取失败：{{error}}', { error: target.lastError })}
           </p>
         )}
         <div className="flex gap-[8px] flex-wrap items-center pt-[4px]">

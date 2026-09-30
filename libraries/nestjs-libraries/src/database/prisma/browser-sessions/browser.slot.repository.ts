@@ -81,6 +81,11 @@ export class BrowserSlotRepository {
     });
   }
 
+  /** What the inbox shows about this browser (e.g. the web site is not logged in), or null. */
+  setNotice(id: string, notice: string | null) {
+    return this._slots.model.browserSlot.update({ where: { id }, data: { notice } });
+  }
+
   setProxy(id: string, proxyId: string | null) {
     return this._slots.model.browserSlot.update({
       where: { id },

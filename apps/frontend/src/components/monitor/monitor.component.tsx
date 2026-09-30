@@ -71,7 +71,9 @@ const TargetRow: FC<{ target: MonitorTarget; active: boolean; onClick: () => voi
       )}
       <span className="text-[11px] text-textColor/40">
         {target.note ||
-          (target.lastRunAt
+          (target.lastError && target.lastTriedAt
+            ? t('monitor_last_failed', '{{time}} 读取失败', { time: dayjs(target.lastTriedAt).format('MM-DD HH:mm') })
+            : target.lastRunAt
             ? t('monitor_last_read', '上次读取 {{time}}', { time: dayjs(target.lastRunAt).format('MM-DD HH:mm') })
             : t('monitor_never_read', '还没读取过'))}
       </span>

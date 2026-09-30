@@ -6,11 +6,18 @@ import { presentCookieNames, readCookies } from '../cdp.ts';
 
 const DOMAIN_RE = /^[a-z0-9.-]{3,100}$/i;
 const COOKIE_NAME_RE = /^[A-Za-z0-9._-]{1,80}$/;
+const REVEAL_MAX = 200;
 import { simulatedSlotError } from '../sim.ts';
 
 type SlotParams = { Params: { slot: string } };
 
-export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: AppDeps): void {
+export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captureQr }: AppDeps): void {
+  // The tab each slot's login screen shows (this process): the next open reuses it.
+  const screenTabs = new Map<string, string>();
+  // Slots whose login page got its `reveal` click since it was opened: some are toggles (SMS ⇄ QR),
+  // so a second click while the code is still rendering would switch it away again.
+  const revealed = new Set<string>();
+
   app.get('/slots', async () => slots.list());
 
   app.get<SlotParams>('/slots/:slot', async (req) => slots.require(slotParam(req.params.slot)));
@@ -50,6 +57,8 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: App
     const name = slotParam(req.params.slot);
     const purge = req.query.purge === '1' || req.query.purge === 'true';
     await slots.remove(name, purge);
+    screenTabs.delete(name);
+    revealed.delete(name);
     return { ok: true, slot: name, purged: purge };
   });
 
@@ -59,7 +68,23 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: App
     if (slots.isSimulated(name)) throw simulatedSlotError(name);
     const slot = await slots.require(name);
     if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
-    const tab = await openTab(slot.cdp, url);
+    const tab = await openTab(slot.cdp, url, screenTabs.get(name));
+    screenTabs.set(name, tab.id);
+    revealed.delete(name);
     return { ok: true, targetId: tab.id, url: tab.url };
+  });
+
+  // The login QR code of the screen tab as an image, for the login dialog to show it large. When
+  // none is visible, `reveal` (a CSS selector) is clicked first. A simulated account has no page.
+  app.get<SlotParams & { Querystring: { reveal?: string } }>('/slots/:slot/qr', async (req) => {
+    const name = slotParam(req.params.slot);
+    const reveal = req.query.reveal || undefined;
+    if (reveal && reveal.length > REVEAL_MAX) throw new HttpError(400, 'BAD_REQUEST', 'reveal selector too long');
+    if (slots.isSimulated(name)) return { image: null };
+    const slot = await slots.require(name);
+    if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
+    const qr = await captureQr(slot.cdp, screenTabs.get(name), revealed.has(name) ? undefined : reveal);
+    if (qr.revealed) revealed.add(name);
+    return { image: qr.image };
   });
 }

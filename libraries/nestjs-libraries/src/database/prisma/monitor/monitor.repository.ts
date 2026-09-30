@@ -131,6 +131,7 @@ export class MonitorRepository {
       data: {
         lastError: data.lastError,
         nextRunAt: data.nextRunAt,
+        lastTriedAt: new Date(),
         ...(data.succeeded ? { lastRunAt: new Date() } : {}),
       },
     });

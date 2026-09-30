@@ -45,6 +45,15 @@ describe('BrowserFleetClient', () => {
     expect(JSON.parse((fetchImpl.mock.calls[2] as any)[1].body)).toEqual({ proxy: null });
   });
 
+  it('asks for the login QR code, with the selector that reveals it', async () => {
+    const fetchImpl = jest.fn(() => reply(200, { image: 'data:image/png;base64,UE5H' }));
+    const client = new BrowserFleetClient('http://w', 't', fetchImpl as any);
+    expect(await client.qr('s1', '.sso-login-wrapper img')).toBe('data:image/png;base64,UE5H');
+    expect(await client.qr('s1')).toBe('data:image/png;base64,UE5H');
+    expect((fetchImpl.mock.calls as any)[0][0]).toBe('http://w/slots/s1/qr?reveal=.sso-login-wrapper+img');
+    expect((fetchImpl.mock.calls as any)[1][0]).toBe('http://w/slots/s1/qr');
+  });
+
   it('is only configured with a token', () => {
     expect(new BrowserFleetClient('http://w', '').configured).toBe(false);
     expect(new BrowserFleetClient('http://w', 'x').configured).toBe(true);

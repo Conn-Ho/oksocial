@@ -32,6 +32,7 @@ import dayjs from 'dayjs';
 import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/modal.wrapper.component';
 import copy from 'copy-to-clipboard';
 import { BrowserProxyModal } from '@gitroom/frontend/components/launches/browser.proxy.modal';
+import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 
 export const Menu: FC<{
   canEnable: boolean;
@@ -325,6 +326,27 @@ export const Menu: FC<{
     });
   }, [t, findIntegration]);
 
+  // 小红书网页版 (DMs, notifications) has its own login in the same browser
+  const browserWeb = useCallback(() => {
+    modal.openModal({
+      title: t('browser_web_title', '登录网页版：{{name}}', { name: findIntegration.name }),
+      withCloseButton: true,
+      classNames: {
+        modal: 'bg-transparent text-textColor w-[980px] max-w-[95vw]',
+      },
+      children: (
+        <BrowserLoginModal
+          identifier={findIntegration.identifier}
+          name={findIntegration.name}
+          integrationId={findIntegration.id}
+          mode="web"
+          onConnected={() => mutate()}
+        />
+      ),
+    });
+    setShow(false);
+  }, [t, findIntegration]);
+
   const updateCredentials = useCallback(() => {
     modal.openModal({
       title: t('custom_url', 'Custom URL'),
@@ -467,6 +489,17 @@ export const Menu: FC<{
                 <div className="w-[18px] text-center">⇄</div>
                 <div className="text-[14px]">{t('browser_proxies', '出口代理')}</div>
               </div>
+              {findIntegration.identifier === 'xiaohongshu' && (
+                <div
+                  className="flex gap-[12px] items-center py-[8px] px-[10px]"
+                  onClick={browserWeb}
+                >
+                  <div className="w-[18px] text-center">⌗</div>
+                  <div className="text-[14px]">
+                    {t('browser_web_open', '登录小红书网页版（私信、通知）')}
+                  </div>
+                </div>
+              )}
             </>
           )}
           {!!findIntegration?.isCustomFields && (

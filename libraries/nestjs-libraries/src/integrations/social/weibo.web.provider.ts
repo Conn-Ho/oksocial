@@ -62,7 +62,8 @@ export class WeiboWebProvider
   name = '微博';
   toolTip = '扫码登录微博；发布文字 + 最多 9 张图片';
   browserSession = {
-    loginUrl: 'https://weibo.com/login.php',
+    // weibo.com/login.php lands on the home feed without its login layer; passport opens on the QR code
+    loginUrl: 'https://passport.weibo.com/sso/signin?entry=miniblog&source=miniblog&url=https%3A%2F%2Fweibo.com%2F',
     whoami: ['weibo', 'me'],
     // SUB/SUBP are handed to visitors too; these come with a real login
     loginCookies: { domain: 'weibo.com', names: ['ALF', 'SSOLoginState', 'SCF'] },

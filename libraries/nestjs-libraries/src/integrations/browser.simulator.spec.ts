@@ -13,6 +13,9 @@ import { WeiboWebProvider } from '@gitroom/nestjs-libraries/integrations/social/
 import { DouyinWebProvider } from '@gitroom/nestjs-libraries/integrations/social/douyin.web.provider';
 import { XWebProvider } from '@gitroom/nestjs-libraries/integrations/social/x.web.provider';
 
+// inbox.fetch returns rows, or { items, warnings } when part of the account could not be read
+const itemsOf = (r: any): any[] => (Array.isArray(r) ? r : r.items);
+
 const SIM_BIN = resolve(__dirname, '../../../../deploy/browser-fleet/worker/sim/sim-opencli.mjs');
 const CHALLENGE_RE = /ACCOUNT_CHALLENGE|looks like it might be automated|\b226\b.*automated|may not be allowed to perform this action/i;
 const EXIT_CODES: Record<number, string> = { 2: 'USAGE', 66: 'EMPTY', 69: 'BRIDGE_DOWN', 75: 'TIMEOUT', 77: 'NOT_LOGGED_IN', 78: 'CONFIG' };
@@ -84,7 +87,7 @@ describe('xiaohongshu provider on the simulator', () => {
   });
 
   it('inbox: comments, @mentions and DMs with stable ids, and new ones later', async () => {
-    const first = await p.inbox.fetch(slot, integration(''));
+    const first = itemsOf(await p.inbox.fetch(slot, integration('')));
     const kinds = new Set(first.map((i) => i.kind));
     expect([...kinds].sort()).toEqual(['COMMENT', 'DM', 'MENTION']);
     expect(first.map((i) => i.content)).toEqual(expect.arrayContaining(['请问怎么购买？多少钱', '你好，请问这个怎么购买？多少钱？']));
@@ -94,7 +97,7 @@ describe('xiaohongshu provider on the simulator', () => {
     const dm = first.find((i) => i.kind === 'DM')!;
     expect(dm.threadId).toMatch(/^[0-9a-f]{24}$/);
 
-    const second = await p.inbox.fetch(slot, integration(''));
+    const second = itemsOf(await p.inbox.fetch(slot, integration('')));
     const before = new Set(first.map((i) => i.externalId));
     const again = second.filter((i) => before.has(i.externalId));
     expect(again).toHaveLength(before.size);
@@ -169,7 +172,7 @@ describe('weibo provider on the simulator', () => {
     const stats = await p.stats(slot, integration(uid));
     expect(stats).toMatchObject({ followers: expect.any(Number), posts: expect.any(Number) });
     expect(stats.likes).toBeGreaterThan(0);
-    const items = await p.inbox.fetch(slot, integration(uid));
+    const items = itemsOf(await p.inbox.fetch(slot, integration(uid)));
     expect(items.length).toBeGreaterThanOrEqual(5);
     expect(items.every((i) => i.kind === 'COMMENT' && i.threadId && i.threadUrl && i.platformTime)).toBe(true);
     expect(items.map((i) => i.content)).toEqual(expect.arrayContaining(['请问怎么购买？多少钱', '质量太差了，用了两天就坏了，差评']));
@@ -254,7 +257,7 @@ describe('x (browser) provider on the simulator', () => {
   });
 
   it('inbox keeps replies and mentions only, and answers with xq reply', async () => {
-    const items = await p.inbox.fetch(slot, integration(handle));
+    const items = itemsOf(await p.inbox.fetch(slot, integration(handle)));
     expect(new Set(items.map((i) => i.kind))).toEqual(new Set(['COMMENT', 'MENTION']));
     expect(items.every((i) => /^\d+$/.test(i.externalId) && i.replyTarget?.startsWith('https://x.com/i/status/'))).toBe(true);
     expect(items.some((i) => /How can I buy/.test(i.content))).toBe(true);

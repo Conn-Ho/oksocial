@@ -20,7 +20,10 @@ import {
   inboxQuery,
   useInboxCounts,
   useInboxList,
+  useInboxNotices,
+  useInboxSync,
 } from '@gitroom/frontend/components/inbox/inbox.hooks';
+import { InboxNotices } from '@gitroom/frontend/components/inbox/inbox.notices';
 import { InboxDetail, ItemTags } from '@gitroom/frontend/components/inbox/inbox.detail';
 import { ReplyTemplatesModal } from '@gitroom/frontend/components/inbox/reply.templates';
 import { ReplyHistoryModal } from '@gitroom/frontend/components/inbox/reply.history';
@@ -70,19 +73,30 @@ export const InboxComponent: FC = () => {
     mutateCounts();
   }, [mutate, mutateCounts]);
 
+  const runSync = useInboxSync();
+  const { mutate: mutateNotices } = useInboxNotices();
   const syncNow = useCallback(async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/inbox/sync', { method: 'POST', body: '{}' });
-      const body = await res.json();
-      toaster.show(t('inbox_synced', '已更新，新增 {{n}} 条', { n: body?.added ?? 0 }), 'success');
+      const result = await runSync();
+      if (!result) {
+        toaster.show(t('inbox_sync_failed', '更新失败，请稍后再试'), 'warning');
+      } else if (result.failed) {
+        toaster.show(
+          t('inbox_synced_partly', '已更新，新增 {{n}} 条；{{failed}} 个账号没读到，请检查登录状态', { n: result.added, failed: result.failed }),
+          'warning'
+        );
+      } else {
+        toaster.show(t('inbox_synced', '已更新，新增 {{n}} 条', { n: result.added }), 'success');
+      }
       refresh();
+      mutateNotices();
     } catch {
       toaster.show(t('inbox_sync_failed', '更新失败，请稍后再试'), 'warning');
     } finally {
       setSyncing(false);
     }
-  }, [refresh]);
+  }, [refresh, runSync, mutateNotices]);
 
   const exportCsv = useCallback(async () => {
     const { page, ...rest } = filters;
@@ -126,7 +140,7 @@ export const InboxComponent: FC = () => {
         </nav>
         <div className="md:ms-auto flex gap-[8px] flex-wrap">
           <Button secondary={true} loading={syncing} onClick={syncNow}>
-            {t('inbox_sync', '立即更新')}
+            {syncing ? t('inbox_syncing', '更新中…') : t('inbox_sync', '立即更新')}
           </Button>
           <Button secondary={true} onClick={exportCsv}>
             {t('export', '导出')}
@@ -159,6 +173,10 @@ export const InboxComponent: FC = () => {
           </Button>
         </div>
       </header>
+
+      <div className={clsx(detailOpen && 'hidden md:block')}>
+        <InboxNotices canFix={canManageChannels(user?.role)} onFixed={refresh} />
+      </div>
 
       <div className={clsx('flex gap-[8px] px-[16px] md:px-[24px] pb-[12px] flex-wrap', detailOpen && 'hidden md:flex')}>
         <select

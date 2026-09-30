@@ -71,6 +71,23 @@ talk to it. The traffic is plain HTTP on the host, so for defense in depth you c
 docker0 gateway that `host.docker.internal` resolves to) instead of `0.0.0.0`; the unit then needs Docker up first. Logs: `journalctl -u oksocial-browser-worker -f` (pino JSON; the token and proxy credentials are
 never logged). Rollback: `sudo systemctl disable --now oksocial-browser-worker` and restore `account-ctl.bak`.
 
+### Updating the bridge extension
+
+Every slot Chrome loads the opencli bridge extension from `~/opencli-ext`. To roll out a new build
+(opencli's `extension/dist`, built with `npx vite build` in `extension/`):
+
+```bash
+# on your machine
+COPYFILE_DISABLE=1 tar czf /tmp/ext-dist.tgz -C <opencli>/extension/dist .
+# on the VM
+~/oksocial/browser-fleet/update-extension.sh /tmp/ext-dist.tgz
+```
+
+It lays the build over a copy of the current extension (manifest, icons and popup stay), swaps it in,
+waits for running opencli commands, reloads the extension and restarts each running slot Chrome (a
+restart alone keeps the cached service worker while the manifest version is unchanged), then checks
+that every Chrome runs the new bundle (`extension-ctl.mjs verify`). Logins survive the restart.
+
 ### Caddy (not applied here)
 
 Caddy must authenticate the user first, then forward to the worker with the token. Sketch, to adapt to the

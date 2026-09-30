@@ -2,7 +2,7 @@
 import Fastify from 'fastify';
 import type { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
 import { TOKEN_HEADER, tokenMatches } from './auth.ts';
-import type { OpenedTab } from './cdp.ts';
+import type { OpenedTab, QrCapture } from './cdp.ts';
 import { HttpError } from './errors.ts';
 import type { MediaFetcher } from './media.ts';
 import { QueueAbortedError, QueueClosedError, QueueFullError } from './queue.ts';
@@ -22,7 +22,10 @@ export interface AppDeps {
   runner: SlotRunner;
   runQueue: KeyedQueue;
   daemonUp: () => Promise<boolean>;
-  openTab: (cdpPort: number, url: string) => Promise<OpenedTab>;
+  /** Shows url in the slot's screen tab: `reuseId` (the tab shown last time) if it is still open, else a new tab. */
+  openTab: (cdpPort: number, url: string, reuseId?: string) => Promise<OpenedTab>;
+  /** The login QR code of the screen tab (PNG data URL or null), clicking `reveal` first when none shows. */
+  captureQr: (cdpPort: number, targetId?: string, reveal?: string) => Promise<QrCapture>;
   media: MediaFetcher;
   /** Optional allow-list of opencli site commands for /run (RUN_ALLOWED_SITES). */
   runAllowedSites?: ReadonlySet<string>;

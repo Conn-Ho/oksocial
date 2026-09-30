@@ -145,11 +145,20 @@ describe('XiaohongshuWebProvider', () => {
     });
   });
 
-  it('saves as draft when the post settings ask for it, and survives a failed lookup', async () => {
-    const fleet = fakeFleet([{ ok: true, data: [] }, { ok: false, code: 'TIMEOUT' }]);
+  it('saves as draft when the post settings ask for it, without looking for a published note', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [] }]);
     const p = withFleet(new XiaohongshuWebProvider(), fleet);
     const [res] = await p.post('u1', 's1', post('标题', ['https://x/a.png'], { draft: true }), {} as any);
+    expect(fleet.calls).toHaveLength(1);
     expect(fleet.calls[0]).toContain('--draft');
+    expect(res.postId).toMatch(/^xhs-draft-/);
+    expect(res.releaseURL).toBe('https://creator.xiaohongshu.com/publish/publish?source=official&target=image');
+  });
+
+  it('survives a failed note lookup after publishing', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [] }, { ok: false, code: 'TIMEOUT' }]);
+    const p = withFleet(new XiaohongshuWebProvider(), fleet);
+    const [res] = await p.post('u1', 's1', post('标题', ['https://x/a.png']), {} as any);
     expect(res.postId).toMatch(/^xhs-/);
     expect(res.releaseURL).toContain('note-manager');
   });
@@ -305,34 +314,75 @@ describe('inbox fetch mapping', () => {
       ] },
     ]);
     const p = withFleet(new XiaohongshuWebProvider(), fleet);
-    const items = await p.inbox.fetch('s1', {} as any);
-    expect(items.map((i) => [i.kind, i.authorName, i.content])).toEqual([
+    const { items } = (await p.inbox.fetch('s1', {} as any)) as any;
+    expect(items.map((i: any) => [i.kind, i.authorName, i.content])).toEqual([
       ['COMMENT', '小A', '求链接'],
       ['MENTION', '小B', '@WenWen 看这个'],
       ['DM', '小C', '在吗'],
     ]);
     expect(fleet.calls[2]).toEqual(['xhsdm', 'read', 'c1', '--limit', '10']);
     expect(items[0].externalId).toMatch(/^[0-9a-f]{24}$/);
-    expect((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
+    expect(((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
       { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' }] },
       { ok: true, data: [] },
-    ])).inbox.fetch('s1', {} as any))[0].externalId).toBe(items[0].externalId);
+    ])).inbox.fetch('s1', {} as any)) as any).items[0].externalId).toBe(items[0].externalId);
     expect(p.inbox.reply?.COMMENT).toBeUndefined();
     expect(typeof p.inbox.reply?.DM).toBe('function');
   });
 
+  it('Xiaohongshu says what a DM the web IM cannot show is, instead of its 暂不支持 placeholder', async () => {
+    const placeholder = '暂不支持该消息类型，请到手机端查看';
+    const fleet = fakeFleet([
+      { ok: true, data: [] },
+      { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
+      { ok: true, data: [{ time: '10:00', from: '小C', mine: false, text: placeholder }] },
+    ]);
+    const { items } = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
+    expect(items[0].content).toBe('（对方发来一条网页版看不到的消息，比如图片、表情或卡片，请在小红书 App 里查看）');
+    // the id still comes from what the platform shows, so earlier syncs don't duplicate it
+    const again = fakeFleet([
+      { ok: true, data: [] },
+      { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
+      { ok: true, data: [{ time: '昨天 10:00', from: '小C', mine: false, text: placeholder }] },
+    ]);
+    expect(((await withFleet(new XiaohongshuWebProvider(), again).inbox.fetch('s1', {} as any)) as any).items[0].externalId).toBe(items[0].externalId);
+  });
+
   it('Xiaohongshu stores notification unix times as text and keeps DM ids stable across days', async () => {
-    const read = (dmTime: string) =>
-      withFleet(new XiaohongshuWebProvider(), fakeFleet([
+    const read = async (dmTime: string) =>
+      ((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
         { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: 1790740800 }] },
         { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
         { ok: true, data: [{ time: dmTime, from: '小C', mine: false, text: '在吗' }] },
-      ])).inbox.fetch('s1', {} as any);
+      ])).inbox.fetch('s1', {} as any)) as any).items;
     const today = await read('10:00');
     expect(typeof today[0].platformTime).toBe('string');
     expect(today[0].platformTime).toMatch(/^2026-09-30 \d{2}:\d{2}$/);
     const tomorrow = await read('昨天 10:00');
     expect(tomorrow[1].externalId).toBe(today[1].externalId);
+  });
+
+  it('Xiaohongshu says when the web site (DMs, notifications) is not logged in instead of returning nothing', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [{ rank: 1 }] },
+      { ok: false, code: 'NOT_LOGGED_IN', message: 'Not logged in to www.xiaohongshu.com' } as any,
+    ]);
+    const res = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
+    expect(res.items).toEqual([]);
+    expect(res.warnings).toEqual([expect.stringContaining('小红书网页版')]);
+    // a failure that leaves nothing read fails the sync
+    const broken = fakeFleet([{ ok: true, data: [] }, { ok: false, code: 'TIMEOUT', message: 'slow' } as any]);
+    await expect(withFleet(new XiaohongshuWebProvider(), broken).inbox.fetch('s1', {} as any)).rejects.toThrow(/TIMEOUT/);
+  });
+
+  it('Xiaohongshu keeps the notifications it read when the DM list fails', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' }] },
+      { ok: false, code: 'TIMEOUT', message: 'slow' } as any,
+    ]);
+    const res = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
+    expect(res.items.map((i: any) => i.content)).toEqual(['求链接']);
+    expect(res.warnings).toEqual([]);
   });
 
   it('Weibo reads comments only for posts that have some', async () => {

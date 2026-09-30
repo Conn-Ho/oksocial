@@ -1,4 +1,5 @@
 import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
+import { postErrorText } from '@gitroom/nestjs-libraries/database/prisma/posts/post.error';
 import { Injectable } from '@nestjs/common';
 import { Post as PostBody } from '@gitroom/nestjs-libraries/dtos/posts/create.post.dto';
 import {
@@ -502,9 +503,7 @@ export class PostsRepository {
       },
       data: {
         state,
-        ...(err
-          ? { error: typeof err === 'string' ? err : JSON.stringify(err) }
-          : {}),
+        ...(err ? { error: postErrorText(err) } : {}),
       },
       include: {
         integration: {

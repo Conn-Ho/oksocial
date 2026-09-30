@@ -1,6 +1,6 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, ok, simChannels, slotOf, simWrites, sql } from './lib.mjs';
+import { api, ok, simChannels, slotOf, simWrites, sql, syncInbox } from './lib.mjs';
 
 let ch;
 before(async () => {
@@ -9,8 +9,9 @@ before(async () => {
 
 test('syncing pulls comments, @mentions and DMs of every simulated account and tags them with AI', async () => {
   for (const p of ['xiaohongshu', 'weibo', 'xweb']) {
-    const r = await ok('/inbox/sync', { method: 'POST', body: { integrationId: ch[p].id } });
-    assert.ok(r.fetched > 0, `${p} fetched ${JSON.stringify(r)}`);
+    const r = await syncInbox(ch[p].id);
+    assert.equal(r.failed, 0, `${p} synced ${JSON.stringify(r)}`);
+    assert.ok((await ok(`/inbox?integrationId=${ch[p].id}&page=1`)).items.length > 0, `${p} has items`);
   }
   // each kind on its own: page 1 holds the newest items, which earlier runs may have filled with comments
   for (const k of ['COMMENT', 'DM', 'MENTION']) assert.ok((await ok(`/inbox?kind=${k}`)).items.length > 0, `has ${k}`);
@@ -21,7 +22,7 @@ test('syncing pulls comments, @mentions and DMs of every simulated account and t
   const leads = await ok('/inbox?intent=lead');
   assert.ok(leads.items.some((i) => /购买|多少钱|价格/.test(i.content)), 'a buying question is tagged 高意向');
   // a second sync adds nothing twice
-  const again = await ok('/inbox/sync', { method: 'POST', body: { integrationId: ch.xiaohongshu.id } });
+  const again = await syncInbox(ch.xiaohongshu.id);
   const dup = sql(`SELECT "externalId", count(*)::int n FROM "InboxItem" WHERE "integrationId"='${ch.xiaohongshu.id}' GROUP BY 1 HAVING count(*) > 1`);
   assert.deepEqual(dup, [], `no duplicate items (sync added ${again.added})`);
 });

@@ -40,6 +40,12 @@ export class InboxController {
     return this._inboxService.replyCapabilities();
   }
 
+  @Get('/notices')
+  @ApiOperation({ summary: '需要处理的账号提示', description: '例如小红书网页版没有登录，私信和评论通知读不到。' })
+  notices(@GetOrgFromRequest() org: Organization) {
+    return this._inboxService.notices(org.id);
+  }
+
   @Get('/export')
   @ApiOperation({ summary: '导出 CSV' })
   async export(
@@ -64,11 +70,15 @@ export class InboxController {
   }
 
   @Post('/sync')
-  @ApiOperation({ summary: '立即同步收件箱', description: '不传 integrationId 时同步全部账号；新条目会打 AI 标签（每条 1 积分）。' })
+  @ApiOperation({ summary: '立即同步收件箱', description: '在后台同步（不传 integrationId 时同步全部账号），马上返回；用 GET /inbox/sync 查看是否完成。新条目会打 AI 标签（每条 1 积分）。' })
   sync(@GetOrgFromRequest() org: Organization, @Body('integrationId') integrationId?: string) {
-    return integrationId
-      ? this._inboxService.sync(org.id, integrationId)
-      : this._inboxService.syncAll(org.id);
+    return this._inboxService.startSync(org.id, integrationId);
+  }
+
+  @Get('/sync')
+  @ApiOperation({ summary: '同步进度', description: 'running：是否还在同步；last：上一次同步的时间、新增条数、失败的账号数。' })
+  syncStatus(@GetOrgFromRequest() org: Organization) {
+    return this._inboxService.syncStatus(org.id);
   }
 
   @Post('/status')

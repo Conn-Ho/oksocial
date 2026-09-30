@@ -10,7 +10,10 @@ import {
   isRunFailure,
 } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
-import { SocialProvider } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+import {
+  BrowserSession,
+  SocialProvider,
+} from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
@@ -22,7 +25,11 @@ export const WHOAMI_EVERY_MS = 20_000;
 export type BrowserLoginCheck =
   | { status: 'waiting' }
   | { status: 'mismatch'; expected: string; got: string }
-  | { status: 'connected'; integrationId: string };
+  | { status: 'connected'; integrationId: string; web?: { label: string } };
+
+type BrowserWebSite = NonNullable<BrowserSession['web']>;
+
+export type BrowserWebCheck = { status: 'waiting' } | { status: 'connected' };
 
 const randomSuffix = (length: number) =>
   Array.from(randomBytes(length), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
@@ -221,7 +228,85 @@ export class BrowserSlotService {
       .startRefreshWorkflow(orgId, integration.id, provider)
       .catch((err) => console.log('browser keep-alive workflow', err));
     await this.fleet.stopScreen(row.slot).catch(() => undefined);
-    return { status: 'connected', integrationId: integration.id };
+    const web = provider.browserSession!.web;
+    return web && !(await this.webLoggedIn(row.slot, web))
+      ? { status: 'connected', integrationId: integration.id, web: { label: web.label } }
+      : { status: 'connected', integrationId: integration.id };
+  }
+
+  /** Whether the platform's second site is logged in; false while Chrome or the worker can't tell. */
+  private async webLoggedIn(slot: string, web: BrowserWebSite) {
+    const present = await this.fleet
+      .loginCookies(slot, web.cookies.domain, web.cookies.names)
+      .catch(() => [] as string[]);
+    return present.length > 0;
+  }
+
+  private webSession(row: { providerIdentifier: string } | null) {
+    if (!row) {
+      throw new HttpException('Channel not found', 404);
+    }
+    const web = this.browserProvider(row.providerIdentifier).browserSession!.web;
+    if (!web) {
+      throw new HttpException('This channel has no second site to log in to', 400);
+    }
+    return web;
+  }
+
+  /** Opens the platform's second site (小红书网页版) in a connected channel's browser for its login. */
+  async startWeb(orgId: string, integrationId: string) {
+    const row = await this._repository.getByIntegration(orgId, integrationId);
+    const web = this.webSession(row);
+    await this.fleet.open(row!.slot, web.url);
+    const { path } = await this.fleet.startScreen(row!.slot);
+    return { id: row!.id, screenPath: path, label: web.label };
+  }
+
+  /**
+   * Polled while someone logs in to the second site. Reads only its login cookie while they scan;
+   * once it exists, one read on that site (at most every WHOAMI_EVERY_MS) confirms the login: a
+   * cookie left from an expired session would otherwise count.
+   */
+  async checkWeb(orgId: string, id: string): Promise<BrowserWebCheck> {
+    const row = await this._repository.getById(orgId, id);
+    const web = this.webSession(row && row.status !== 'RELEASED' ? row : null);
+    if (this._checking.has(row!.id)) {
+      return { status: 'waiting' };
+    }
+    this._checking.add(row!.id);
+    try {
+      if (!(await this.webLoggedIn(row!.slot, web))) {
+        return { status: 'waiting' };
+      }
+      if (Date.now() - (this._lastWhoami.get(row!.id) ?? 0) < WHOAMI_EVERY_MS) {
+        return { status: 'waiting' };
+      }
+      this._lastWhoami.set(row!.id, Date.now());
+      const res = await this.fleet.run(row!.slot, web.verify, 60_000).catch(() => null);
+      if (!res || isRunFailure(res)) {
+        return { status: 'waiting' };
+      }
+      this._lastWhoami.delete(row!.id);
+      await this._repository.setNotice(row!.id, null);
+      await this.fleet.stopScreen(row!.slot).catch(() => undefined);
+      return { status: 'connected' };
+    } finally {
+      this._checking.delete(row!.id);
+    }
+  }
+
+  /**
+   * The QR code of a login session's page, polled by the login dialog to show it large (the whole
+   * page shrunk into the dialog is too small to scan). null: none on the page, or it can't be read.
+   */
+  async loginQr(orgId: string, id: string) {
+    const row = await this._repository.getById(orgId, id);
+    if (!row || row.status === 'RELEASED') {
+      throw new HttpException('Login session not found', 404);
+    }
+    const reveal = this.browserProvider(row.providerIdentifier).browserSession!.qrReveal;
+    const image = await this.fleet.qr(row.slot, reveal).catch(() => null);
+    return { image };
   }
 
   /** The user closed the dialog: a new session's browser is removed, a reconnect's is kept. */

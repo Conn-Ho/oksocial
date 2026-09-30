@@ -25,8 +25,22 @@ export class InboxRepository {
     private _items: PrismaRepository<'inboxItem'>,
     private _logs: PrismaRepository<'replyLog'>,
     private _templates: PrismaRepository<'replyTemplate'>,
-    private _integrations: PrismaRepository<'integration'>
+    private _integrations: PrismaRepository<'integration'>,
+    private _slots: PrismaRepository<'browserSlot'>
   ) {}
+
+  /** What a browser account could not read and why; null once it reads everything again. */
+  setNotice(integrationId: string, notice: string | null) {
+    return this._slots.model.browserSlot.updateMany({ where: { integrationId, deletedAt: null }, data: { notice } });
+  }
+
+  async notices(orgId: string) {
+    const rows = await this._slots.model.browserSlot.findMany({
+      where: { organizationId: orgId, deletedAt: null, notice: { not: null }, integration: { deletedAt: null } },
+      select: { notice: true, integration: { select: { id: true, name: true, providerIdentifier: true } } },
+    });
+    return rows.flatMap((r) => (r.integration ? [{ ...r.integration, notice: r.notice }] : []));
+  }
 
   /** Inserts what is new and returns only those rows. */
   addItems(orgId: string, integrationId: string, items: InboxFetched[]) {

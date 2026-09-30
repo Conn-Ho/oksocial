@@ -75,6 +75,13 @@ export type BrowserSession = {
   // Cookies that only exist after a real login. While someone scans the QR code the check only
   // reads these (whoami would navigate the very page they are looking at).
   loginCookies?: { domain: string; names: string[] };
+  // CSS selector clicked when the login page shows no QR code yet (it opens on SMS login), so the
+  // login dialog can show the code large.
+  qrReveal?: string;
+  // A second site of the platform with its own login, needed by some features (小红书网页版 for
+  // DMs and notifications). Logged in after the main login, in the same browser: `cookies` appear
+  // with the login, `verify` (an opencli command) succeeds only while it is logged in.
+  web?: { url: string; label: string; cookies: { domain: string; names: string[] }; verify: string[] };
 };
 
 export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';
@@ -97,9 +104,13 @@ export type InboxFetched = {
   platformTime?: string;
 };
 
+// Items plus what the account could not read and why (e.g. a second site of the platform is not
+// logged in), shown to the team instead of an inbox that silently stays empty.
+export type InboxFetchResult = { items: InboxFetched[]; warnings?: string[] };
+
 export type InboxCapabilities = {
   // Latest items; the inbox de-duplicates by (kind, externalId).
-  fetch(token: string, integration: Integration): Promise<InboxFetched[]>;
+  fetch(token: string, integration: Integration): Promise<InboxFetched[] | InboxFetchResult>;
   // Kinds this channel can answer, and how.
   reply?: Partial<
     Record<

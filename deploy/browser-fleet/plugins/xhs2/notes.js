@@ -30,8 +30,12 @@ cli({
     const limit = Number(kwargs.limit) || 200;
     const deadline = Date.now() + (Number(kwargs.timeout) || 120) * 1000;
     await page.goto('https://creator.xiaohongshu.com/new/note-manager', { waitUntil: 'load', settleMs: 4000 });
-    await page.wait({ selector: '.note-card', timeout: 20 });
+    // the tab count renders with or without notes; an account without notes shows 全部 0 and no card
+    await page.wait({ selector: '.note-card, .tab-item--active', timeout: 20 });
     const total = Number(await page.evaluate(TOTAL)) || 0;
+    if (!total && !(await page.evaluate(`document.querySelectorAll('.note-card').length`))) {
+      return [];
+    }
     const target = total ? Math.min(total, limit) : limit;
     const patience = total ? PATIENCE_WITH_TOTAL : PATIENCE_WITHOUT_TOTAL;
     const seen = new Map();

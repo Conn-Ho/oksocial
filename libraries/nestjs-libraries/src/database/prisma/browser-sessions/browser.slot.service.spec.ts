@@ -29,7 +29,7 @@ const provider = {
   },
 };
 
-const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any } = {}) => {
+const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any; qr?: any } = {}) => {
   const fleet = {
     configured: true,
     ensureSlot: jest.fn(async () => ({})),
@@ -40,6 +40,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
     setProxy: jest.fn(async () => ({})),
     run: jest.fn(overrides.run ?? (async () => ({ ok: true, data: [{ logged_in: false }], durationMs: 1 }))),
     loginCookies: jest.fn(overrides.cookies ?? (async () => [] as string[])),
+    qr: jest.fn(overrides.qr ?? (async () => 'data:image/png;base64,UE5H')),
   };
   const repo = {
     createPending: jest.fn(async (org: string, prov: string, slot: string) => ({
@@ -55,6 +56,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
       id === 'p1' ? { id: 'p1', url: AuthService.fixedEncryption('http://u:pw@1.2.3.4:8000') } : null
     ),
     setProxy: jest.fn(async () => ({})),
+    setNotice: jest.fn(async () => ({})),
     listProxies: jest.fn(async () => [
       { id: 'p1', name: 'TW', url: AuthService.fixedEncryption('http://u:pw@1.2.3.4:8000'), _count: { slots: 2 } },
     ]),
@@ -224,6 +226,91 @@ describe('BrowserSlotService', () => {
   it('checkLogin 404s for released or foreign sessions', async () => {
     const { service } = setup({ slotRow: null });
     await expect(service.checkLogin('org1', 'nope')).rejects.toMatchObject({ status: 404 });
+  });
+
+  describe('the second site of a platform (小红书网页版)', () => {
+    const web = {
+      url: 'https://www.xiaohongshu.com/explore',
+      label: '小红书网页版',
+      cookies: { domain: 'xiaohongshu.com', names: ['id_token'] },
+      verify: ['xhsdm', 'list', '--limit', '1'],
+    };
+    const withWeb = { ...provider, browserSession: { ...provider.browserSession, web } };
+    const active = { id: 'r5', slot: 's5', status: 'ACTIVE', providerIdentifier: 'xiaohongshu', integrationId: 'int5' };
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
+    const run = async () => ({ ok: true, data: [{ logged_in: true, user_id: 'u1', name: 'WenWen', red_id: 'WenBuilds' }] });
+
+    it('the login answer says a web login follows while the web site is not logged in', async () => {
+      const { service, fleet } = setup({ slotRow: pending, run, provider: withWeb });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'connected', integrationId: 'int1', web: { label: '小红书网页版' } });
+      expect(fleet.loginCookies).toHaveBeenCalledWith('s1', 'xiaohongshu.com', ['id_token']);
+      const already = setup({ slotRow: pending, run, provider: withWeb, cookies: async () => ['id_token'] });
+      expect(await already.service.checkLogin('org1', 'row1')).toEqual({ status: 'connected', integrationId: 'int1' });
+    });
+
+    it('opens the web site in the account browser and shows its screen', async () => {
+      const { service, fleet } = setup({ slotRow: active, provider: withWeb });
+      expect(await service.startWeb('org1', 'int5')).toEqual({ id: 'r5', screenPath: '/screen/s5/vnc.html', label: '小红书网页版' });
+      expect(fleet.open).toHaveBeenCalledWith('s5', 'https://www.xiaohongshu.com/explore');
+    });
+
+    it('waits for the login cookie without running anything in the browser', async () => {
+      const waiting = setup({ slotRow: active, provider: withWeb });
+      expect(await waiting.service.checkWeb('org1', 'r5')).toEqual({ status: 'waiting' });
+      expect(waiting.fleet.loginCookies).toHaveBeenCalledWith('s5', 'xiaohongshu.com', ['id_token']);
+      expect(waiting.fleet.run).not.toHaveBeenCalled();
+      const starting = setup({ slotRow: active, provider: withWeb, cookies: async () => { throw new Error('ECONNREFUSED'); } });
+      expect(await starting.service.checkWeb('org1', 'r5')).toEqual({ status: 'waiting' });
+    });
+
+    it('then confirms the login with a read (a stale cookie proves nothing) and clears the inbox notice', async () => {
+      const done = setup({ slotRow: active, provider: withWeb, cookies: async () => ['id_token'] });
+      expect(await done.service.checkWeb('org1', 'r5')).toEqual({ status: 'connected' });
+      expect(done.fleet.run).toHaveBeenCalledWith('s5', ['xhsdm', 'list', '--limit', '1'], 60_000);
+      expect(done.repo.setNotice).toHaveBeenCalledWith('r5', null);
+      expect(done.fleet.stopScreen).toHaveBeenCalledWith('s5');
+    });
+
+    it('keeps waiting while the read says logged out, reading at most every 20 s', async () => {
+      const stale = setup({
+        slotRow: active,
+        provider: withWeb,
+        cookies: async () => ['id_token'],
+        run: async () => ({ ok: false, code: 'NOT_LOGGED_IN', error: 'login required' }),
+      });
+      expect(await stale.service.checkWeb('org1', 'r5')).toEqual({ status: 'waiting' });
+      expect(await stale.service.checkWeb('org1', 'r5')).toEqual({ status: 'waiting' });
+      expect(stale.fleet.run).toHaveBeenCalledTimes(1);
+      expect(stale.repo.setNotice).not.toHaveBeenCalled();
+    });
+
+    it('a platform without a second site refuses, an unknown channel is 404', async () => {
+      const { service } = setup({ slotRow: active });
+      await expect(service.startWeb('org1', 'int5')).rejects.toMatchObject({ status: 400 });
+      const none = setup({ slotRow: null, provider: withWeb });
+      await expect(none.service.startWeb('org1', 'nope')).rejects.toMatchObject({ status: 404 });
+      await expect(none.service.checkWeb('org1', 'nope')).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('the QR code shown large in the login dialog', () => {
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
+    const withReveal = { ...provider, browserSession: { ...provider.browserSession, qrReveal: '.sso-login-wrapper img' } };
+
+    it('is read from the login browser, revealing it with the platform selector', async () => {
+      const { service, fleet } = setup({ slotRow: pending, provider: withReveal });
+      expect(await service.loginQr('org1', 'row1')).toEqual({ image: 'data:image/png;base64,UE5H' });
+      expect(fleet.qr).toHaveBeenCalledWith('s1', '.sso-login-wrapper img');
+    });
+
+    it('is null when the page has none or the browser cannot tell, and 404 for a finished session', async () => {
+      const none = setup({ slotRow: pending, qr: async () => null });
+      expect(await none.service.loginQr('org1', 'row1')).toEqual({ image: null });
+      const down = setup({ slotRow: pending, qr: async () => { throw new Error('502'); } });
+      expect(await down.service.loginQr('org1', 'row1')).toEqual({ image: null });
+      const gone = setup({ slotRow: { ...pending, status: 'RELEASED' } });
+      await expect(gone.service.loginQr('org1', 'row1')).rejects.toMatchObject({ status: 404 });
+    });
   });
 
   it('deleting a channel removes its browser and everything logged in there', async () => {

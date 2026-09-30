@@ -77,6 +77,16 @@ export async function waitFor(fn, { timeoutMs = 120_000, everyMs = 3_000, what =
 }
 
 /** Runs a read query on the server's Postgres; rows come back as objects. */
+/** 立即更新 runs in the background: start it and wait for it to end; its result ({ added, failed }). */
+export async function syncInbox(integrationId) {
+  await ok('/inbox/sync', { method: 'POST', body: integrationId ? { integrationId } : {} });
+  const status = await waitFor(async () => {
+    const s = await ok('/inbox/sync');
+    return !s.running && s.last ? s : null;
+  }, { timeoutMs: 300_000, what: 'inbox sync' });
+  return status.last;
+}
+
 export function sql(query) {
   const b64 = Buffer.from(`SELECT coalesce(json_agg(t), '[]'::json) FROM (${query}) t`).toString('base64');
   const out = remote(

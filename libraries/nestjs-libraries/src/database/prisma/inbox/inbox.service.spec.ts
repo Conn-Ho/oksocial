@@ -24,6 +24,8 @@ const setup = (opts: { provider?: any; item?: any; aiEnabled?: boolean; broke?: 
     logReply: jest.fn(async () => ({})),
     setStatus: jest.fn(async () => ({})),
     listTemplates: jest.fn(async () => [{ content: '感谢关注' }]),
+    setNotice: jest.fn(async () => ({})),
+    notices: jest.fn(async () => [{ id: 'i1', name: '：）', providerIdentifier: 'xiaohongshu', notice: '网页版没有登录' }]),
     inboxIntegrations: jest.fn(async () => [
       { id: 'i1', organizationId: 'o1' },
       { id: 'i2', organizationId: 'o2' },
@@ -101,6 +103,16 @@ describe('InboxService', () => {
     expect(repo.setTags).not.toHaveBeenCalled();
   });
 
+  it('sync keeps what the account could not read as a notice, and clears it once everything reads', async () => {
+    const warned = setup({ provider: { inbox: { fetch: jest.fn(async () => ({ items: [], warnings: ['小红书网页版没有登录'] })) } } });
+    expect(await warned.service.sync('o1', 'i1')).toEqual({ fetched: 0, added: 0, warnings: ['小红书网页版没有登录'] });
+    expect(warned.repo.setNotice).toHaveBeenCalledWith('i1', '小红书网页版没有登录');
+    const fine = setup({ provider: { inbox: { fetch: jest.fn(async () => ({ items: [], warnings: [] })) } } });
+    expect(await fine.service.sync('o1', 'i1')).toEqual({ fetched: 0, added: 0 });
+    expect(fine.repo.setNotice).toHaveBeenCalledWith('i1', null);
+    expect(await fine.service.notices('o1')).toEqual([{ integrationId: 'i1', name: '：）', providerIdentifier: 'xiaohongshu', notice: '网页版没有登录' }]);
+  });
+
   it('sync skips providers without an inbox and 404s unknown channels', async () => {
     const plain = setup({ provider: {} });
     expect(await plain.service.sync('o1', 'i1')).toEqual({ fetched: 0, added: 0 });
@@ -117,10 +129,35 @@ describe('InboxService', () => {
     await expect(broken.service.sync('o1', 'i1')).resolves.toEqual({ fetched: 1, added: 1 });
   });
 
-  it('syncAll keeps going when one channel fails', async () => {
+  it('syncAll keeps going when one channel fails, and counts it', async () => {
     const provider = { inbox: { fetch: jest.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce([]) } };
     const { service } = setup({ provider });
-    expect(await service.syncAll()).toEqual({ channels: 2, added: 0 });
+    expect(await service.syncAll()).toEqual({ channels: 2, added: 0, failed: 1 });
+  });
+
+  it('立即更新 runs in the background: answers at once, one run per organization, then keeps the result', async () => {
+    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+    let finish: (rows: unknown) => void = () => undefined;
+    const provider = { inbox: { fetch: jest.fn(() => new Promise((resolve) => (finish = resolve))) } };
+    const { service, repo } = setup({ provider });
+    repo.inboxIntegrations.mockResolvedValue([{ id: 'i1', organizationId: 'o1' }]);
+    expect(service.syncStatus('o1')).toEqual({ running: false });
+    expect(service.startSync('o1')).toEqual({ started: true });
+    expect(service.startSync('o1')).toEqual({ started: false, running: true });
+    expect(service.syncStatus('o1')).toEqual({ running: true });
+    await settle();
+    finish([{ kind: 'DM', externalId: 'x', authorName: 'a', content: 'hi' }]);
+    await settle();
+    expect(service.syncStatus('o1')).toEqual({ running: false, last: { at: expect.any(String), added: 1, failed: 0 } });
+    expect(repo.inboxIntegrations).toHaveBeenCalledWith(['xweb', 'weibo'], 'o1');
+  });
+
+  it('立即更新 of one channel, and a run that fails, still end', async () => {
+    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+    const { service } = setup({ provider: { inbox: { fetch: jest.fn(async () => { throw new Error('boom'); }) } } });
+    expect(service.startSync('o1', 'i1')).toEqual({ started: true });
+    await settle();
+    expect(service.syncStatus('o1')).toEqual({ running: false, last: { at: expect.any(String), added: 0, failed: 1 } });
   });
 
   it('reply sends through the provider, logs it and marks the item replied', async () => {

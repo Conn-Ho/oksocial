@@ -57,26 +57,72 @@ export class InboxService {
     if (!provider?.inbox) {
       return { fetched: 0, added: 0 };
     }
-    const items = await provider.inbox.fetch(integration.token, integration);
+    const fetched = await provider.inbox.fetch(integration.token, integration);
+    const { items, warnings = [] } = Array.isArray(fetched) ? { items: fetched } : fetched;
+    // what the account could not read (e.g. a second site not logged in) stays visible until it reads again
+    await this._repository.setNotice(integration.id, warnings[0] ?? null);
     const added = items.length
       ? await this._repository.addItems(orgId, integration.id, items)
       : [];
     await this.tagItems(orgId, added).catch((err) => console.log('inbox tagging', err?.message));
-    return { fetched: items.length, added: added.length };
+    return { fetched: items.length, added: added.length, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  /** Accounts with something the team has to fix before the inbox is complete. */
+  async notices(orgId: string) {
+    return (await this._repository.notices(orgId)).map((r) => ({
+      integrationId: r.id,
+      name: r.name,
+      providerIdentifier: r.providerIdentifier,
+      notice: r.notice,
+    }));
   }
 
   /** Every usable inbox channel (of one organization, or of all), one after another. */
   async syncAll(orgId?: string) {
     const channels = await this._repository.inboxIntegrations(this.inboxProviders(), orgId);
     let added = 0;
+    let failed = 0;
     for (const channel of channels) {
       try {
         added += (await this.sync(channel.organizationId, channel.id)).added;
       } catch (err) {
+        failed += 1;
         console.log(`inbox sync ${channel.id}`, (err as Error)?.message);
       }
     }
-    return { channels: channels.length, added };
+    return { channels: channels.length, added, failed };
+  }
+
+  // 立即更新 runs of this process, per organization, and how each organization's last one ended
+  private _syncing = new Set<string>();
+  private _lastSync = new Map<string, { at: string; added: number; failed: number }>();
+
+  /**
+   * 立即更新: reading every account can take minutes (each DM conversation is a page load), far
+   * longer than a request may hang, so it runs in the background; syncStatus tells when it ends.
+   */
+  startSync(orgId: string, integrationId?: string) {
+    if (this._syncing.has(orgId)) {
+      return { started: false, running: true };
+    }
+    this._syncing.add(orgId);
+    const run = integrationId
+      ? this.sync(orgId, integrationId).then((r) => ({ added: r.added, failed: 0 }))
+      : this.syncAll(orgId);
+    run
+      .catch((err) => {
+        console.log(`inbox sync ${orgId}`, (err as Error)?.message);
+        return { added: 0, failed: 1 };
+      })
+      .then(({ added, failed }) => this._lastSync.set(orgId, { at: new Date().toISOString(), added, failed }))
+      .finally(() => this._syncing.delete(orgId));
+    return { started: true };
+  }
+
+  syncStatus(orgId: string) {
+    const last = this._lastSync.get(orgId);
+    return { running: this._syncing.has(orgId), ...(last ? { last } : {}) };
   }
 
   /** AI tags, charged per item; what the credits do not cover stays untagged. */

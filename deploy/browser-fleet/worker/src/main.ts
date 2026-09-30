@@ -1,7 +1,7 @@
 /** Entry point: `node src/main.ts` (Node 22 strips the types; no build step). */
 import { createAccountCtl } from './account-ctl.ts';
 import { buildApp, LOG_REDACT_PATHS } from './app.ts';
-import { openTab } from './cdp.ts';
+import { captureQr, showTab } from './cdp.ts';
 import { realClock } from './clock.ts';
 import { loadConfig } from './config.ts';
 import { createMediaFetcher } from './media.ts';
@@ -36,7 +36,8 @@ async function main(): Promise<void> {
     runner,
     runQueue,
     daemonUp: () => tcpProbe(OPENCLI_DAEMON_PORT),
-    openTab: (cdpPort, url) => openTab(cdpPort, url),
+    openTab: (cdpPort, url, reuseId) => showTab(cdpPort, url, reuseId),
+    captureQr: (cdpPort, targetId, reveal) => captureQr(cdpPort, targetId, reveal),
     media,
     runAllowedSites: config.runAllowedSites,
     logger: { level: config.logLevel, redact: { paths: LOG_REDACT_PATHS, censor: '[redacted]' } },

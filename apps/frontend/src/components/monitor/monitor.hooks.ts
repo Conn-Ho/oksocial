@@ -32,6 +32,8 @@ export type MonitorTarget = {
   paused: boolean;
   latest?: MonitorMetrics | null;
   lastRunAt?: string | null;
+  // the last read, even a failed one
+  lastTriedAt?: string | null;
   nextRunAt?: string | null;
   lastError?: string | null;
   createdAt: string;

@@ -116,6 +116,48 @@ describe('slot routes', () => {
     assert.equal((await app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'file:///etc/passwd' } })).statusCode, 400);
   });
 
+  it('reuses the tab it showed last time for that slot instead of adding tabs', async () => {
+    const { app, opened } = await buildTestApp();
+    await app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'https://creator.xiaohongshu.com/login' } });
+    await app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'https://www.xiaohongshu.com/explore' } });
+    assert.deepEqual(opened, [
+      { cdp: 9302, url: 'https://creator.xiaohongshu.com/login' },
+      { cdp: 9302, url: 'https://www.xiaohongshu.com/explore', reuse: 'TARGET1' },
+    ]);
+  });
+
+  it('screenshots the login QR code of the screen tab, clicking `reveal` once per opened login page', async () => {
+    const shots: unknown[] = [];
+    const { app } = await buildTestApp({
+      deps: {
+        captureQr: async (cdp, target, reveal) => {
+          shots.push([cdp, target, reveal]);
+          return { image: 'data:image/png;base64,UE5H', revealed: !!reveal };
+        },
+      },
+    });
+    const open = () => app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'https://creator.xiaohongshu.com/login' } });
+    const qr = () => app.inject({ method: 'GET', url: `/slots/xhs-2/qr?reveal=${encodeURIComponent('.sso-login-wrapper img')}`, headers: auth });
+    await open();
+    assert.deepEqual((await qr()).json(), { image: 'data:image/png;base64,UE5H' });
+    await qr();
+    await open();
+    await qr();
+    assert.deepEqual(shots, [
+      [9302, 'TARGET1', '.sso-login-wrapper img'],
+      [9302, 'TARGET1', undefined],
+      [9302, 'TARGET1', '.sso-login-wrapper img'],
+    ]);
+    assert.equal((await app.inject({ method: 'GET', url: `/slots/xhs-2/qr?reveal=${'a'.repeat(201)}`, headers: auth })).statusCode, 400);
+  });
+
+  it('has no QR code for a stopped Chrome (409) or a simulated account (null)', async () => {
+    const stopped = await buildTestApp({ slots: [makeSlot({ chrome: 'inactive' })] });
+    assert.equal((await stopped.app.inject({ method: 'GET', url: '/slots/xhs-2/qr', headers: auth })).statusCode, 409);
+    const sim = await buildTestApp({ sim: true });
+    assert.deepEqual((await sim.app.inject({ method: 'GET', url: '/slots/sim-xiaohongshu-a1b2/qr', headers: auth })).json(), { image: null });
+  });
+
   it('409s open when chrome is not running, and surfaces CDP errors', async () => {
     const stopped = await buildTestApp({ slots: [makeSlot({ chrome: 'inactive' })] });
     const res = await stopped.app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'https://x.com' } });

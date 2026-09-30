@@ -105,6 +105,27 @@ export class BrowserSessionsController {
     );
   }
 
+  @Post('/channels/:integrationId/web')
+  @ApiOperation({ summary: '登录平台的第二个站点', description: '在已连接账号的浏览器里打开平台网页版（如小红书网页版，私信和通知要用），返回画面地址和轮询用的 id。' })
+  startWeb(
+    @GetOrgFromRequest() org: Organization,
+    @Param('integrationId') integrationId: string
+  ) {
+    return this._browserSlotService.startWeb(org.id, integrationId);
+  }
+
+  @Get('/:id/web')
+  @ApiOperation({ summary: '轮询第二个站点的登录状态', description: 'waiting / connected，只读登录 cookie。' })
+  checkWeb(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
+    return this._browserSlotService.checkWeb(org.id, id);
+  }
+
+  @Get('/:id/qr')
+  @ApiOperation({ summary: '登录二维码', description: '登录页上的二维码图片（PNG data URL），供登录弹窗放大显示；页面上没有二维码时为 null。' })
+  loginQr(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
+    return this._browserSlotService.loginQr(org.id, id);
+  }
+
   @Get('/:id')
   @ApiOperation({ summary: '轮询登录状态', description: 'waiting / mismatch（扫了别的账号）/ connected（已创建账号）。' })
   checkLogin(
