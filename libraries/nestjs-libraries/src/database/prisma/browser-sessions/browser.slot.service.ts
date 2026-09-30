@@ -21,10 +21,40 @@ export type BrowserLoginCheck =
   | { status: 'mismatch'; expected: string; got: string }
   | { status: 'connected'; integrationId: string };
 
+const randomSuffix = (length: number) =>
+  Array.from(randomBytes(length), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+
 /** Fleet slot names are global on the host, so they are random rather than derived from the org. */
-export const newSlotName = () =>
-  's' +
-  Array.from(randomBytes(10), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+export const newSlotName = () => 's' + randomSuffix(10);
+
+/** Slots the browser worker simulates (SIM_OPENCLI_BIN): no Chrome, opencli answered by a simulator. */
+export const SIM_SLOT_PREFIX = 'sim-';
+export const simSlotName = (providerIdentifier: string) =>
+  `${SIM_SLOT_PREFIX}${providerIdentifier}-${randomSuffix(8)}`;
+
+/**
+ * Simulated accounts exist for end-to-end tests only: the backend must run with
+ * OKSOCIAL_SIM_ACCOUNTS=1 and the caller must be a superadmin.
+ */
+export const simulatedAccountsAllowed = (
+  isSuperAdmin: boolean | undefined,
+  env: Record<string, string | undefined> = process.env
+) => env.OKSOCIAL_SIM_ACCOUNTS === '1' && isSuperAdmin === true;
+
+const assertSimulatedAllowed = (superAdmin: boolean | undefined) => {
+  if (!simulatedAccountsAllowed(superAdmin)) {
+    throw new HttpException('Forbidden', 403);
+  }
+};
+
+/** What the login dialog embeds; a simulated account has no screen to show. */
+export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true };
+
+export interface StartLoginOptions {
+  // connect a simulated account instead of opening the platform's login page
+  simulated?: boolean;
+  superAdmin?: boolean;
+}
 
 @Injectable()
 export class BrowserSlotService {
@@ -52,8 +82,18 @@ export class BrowserSlotService {
   /**
    * Opens the platform's login page in the account's own browser and returns the screen path to
    * embed. A reconnect reuses the channel's existing browser so its profile and proxy stay the same.
+   * A simulated account gets a sim-* slot and no page or screen: the worker's simulator is already
+   * "logged in", so the usual checkLogin polling links the channel.
    */
-  async startLogin(orgId: string, providerIdentifier: string, integrationId?: string) {
+  async startLogin(
+    orgId: string,
+    providerIdentifier: string,
+    integrationId?: string,
+    options: StartLoginOptions = {}
+  ): Promise<BrowserLoginStart> {
+    if (options.simulated) {
+      assertSimulatedAllowed(options.superAdmin);
+    }
     const provider = this.browserProvider(providerIdentifier);
     // A new browser starts without a proxy (it is bound after connecting); a reconnect keeps its own.
     const existing = integrationId
@@ -62,15 +102,27 @@ export class BrowserSlotService {
     if (integrationId && !existing) {
       throw new HttpException('Channel not found', 404);
     }
+    // reconnecting a simulated channel is simulated too, whatever the request says
+    const simulated = !!options.simulated || !!existing?.slot.startsWith(SIM_SLOT_PREFIX);
+    if (simulated) {
+      assertSimulatedAllowed(options.superAdmin);
+    }
     // a new account counts against the plan; a reconnect does not add one
     if (!existing) {
       await this._planService.assertWithinLimit(orgId, 'channels');
     }
     const row =
       existing ??
-      (await this._repository.createPending(orgId, providerIdentifier, newSlotName()));
+      (await this._repository.createPending(
+        orgId,
+        providerIdentifier,
+        simulated ? simSlotName(providerIdentifier) : newSlotName()
+      ));
     const proxy = existing?.proxy ? AuthService.fixedDecryption(existing.proxy.url) : null;
     await this.fleet.ensureSlot(row.slot, proxy);
+    if (simulated) {
+      return { id: row.id, screenPath: null, simulated: true };
+    }
     await this.fleet.open(row.slot, provider.browserSession!.loginUrl);
     const { path } = await this.fleet.startScreen(row.slot);
     return { id: row.id, screenPath: path };

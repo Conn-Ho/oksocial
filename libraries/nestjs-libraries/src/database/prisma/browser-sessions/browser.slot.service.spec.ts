@@ -14,6 +14,8 @@ import {
   newSlotName,
   PENDING_SLOT_TTL_MS,
   safeHost,
+  simSlotName,
+  simulatedAccountsAllowed,
 } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 
@@ -217,5 +219,86 @@ describe('BrowserSlotService', () => {
     await service.setChannelProxy('org1', 'int1', null);
     expect(fleet.setProxy).toHaveBeenLastCalledWith('s1', null);
     await expect(service.setChannelProxy('org1', 'int1', 'missing')).rejects.toMatchObject({ status: 404 });
+  });
+
+  describe('simulated accounts (E2E)', () => {
+    const saved = process.env.OKSOCIAL_SIM_ACCOUNTS;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.OKSOCIAL_SIM_ACCOUNTS;
+      else process.env.OKSOCIAL_SIM_ACCOUNTS = saved;
+    });
+
+    it('are allowed only with OKSOCIAL_SIM_ACCOUNTS=1 and a superadmin', () => {
+      expect(simulatedAccountsAllowed(true, { OKSOCIAL_SIM_ACCOUNTS: '1' })).toBe(true);
+      expect(simulatedAccountsAllowed(false, { OKSOCIAL_SIM_ACCOUNTS: '1' })).toBe(false);
+      expect(simulatedAccountsAllowed(undefined, { OKSOCIAL_SIM_ACCOUNTS: '1' })).toBe(false);
+      expect(simulatedAccountsAllowed(true, {})).toBe(false);
+      expect(simulatedAccountsAllowed(true, { OKSOCIAL_SIM_ACCOUNTS: 'true' })).toBe(false);
+      expect(simSlotName('xiaohongshu')).toMatch(/^sim-xiaohongshu-[a-z0-9]{8}$/);
+    });
+
+    it('403 without the env flag, before anything is created', async () => {
+      delete process.env.OKSOCIAL_SIM_ACCOUNTS;
+      const { service, fleet, repo, plans } = setup();
+      await expect(
+        service.startLogin('org1', 'xiaohongshu', undefined, { simulated: true, superAdmin: true })
+      ).rejects.toMatchObject({ status: 403 });
+      expect(repo.createPending).not.toHaveBeenCalled();
+      expect(plans.assertWithinLimit).not.toHaveBeenCalled();
+      expect(fleet.ensureSlot).not.toHaveBeenCalled();
+    });
+
+    it('403 for a user who is not a superadmin, even with the env flag', async () => {
+      process.env.OKSOCIAL_SIM_ACCOUNTS = '1';
+      const { service, repo } = setup();
+      await expect(
+        service.startLogin('org1', 'xiaohongshu', undefined, { simulated: true, superAdmin: false })
+      ).rejects.toMatchObject({ status: 403 });
+      expect(repo.createPending).not.toHaveBeenCalled();
+    });
+
+    it('a superadmin gets a sim-<provider>-* slot and no login page or screen', async () => {
+      process.env.OKSOCIAL_SIM_ACCOUNTS = '1';
+      const { service, fleet, repo, plans } = setup();
+      const res = await service.startLogin('org1', 'xiaohongshu', undefined, { simulated: true, superAdmin: true });
+      const slot = repo.createPending.mock.calls[0][2];
+      expect(slot).toMatch(/^sim-xiaohongshu-[a-z0-9]{8}$/);
+      expect(plans.assertWithinLimit).toHaveBeenCalledWith('org1', 'channels');
+      expect(fleet.ensureSlot).toHaveBeenCalledWith(slot, null);
+      expect(fleet.open).not.toHaveBeenCalled();
+      expect(fleet.startScreen).not.toHaveBeenCalled();
+      expect(res).toEqual({ id: 'row1', screenPath: null, simulated: true });
+    });
+
+    it('reconnecting a simulated channel stays simulated and stays gated', async () => {
+      const slotRow = { id: 'row9', slot: 'sim-weibo-abc12345', status: 'ACTIVE', integrationId: 'int9', providerIdentifier: 'weibo', proxy: null };
+      process.env.OKSOCIAL_SIM_ACCOUNTS = '1';
+      const denied = setup({ slotRow });
+      await expect(denied.service.startLogin('org1', 'weibo', 'int9')).rejects.toMatchObject({ status: 403 });
+      const allowed = setup({ slotRow });
+      await expect(allowed.service.startLogin('org1', 'weibo', 'int9', { superAdmin: true })).resolves.toEqual({
+        id: 'row9', screenPath: null, simulated: true,
+      });
+      expect(allowed.fleet.open).not.toHaveBeenCalled();
+    });
+
+    it('a real login is unchanged when the flag is on', async () => {
+      process.env.OKSOCIAL_SIM_ACCOUNTS = '1';
+      const { service, repo, fleet } = setup();
+      const res = await service.startLogin('org1', 'xiaohongshu', undefined, { superAdmin: true });
+      const slot = repo.createPending.mock.calls[0][2];
+      expect(slot).toMatch(/^s[a-z0-9]{10}$/);
+      expect(fleet.open).toHaveBeenCalledWith(slot, 'https://creator.xiaohongshu.com/login');
+      expect(res).toEqual({ id: 'row1', screenPath: `/screen/${slot}/vnc.html` });
+    });
+
+    it('checkLogin links a simulated slot exactly like a real one', async () => {
+      const pending = { id: 'row1', slot: 'sim-xiaohongshu-abc12345', status: 'PENDING', providerIdentifier: 'xiaohongshu', integrationId: null };
+      const run = async () => ({ ok: true, data: [{ logged_in: true, user_id: 'u9', name: '模拟·小鹿', red_id: '123' }] });
+      const { service, integrationService, refresh } = setup({ slotRow: pending, run });
+      expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'connected', integrationId: 'int1' });
+      expect(integrationService.createOrUpdateIntegration.mock.calls[0].slice(8, 10)).toEqual([pending.slot, pending.slot]);
+      expect(refresh.startRefreshWorkflow).toHaveBeenCalled();
+    });
   });
 });

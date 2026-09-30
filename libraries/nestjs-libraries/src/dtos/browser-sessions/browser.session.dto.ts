@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -16,6 +17,12 @@ export class StartBrowserLoginDto {
   @IsOptional()
   @IsString()
   integrationId?: string;
+
+  // E2E only: connect a simulated account (worker slot sim-*). Superadmins with
+  // OKSOCIAL_SIM_ACCOUNTS=1 only; everyone else gets 403.
+  @IsOptional()
+  @IsBoolean()
+  simulated?: boolean;
 }
 
 export class CreateBrowserProxyDto {
