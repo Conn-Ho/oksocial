@@ -1,0 +1,8 @@
+[Unit]
+Description=Restart the oksocial orchestrator when no worker polls Temporal
+After=docker.service
+
+[Service]
+Type=oneshot
+User=mac
+ExecStart=/home/mac/oksocial/deploy/watchdog/orchestrator-watchdog.sh

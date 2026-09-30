@@ -133,3 +133,24 @@ export async function actionsOf(automationId) {
   const res = await ok(`/automations/actions?automationId=${automationId}`);
   return res.items || res;
 }
+
+/** The newest email Resend delivered to an address: { subject, lastEvent, links, text } (needs E2E_SSH). */
+export function latestEmail(to) {
+  const script = `
+import json, os, re, sys, urllib.request
+key = os.environ['RESEND_API_KEY']
+def get(u):
+    return json.load(urllib.request.urlopen(urllib.request.Request(u, headers={'Authorization': 'Bearer ' + key, 'User-Agent': 'oksocial-e2e'}), timeout=20))
+d = [e for e in get('https://api.resend.com/emails?limit=50')['data'] if sys.argv[1] in e['to']]
+if not d:
+    print('null'); sys.exit()
+e = get('https://api.resend.com/emails/' + d[0]['id'])
+h = e.get('html') or ''
+print(json.dumps({'subject': e.get('subject'), 'lastEvent': e.get('last_event'), 'links': re.findall(r'href="([^"]+)"', h), 'text': re.sub(r'\\s+', ' ', re.sub(r'<[^>]+>', ' ', h))[:800]}, ensure_ascii=False))
+`;
+  const b64 = Buffer.from(script).toString('base64');
+  const out = remote(
+    `set -a; . ~/oksocial/secrets.env 2>/dev/null; . ~/oksocial/deploy/.env 2>/dev/null; set +a; echo ${b64} | base64 -d > /tmp/e2e-mail.py && python3 /tmp/e2e-mail.py '${to}'`
+  );
+  return JSON.parse(out.split('\n').pop() || 'null');
+}
