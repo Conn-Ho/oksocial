@@ -11,8 +11,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Organization } from '@prisma/client';
+import { Organization, User } from '@prisma/client';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
+import { GetUserFromRequest } from '@gitroom/nestjs-libraries/user/user.from.request';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
 import {
   AuthorizationActions,
@@ -39,12 +40,14 @@ export class BrowserSessionsController {
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   startLogin(
     @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body() body: StartBrowserLoginDto
   ) {
     return this._browserSlotService.startLogin(
       org.id,
       body.provider,
-      body.integrationId
+      body.integrationId,
+      { simulated: body.simulated, superAdmin: !!user?.isSuperAdmin }
     );
   }
 

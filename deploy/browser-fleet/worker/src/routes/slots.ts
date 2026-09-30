@@ -6,6 +6,7 @@ import { presentCookieNames, readCookies } from '../cdp.ts';
 
 const DOMAIN_RE = /^[a-z0-9.-]{3,100}$/i;
 const COOKIE_NAME_RE = /^[A-Za-z0-9._-]{1,80}$/;
+import { simulatedSlotError } from '../sim.ts';
 
 type SlotParams = { Params: { slot: string } };
 
@@ -35,6 +36,8 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: App
     if (!DOMAIN_RE.test(domain) || !names.length || !names.every((n) => COOKIE_NAME_RE.test(n))) {
       throw new HttpError(400, 'BAD_REQUEST', 'domain and names are required');
     }
+    // a simulated account has no Chrome: report the cookies and let whoami (the simulator) decide
+    if (slots.isSimulated(name)) return { present: names };
     const slot = await slots.require(name);
     if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
     return { present: presentCookieNames(await readCookies(slot.cdp), domain, names) };
@@ -53,6 +56,7 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab }: App
   app.post<SlotParams>('/slots/:slot/open', async (req) => {
     const name = slotParam(req.params.slot);
     const { url } = parseOrThrow(OpenBody, req.body);
+    if (slots.isSimulated(name)) throw simulatedSlotError(name);
     const slot = await slots.require(name);
     if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
     const tab = await openTab(slot.cdp, url);

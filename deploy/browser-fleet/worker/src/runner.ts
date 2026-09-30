@@ -25,6 +25,8 @@ export interface RunLog {
 
 export interface SlotRunnerOptions {
   opencli: Opencli;
+  /** Runs for simulated slots (slots.isSimulated): same per-slot queue, no Chrome to heal, no retries. */
+  sim?: Opencli;
   slots: SlotsService;
   queue: KeyedQueue;
   clock: Clock;
@@ -47,7 +49,7 @@ export const isBridgeDown = (outcome: RunOutcome): boolean => !outcome.ok && out
 /** The bridge tab is wedged: relaunch the slot's Chrome, but do not retry (the command may have acted). Pure. */
 export const isStuckTab = (outcome: RunOutcome): boolean => !outcome.ok && outcome.code === 'FAILED' && isBridgeStuck(outcome.message);
 
-export function createSlotRunner({ opencli, slots, queue, clock, reconnectTimeoutMs = 40_000, reconnectPollMs = 2_000 }: SlotRunnerOptions) {
+export function createSlotRunner({ opencli, sim, slots, queue, clock, reconnectTimeoutMs = 40_000, reconnectPollMs = 2_000 }: SlotRunnerOptions) {
   /** Restart an active slot's Chrome and wait for its bridge profile. False when nothing was restarted. */
   const relaunch = async (name: string, profileId: string, log: RunLog): Promise<boolean> => {
     const fresh = await slots.get(name, 0);
@@ -70,6 +72,10 @@ export function createSlotRunner({ opencli, slots, queue, clock, reconnectTimeou
   return function run({ slot, profileId, args, timeoutMs, signal, log }: RunRequest): Promise<RunOutcome> {
     return queue.run(slot.name, async () => {
       const started = clock.now();
+      if (sim && slots.isSimulated(slot.name)) {
+        const simulated = await sim.run(args, { profileId, timeoutMs });
+        return { ...simulated, durationMs: clock.now() - started };
+      }
       const remaining = (): number => Math.max(MIN_RETRY_MS, started + timeoutMs - clock.now());
       const attempt = (budget: number): Promise<RunOutcome> => opencli.run(args, { profileId, timeoutMs: budget });
       let outcome = await attempt(timeoutMs);

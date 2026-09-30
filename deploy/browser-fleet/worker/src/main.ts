@@ -9,6 +9,7 @@ import { tcpProbe } from './net.ts';
 import { createOpencli } from './opencli.ts';
 import { KeyedQueue } from './queue.ts';
 import { createSlotRunner } from './runner.ts';
+import { withSimulatedSlots } from './sim.ts';
 import { createSlotsService } from './slots.ts';
 
 const OPENCLI_DAEMON_PORT = 19825;
@@ -20,9 +21,13 @@ const SHUTDOWN_GRACE_MS = 120_000;
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
   const clock = realClock;
-  const slots = createSlotsService({ ctl: createAccountCtl(config.accountCtl), clock, probe: (port) => tcpProbe(port) });
+  const realSlots = createSlotsService({ ctl: createAccountCtl(config.accountCtl), clock, probe: (port) => tcpProbe(port) });
+  // E2E simulation: sim-* slots run the simulator, everything else is untouched.
+  const simBin = config.simOpencliBin;
+  const slots = simBin ? withSimulatedSlots(realSlots) : realSlots;
+  const sim = simBin ? createOpencli(simBin, { env: { ...process.env, SIM_STATE_DIR: config.simStateDir } }) : undefined;
   const runQueue = new KeyedQueue({ maxConcurrent: RUN_CONCURRENCY, maxPendingPerKey: MAX_QUEUED_RUNS_PER_SLOT });
-  const runner = createSlotRunner({ opencli: createOpencli(config.opencliBin), slots, queue: runQueue, clock });
+  const runner = createSlotRunner({ opencli: createOpencli(config.opencliBin), sim, slots, queue: runQueue, clock });
   const media = createMediaFetcher({ dir: config.mediaDir, allowedOrigins: config.mediaAllowedOrigins, maxBytes: config.mediaMaxBytes });
 
   const app = await buildApp({
@@ -60,6 +65,7 @@ async function main(): Promise<void> {
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
 
+  if (simBin) app.log.warn({ simStateDir: config.simStateDir }, 'simulated slots enabled: sim-* slots run the simulator, not opencli');
   await app.listen({ host: config.host, port: config.port });
 }
 
