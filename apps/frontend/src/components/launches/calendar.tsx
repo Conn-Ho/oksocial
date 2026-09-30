@@ -1,5 +1,6 @@
 'use client';
 
+import { postErrorLabel } from '@gitroom/helpers/utils/post.error.label';
 import React, {
   FC,
   Fragment,
@@ -1067,7 +1068,7 @@ const CalendarItem: FC<{
         <div
           className="absolute -top-[6px] -left-[6px] z-20 w-[18px] h-[18px] rounded-full bg-red-500 flex items-center justify-center text-white text-[11px] font-bold cursor-pointer"
           data-tooltip-id="tooltip"
-          data-tooltip-content={post.error || 'An error occurred while publishing this post'}
+          data-tooltip-content={postErrorLabel(post.error)}
         >
           !
         </div>
