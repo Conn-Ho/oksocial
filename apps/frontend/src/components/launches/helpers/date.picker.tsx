@@ -43,7 +43,7 @@ export const DatePicker: FC<{
         <CalendarIcon />
       </div>
       <div className="cursor-pointer">
-        {date.format(isUSCitizen() ? 'MM/DD/YYYY hh:mm A' : 'DD/MM/YYYY HH:mm')}
+        {date.format(isUSCitizen() ? 'MM/DD/YYYY hh:mm A' : 'YYYY-MM-DD HH:mm')}
       </div>
       {open && (
         <div

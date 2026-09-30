@@ -692,7 +692,7 @@ export const CalendarColumn: FC<{
                       'This post was already published. Republishing will publish it again to'
                     )}{' '}
                     {post.integration?.name}{' '}
-                    {t('republish_at', 'at')} {getDate.format('DD/MM/YYYY HH:mm')}.
+                    {t('republish_at', 'at')} {getDate.format('YYYY-MM-DD HH:mm')}.
                     {(!!item.interval || !!post.intervalInDays) && (
                       <div className="mt-[10px]">
                         {t(

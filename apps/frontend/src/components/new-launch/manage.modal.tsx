@@ -217,7 +217,7 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
                     'This post was already published. Republishing will publish it again to'
                   )}{' '}
                   {channels} {t('republish_at', 'at')}{' '}
-                  {date.format('DD/MM/YYYY HH:mm')}.
+                  {date.format('YYYY-MM-DD HH:mm')}.
                   {isRecurring && (
                     <div className="mt-[10px]">
                       {t(

@@ -49,7 +49,7 @@ export const Chart: FC<{
         },
       },
       data: {
-        labels: list.map((row) => newDayjs(row.date).format('DD/MM/YYYY')),
+        labels: list.map((row) => newDayjs(row.date).format('MM-DD')),
         datasets: [
           {
             borderColor: '#fff',

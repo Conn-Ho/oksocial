@@ -134,7 +134,7 @@ export const PostSelector: FC<{
                     <TopTitle
                       title={
                         'Select Post Before ' +
-                        date.format('DD/MM/YYYY HH:mm:ss')
+                        date.format('YYYY-MM-DD HH:mm:ss')
                       }
                     />
                   </div>
