@@ -187,7 +187,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
         </div>
       </div>
 
-      <section className="mt-auto flex flex-col gap-[8px] border-t border-newTableBorder pt-[16px]">
+      <section className="flex flex-col gap-[8px] border-t border-newTableBorder pt-[16px]">
         {!canReply && (
           <p className="text-[13px] text-textColor/60">
             {t(

@@ -347,11 +347,10 @@ export const TopMenu: FC<{ variant?: 'rail' | 'row' }> = ({ variant = 'rail' }) 
           />
         ))}
       </div>
-      {row && <div className="flex-1 min-h-[16px]" />}
       <div
         className={
           row
-            ? 'flex flex-col gap-[2px] pt-[10px] border-t border-newBorder blurMe'
+            ? 'flex flex-col gap-[2px] mt-[10px] pt-[10px] border-t border-newBorder blurMe'
             : 'flex flex-col minCustom:gap-[20px] custom:gap-[8px] blurMe'
         }
       >

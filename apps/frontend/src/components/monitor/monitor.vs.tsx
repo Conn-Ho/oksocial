@@ -106,7 +106,7 @@ export const MonitorVs: FC<{ target: MonitorTarget; platforms: MonitorPlatform[]
               role="radio"
               aria-checked={days === d}
               onClick={() => setDays(d)}
-              className={clsx('px-[12px] rounded-[6px] text-[13px]', days === d ? 'bg-btnPrimary text-white' : 'hover:bg-newTableBorder')}
+              className={clsx('px-[12px] rounded-full text-[13px]', days === d ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}
             >
               {t('vs_days', '近 {{n}} 天', { n: d })}
             </button>

@@ -144,7 +144,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         </div>
                       </div>
                       {/* phones stack a page's panes (e.g. channels over the calendar) instead of squeezing them side by side */}
-                      <main className="flex-1 min-w-0 bg-newBgLineColor rounded-[14px] overflow-hidden flex flex-col md:flex-row gap-[1px] blurMe shadow-[0_1px_2px_rgba(10,15,30,0.05)] ring-1 ring-newBorder">
+                      <main className="flex-1 min-w-0 bg-newBgColorInner rounded-[14px] overflow-clip flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-newBorder blurMe shadow-[0_1px_2px_rgba(10,15,30,0.05)] ring-1 ring-newBorder">
                         {children}
                       </main>
                     </div>

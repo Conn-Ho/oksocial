@@ -163,8 +163,8 @@ export const MonitorComponent: FC = () => {
               onClick={() => setKind(tab.kind)}
               aria-current={kind === tab.kind}
               className={clsx(
-                'px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
-                kind === tab.kind ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
+                'px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
+                kind === tab.kind ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
               )}
             >
               {t(`monitor_tab_${tab.kind.toLowerCase()}`, tab.label)}

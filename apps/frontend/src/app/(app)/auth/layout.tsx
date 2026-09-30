@@ -32,10 +32,10 @@ export default async function AuthLayout({
             </span>
           </div>
           <div className="flex flex-col gap-[28px]">
-            <h2 className="text-[44px] xl:text-[52px] font-[800] leading-[1.18] tracking-[-0.01em]">
+            <h2 className="text-[40px] xl:text-[46px] font-[800] leading-[1.2] tracking-[-0.01em] [word-break:keep-all]">
               {t('auth_pitch_line1', '一个控制台，')}
               <br />
-              <span className="ps-[1em]">{t('auth_pitch_line2', '运营你所有的社交账号。')}</span>
+              <span className="ps-[1em]">{t('auth_pitch_line2', '运营所有社交账号。')}</span>
             </h2>
             <ul className="flex flex-wrap gap-[8px]" aria-label={t('auth_pitch_features', '主要功能')}>
               {[

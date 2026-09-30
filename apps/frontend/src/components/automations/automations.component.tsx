@@ -286,7 +286,7 @@ export const AutomationsComponent: FC = () => {
         <h2 className="sr-only">{t('automations', '自动化')}</h2>
         <nav className="flex gap-[4px] max-w-full overflow-x-auto" role="tablist">
           {TABS.map((x) => (
-            <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => setTab(x.key)} className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}>
+            <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => setTab(x.key)} className={clsx('px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}>
               {t(`automations_tab_${x.key}`, x.label)}
             </button>
           ))}

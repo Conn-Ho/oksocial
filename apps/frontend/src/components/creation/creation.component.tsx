@@ -72,7 +72,7 @@ export const CreationComponent: FC = () => {
               role="tab"
               aria-selected={tab === x.key}
               onClick={() => setTab(x.key)}
-              className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
+              className={clsx('px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', tab === x.key ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}
             >
               {t(`creation_tab_${x.key}`, x.label)}
             </button>

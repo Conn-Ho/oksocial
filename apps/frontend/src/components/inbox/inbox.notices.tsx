@@ -47,7 +47,7 @@ export const InboxNotices: FC<{ canFix: boolean; onFixed: () => void }> = ({ can
           {canFix && WEB_LOGIN.has(n.providerIdentifier) && (
             <button
               type="button"
-              className="rounded-[6px] bg-btnPrimary text-white px-[12px] h-[30px] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-btnPrimary"
+              className="rounded-full bg-btnPrimary text-white px-[14px] h-[32px] font-[600] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-btnPrimary"
               onClick={() => fix(n)}
             >
               {t('inbox_notice_fix_web', '扫码登录网页版')}

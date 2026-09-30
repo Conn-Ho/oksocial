@@ -57,7 +57,7 @@ export const PlanPicker: FC<{ catalogue: Catalogue; currentTier: string; onPaid:
             role="tab"
             aria-selected={yearly === y}
             onClick={() => setYearly(y)}
-            className={clsx('px-[14px] h-[34px] rounded-[6px] text-[14px]', yearly === y ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader')}
+            className={clsx('px-[14px] h-[34px] rounded-full text-[14px]', yearly === y ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}
           >
             {y ? '年付' : '月付'}
           </button>

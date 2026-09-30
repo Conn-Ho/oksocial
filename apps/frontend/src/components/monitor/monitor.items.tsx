@@ -61,8 +61,8 @@ export const MonitorItems: FC<{
                 setPage(1);
               }}
               className={clsx(
-                'px-[10px] h-[28px] rounded-[6px] text-[12px]',
-                sentiment === o.value ? 'bg-btnPrimary text-white' : 'bg-newTableHeader hover:bg-newTableBorder'
+                'px-[10px] h-[28px] rounded-full text-[12px]',
+                sentiment === o.value ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
               )}
             >
               {o.label}

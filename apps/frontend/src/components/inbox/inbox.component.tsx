@@ -125,8 +125,8 @@ export const InboxComponent: FC = () => {
               type="button"
               onClick={() => update({ kind: tab.kind })}
               className={clsx(
-                'px-[14px] h-[34px] rounded-[6px] text-[14px] flex items-center gap-[6px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
-                filters.kind === tab.kind ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
+                'px-[14px] h-[34px] rounded-full text-[14px] flex items-center gap-[6px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
+                filters.kind === tab.kind ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
               )}
             >
               {t(`inbox_${tab.kind.toLowerCase()}`, tab.label)}
@@ -314,7 +314,10 @@ export const InboxComponent: FC = () => {
             <MobileBack onClick={() => setSelected('')} />
           </div>
           {current ? (
-            <InboxDetail item={current} onChanged={refresh} />
+            // stays in view while the list scrolls
+            <div className="md:sticky md:top-[8px] md:max-h-[calc(100vh-16px)] md:overflow-y-auto">
+              <InboxDetail item={current} onChanged={refresh} />
+            </div>
           ) : (
             <div className="h-full flex items-center justify-center text-textColor/50 text-[14px]">
               {t('inbox_pick', '选择左侧的一条消息')}

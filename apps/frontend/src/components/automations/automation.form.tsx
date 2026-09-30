@@ -51,7 +51,7 @@ const MonitorPicker: FC<{ type: AutomationType; value: string[]; onChange: (v: s
               type="button"
               aria-pressed={value.includes(m.id)}
               onClick={() => onChange(value.includes(m.id) ? value.filter((x) => x !== m.id) : [...value, m.id])}
-              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border max-w-full', value.includes(m.id) ? 'bg-btnPrimary text-white border-transparent' : 'border-newTableBorder')}
+              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border max-w-full', value.includes(m.id) ? 'bg-boxFocused text-textItemFocused border-btnPrimary/40 font-[600]' : 'border-newTableBorder')}
             >
               <img src={`/icons/platforms/${m.platform}.png`} alt="" className="w-[14px] h-[14px] rounded-full" />
               <span className="truncate">{m.title || m.query}</span>
@@ -81,7 +81,7 @@ const Chips: FC<{ options: Record<string, string>; value: string[]; onChange: (v
         onClick={() => onChange(value.includes(k) ? value.filter((v) => v !== k) : [...value, k])}
         className={clsx(
           'px-[10px] h-[28px] rounded-full text-[13px] border',
-          value.includes(k) ? 'bg-btnPrimary text-white border-transparent' : 'border-newTableBorder hover:bg-newTableHeader'
+          value.includes(k) ? 'bg-boxFocused text-textItemFocused border-btnPrimary/40 font-[600]' : 'border-newTableBorder hover:bg-newTableHeader'
         )}
       >
         {text}
@@ -178,7 +178,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
               type="button"
               aria-pressed={channels.includes(i.id)}
               onClick={() => setChannels((c) => (c.includes(i.id) ? c.filter((x) => x !== i.id) : [...c, i.id]))}
-              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border', channels.includes(i.id) ? 'bg-btnPrimary text-white border-transparent' : 'border-newTableBorder')}
+              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border', channels.includes(i.id) ? 'bg-boxFocused text-textItemFocused border-btnPrimary/40 font-[600]' : 'border-newTableBorder')}
             >
               <img src={`/icons/platforms/${i.identifier}.png`} alt="" className="w-[14px] h-[14px] rounded-full" />
               {i.name}

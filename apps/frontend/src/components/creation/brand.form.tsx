@@ -177,7 +177,7 @@ export const BrandForm: FC<{ existing?: Brand; close: () => void; onSaved: () =>
                     setFilled(true);
                   }
                 }}
-                className={clsx('px-[12px] h-[30px] rounded-[6px] text-[13px]', source === s.key ? 'bg-btnPrimary text-white' : 'hover:bg-newTableBorder')}
+                className={clsx('px-[12px] h-[30px] rounded-full text-[13px]', source === s.key ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}
               >
                 {t(`brand_source_${s.key}`, s.label)}
               </button>

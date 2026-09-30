@@ -61,8 +61,8 @@ export const ReplyTemplatesModal: FC<{ canEdit: boolean }> = ({ canEdit }) => {
             type="button"
             onClick={() => setScope(s.scope)}
             className={clsx(
-              'px-[12px] h-[32px] rounded-[6px] text-[13px]',
-              scope === s.scope ? 'bg-btnPrimary text-white' : 'hover:bg-newTableHeader'
+              'px-[12px] h-[32px] rounded-full text-[13px]',
+              scope === s.scope ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
             )}
           >
             {s.label}

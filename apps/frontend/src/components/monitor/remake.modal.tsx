@@ -42,8 +42,8 @@ export const Segmented: FC<{
           title={o.hint}
           onClick={() => onChange(o.value)}
           className={clsx(
-            'px-[12px] h-[30px] rounded-[6px] text-[13px] transition-colors',
-            value === o.value ? 'bg-btnPrimary text-white' : 'hover:bg-newTableBorder',
+            'px-[12px] h-[30px] rounded-full text-[13px] transition-colors',
+            value === o.value ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover',
             o.disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent'
           )}
         >

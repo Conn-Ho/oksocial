@@ -54,7 +54,7 @@ export const PublicReport: FC<{ backendUrl: string; token: string }> = ({ backen
               className="bg-newTableHeader rounded-[6px] h-[40px] px-[10px]"
             />
             {state.wrong && <span className="text-red-400 text-[13px]">密码不对</span>}
-            <button type="submit" className="bg-btnPrimary text-white rounded-[6px] h-[40px]">查看</button>
+            <button type="submit" className="bg-btnPrimary text-white rounded-full h-[40px] font-[600] hover:brightness-110">查看</button>
           </form>
         )}
         {state.kind === 'ok' && (

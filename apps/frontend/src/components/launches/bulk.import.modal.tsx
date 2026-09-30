@@ -175,7 +175,7 @@ export const BulkImportModal: FC<{
         <Button secondary={true} onClick={() => downloadTemplate(integrations)}>
           {t('bulk_template', '下载模板')}
         </Button>
-        <label className="cursor-pointer rounded-[4px] bg-btnPrimary text-white px-[16px] h-[40px] flex items-center">
+        <label className="cursor-pointer rounded-full bg-btnPrimary text-white px-[20px] h-[40px] font-[600] flex items-center hover:brightness-110">
           {fileName || t('bulk_choose_file', '选择 Excel 文件')}
           <input type="file" accept=".xlsx" className="hidden" onChange={onFile} />
         </label>
