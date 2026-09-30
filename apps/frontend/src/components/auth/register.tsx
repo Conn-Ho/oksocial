@@ -38,7 +38,7 @@ type Inputs = {
   providerToken: string;
   provider: string;
 };
-export function Register() {
+export function Register({ invited = false }: { invited?: boolean }) {
   const getQuery = useSearchParams();
   const fetch = useFetch();
   const [provider] = useState(getQuery?.get('provider')?.toUpperCase());
@@ -66,13 +66,13 @@ export function Register() {
     }
   }, [provider, code]);
   if (!code && !provider) {
-    return <RegisterAfter token="" provider="LOCAL" />;
+    return <RegisterAfter token="" provider="LOCAL" invited={invited} />;
   }
   if (!show) {
     return <LoadingComponent />;
   }
   return (
-    <RegisterAfter token={code} provider={provider?.toUpperCase() || 'LOCAL'} />
+    <RegisterAfter token={code} provider={provider?.toUpperCase() || 'LOCAL'} invited={invited} />
   );
 }
 function getHelpfulReasonForRegistrationFailure(httpCode: number) {
@@ -87,9 +87,12 @@ function getHelpfulReasonForRegistrationFailure(httpCode: number) {
 export function RegisterAfter({
   token,
   provider,
+  invited = false,
 }: {
   token: string;
   provider: string;
+  // opened from a team invitation: no team name to ask for, they join that team
+  invited?: boolean;
 }) {
   const t = useT();
   const {
@@ -115,6 +118,7 @@ export function RegisterAfter({
     defaultValues: {
       providerToken: token,
       provider: provider,
+      ...(invited ? { company: t('my_team', '我的团队') } : {}),
     },
   });
   const fetchData = useFetch();
@@ -212,14 +216,20 @@ export function RegisterAfter({
                     />
                   </>
                 )}
-                <Input
-                  label="Company"
-                  translationKey="label_company"
-                  {...form.register('company')}
-                  autoComplete="off"
-                  type="text"
-                  placeholder={t('label_company', 'Company')}
-                />
+                {invited ? (
+                  <p className="text-[14px] text-white/70">
+                    {t('register_invited', '你是受邀加入团队的，注册并激活后会直接进入邀请你的团队。')}
+                  </p>
+                ) : (
+                  <Input
+                    label="Company"
+                    translationKey="label_company"
+                    {...form.register('company')}
+                    autoComplete="off"
+                    type="text"
+                    placeholder={t('label_company', 'Company')}
+                  />
+                )}
               </div>
               <div className={clsx('text-[12px]')}>
                 {t(

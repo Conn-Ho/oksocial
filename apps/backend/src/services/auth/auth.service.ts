@@ -244,6 +244,16 @@ export class AuthService {
     return this._userService.updatePassword(user.id, body.password);
   }
 
+  /** The team a new user was invited to (not the one registration created for them), if any. */
+  async invitedOrgOf(code: string) {
+    const user = AuthChecker.verifyJWT(code) as { id?: string };
+    if (!user?.id) {
+      return null;
+    }
+    const orgs = await this._organizationService.getOrgsByUserId(user.id);
+    return orgs.find((o) => o.users?.[0]?.role && o.users[0].role !== 'SUPERADMIN')?.id ?? null;
+  }
+
   async activate(code: string, tracking: string) {
     const user = AuthChecker.verifyJWT(code) as {
       id: string;

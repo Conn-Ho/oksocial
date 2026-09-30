@@ -6,8 +6,9 @@ import { isGeneralServerSide } from '@gitroom/helpers/utils/is.general.server.si
 import Link from 'next/link';
 import { getT } from '@gitroom/react/translation/get.translation.service.backend';
 import { LoginWithOidc } from '@gitroom/frontend/components/auth/login.with.oidc';
+import { cookies } from 'next/headers';
 export const metadata: Metadata = {
-  title: `${isGeneralServerSide() ? 'oksocial' : 'Gitroom'} Register`,
+  title: `注册 ${isGeneralServerSide() ? 'oksocial' : 'Gitroom'}`,
   description: '',
 };
 export default async function Auth(params: {searchParams: Promise<{provider: string}>}) {
@@ -31,5 +32,6 @@ export default async function Auth(params: {searchParams: Promise<{provider: str
       );
     }
   }
-  return <Register />;
+  // an invitation link left an org cookie: the new user joins that team
+  return <Register invited={(await cookies()).has('org')} />;
 }

@@ -269,6 +269,20 @@ export class AuthController {
       response.header('auth', activate);
     }
 
+    // the activation link is often opened in another browser than the invitation: land the new
+    // member in the team that invited them, not in the one registration created for them
+    const invited = await this._authService.invitedOrgOf(code).catch(() => null);
+    if (invited) {
+      response.cookie('showorg', invited, {
+        domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
+        ...(!process.env.NOT_SECURED ? { secure: true, httpOnly: true, sameSite: 'none' } : {}),
+        expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
+      });
+      if (process.env.NOT_SECURED) {
+        response.header('showorg', invited);
+      }
+    }
+
     response.header('onboarding', 'true');
 
     return response.status(200).json({ can: true });
