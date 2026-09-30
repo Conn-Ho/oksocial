@@ -247,7 +247,7 @@ describe('rewrite & sync and auto post', () => {
 });
 
 describe('AutomationService', () => {
-  const makeService = (repoOver: Record<string, any> = {}) => {
+  const makeService = (repoOver: Record<string, any> = {}, runnerOver?: any) => {
     const repo = {
       create: jest.fn(async (_o: string, d: any) => d),
       get: jest.fn(async () => automation()),
@@ -258,7 +258,7 @@ describe('AutomationService', () => {
       channels: jest.fn(async () => [{ id: 'ch2', providerIdentifier: 'weibo' }]),
       ...repoOver,
     };
-    const runner = { run: jest.fn(async () => ({ done: 1, held: 0, failed: 0, skipped: 0 })) };
+    const runner = runnerOver ?? { run: jest.fn(async () => ({ done: 1, held: 0, failed: 0, skipped: 0 })) };
     const inbox = { reply: jest.fn(async () => ({ ok: true })) };
     const posts = { createPost: jest.fn(async () => []) };
     const ai = {
@@ -284,6 +284,20 @@ describe('AutomationService', () => {
     runner.run.mockResolvedValueOnce({ done: 0, held: 0, failed: 0, skipped: 3, warning: '需要出口代理' });
     await service.runDue();
     expect(repo.update).toHaveBeenCalledWith('o1', 'x', { lastRunAt: expect.any(Date), lastError: '需要出口代理' });
+  });
+
+  it('立即运行 starts the run in the background (writes are paced minutes apart) and never twice at once', async () => {
+    let finish: (v: any) => void = () => undefined;
+    const runner = { run: jest.fn(() => new Promise((resolve) => (finish = resolve))) };
+    const { service, repo } = makeService({ get: jest.fn(async () => automation({ id: 'x' })) }, runner);
+    expect(await service.runNow('o1', 'x')).toEqual({ started: true });
+    expect(await service.runNow('o1', 'x')).toEqual({ started: false, running: true });
+    expect(await service.runDue()).toEqual({ due: 0, ran: 0 });
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    finish({ done: 1, held: 0, failed: 0, skipped: 0 });
+    await new Promise((r) => setImmediate(r));
+    expect(repo.update).toHaveBeenCalledWith('o1', 'x', { lastRunAt: expect.any(Date), lastError: null });
+    expect(await service.runNow('o1', 'x')).toEqual({ started: true });
   });
 
   it('runDue runs only due automations and records the run', async () => {

@@ -90,12 +90,21 @@ const Manage: FC = () => {
     mutate();
   }, []);
 
+  // the run happens in the background (writes are paced minutes apart); results show in 运行记录
   const runNow = useCallback(async (a: Automation) => {
-    toaster.show(t('automation_running', '开始运行，结果会出现在运行记录里'), 'success');
     const res = await fetch(`/automations/${a.id}/run`, { method: 'POST' });
     const body = await res.json().catch(() => ({}));
-    toaster.show(res.ok ? `完成：执行 ${body.done}，待确认 ${body.held}，失败 ${body.failed}` : body?.message || '运行失败', res.ok ? 'success' : 'warning');
-    mutate();
+    if (!res.ok) {
+      toaster.show(body?.message || t('run_failed', '运行失败'), 'warning');
+      return;
+    }
+    toaster.show(
+      body.running
+        ? t('automation_already_running', '这个自动化正在运行，结果会出现在运行记录里')
+        : t('automation_running', '已开始运行，结果会陆续出现在运行记录里'),
+      'success'
+    );
+    setTimeout(() => mutate(), 5000);
   }, []);
 
   const remove = useCallback(async (a: Automation) => {

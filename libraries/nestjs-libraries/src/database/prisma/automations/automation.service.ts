@@ -110,8 +110,12 @@ export class AutomationService {
     return this._repository.remove(orgId, id);
   }
 
+  // automations running in this process: a manual run and the schedule never act twice at once
+  private _running = new Set<string>();
+
   /** Runs one automation now (the 立即运行 button) or on schedule. */
   async runOne(automation: Automation) {
+    this._running.add(automation.id);
     try {
       const result = await this._runner.run(automation);
       await this._repository.update(automation.organizationId, automation.id, {
@@ -123,20 +127,30 @@ export class AutomationService {
       const message = (err as Error)?.message || String(err);
       await this._repository.update(automation.organizationId, automation.id, { lastRunAt: new Date(), lastError: message.slice(0, 500) });
       throw err;
+    } finally {
+      this._running.delete(automation.id);
     }
   }
 
+  /**
+   * 立即运行: starts the run and answers at once. Writes are paced 20-60 s apart, so a run can
+   * take minutes, far longer than a request should hang; results land in the run log.
+   */
   async runNow(orgId: string, id: string) {
     const automation = await this._repository.get(orgId, id);
     if (!automation) {
       throw new HttpException('Not found', 404);
     }
-    return this.runOne(automation);
+    if (this._running.has(automation.id)) {
+      return { started: false, running: true };
+    }
+    this.runOne(automation).catch((err) => console.log(`automation ${automation.id}`, (err as Error)?.message));
+    return { started: true };
   }
 
   /** Called by automationWorkflow: every enabled automation that is due, one after another. */
   async runDue(now = new Date()) {
-    const due = (await this._repository.enabledAutomations()).filter((a) => isDue(a, now));
+    const due = (await this._repository.enabledAutomations()).filter((a) => isDue(a, now) && !this._running.has(a.id));
     let ran = 0;
     for (const automation of due) {
       try {
