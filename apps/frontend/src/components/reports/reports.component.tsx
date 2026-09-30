@@ -113,12 +113,12 @@ export const ReportsComponent: FC = () => {
               {t('last_n_days', '近 {{n}} 天', { n: p })}
             </button>
           ))}
-          {canManage && (
-            <Button className="shrink-0 ms-[8px]" secondary={true} loading={refreshing} onClick={refresh}>
-              {t('refresh_now', '立即更新')}
-            </Button>
-          )}
         </div>
+        {canManage && (
+          <Button className="shrink-0" secondary={true} loading={refreshing} onClick={refresh}>
+            {t('refresh_now', '立即更新')}
+          </Button>
+        )}
       </header>
 
       {report ? <ReportView report={report} /> : <p className="text-textColor/60">{t('loading', '加载中…')}</p>}

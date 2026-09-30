@@ -310,10 +310,13 @@ export class IntegrationService {
     integration: Integration,
     err = ''
   ) {
+    const platform =
+      (this._integrationManager.getSocialIntegration(integration.providerIdentifier) as { name?: string } | undefined)
+        ?.name || integration.providerIdentifier;
     await this._notificationService.inAppNotification(
       orgId,
-      `Could not refresh your ${integration.providerIdentifier} channel ${err}`,
-      `Could not refresh your ${integration.providerIdentifier} channel ${err}. Please go back to the system and connect it again ${process.env.FRONTEND_URL}/launches`,
+      `「${integration.name}」（${platform}）已掉线`,
+      `「${integration.name}」（${platform}）已掉线，发帖、互动和数据同步都会暂停。请到「日历」左侧账号列表里重新扫码登录：${process.env.FRONTEND_URL}/launches`,
       true,
       false,
       'info'

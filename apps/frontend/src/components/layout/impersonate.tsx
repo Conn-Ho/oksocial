@@ -1073,10 +1073,10 @@ export const Impersonate = () => {
   }, [data]);
   return (
     <div>
-      <div className="bg-forth h-[52px] flex justify-center items-center border-input border rounded-[8px] text-white">
+      <div className="bg-forth min-h-[52px] flex justify-center items-center border-input border rounded-[8px] text-white">
         <div
           className={`relative flex flex-col ${
-            user?.impersonate ? 'w-full px-[20px]' : 'w-[600px]'
+            user?.impersonate ? 'w-full px-[20px]' : 'w-full max-w-[600px] px-[8px]'
           }`}
         >
           <div className="relative z-[1]">
@@ -1099,8 +1099,9 @@ export const Impersonate = () => {
                 <SwitchUser />
               </div>
             ) : (
-              <div className="flex items-center gap-[10px]">
-                <div className="flex-1">
+              // wraps on phones: the admin actions go under the search field
+              <div className="flex flex-wrap items-center gap-[10px] py-[6px]">
+                <div className="flex-1 min-w-[180px]">
                   <Input
                     autoComplete="off"
                     placeholder="Write the user details"
