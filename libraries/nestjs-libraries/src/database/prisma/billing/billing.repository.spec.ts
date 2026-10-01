@@ -196,12 +196,13 @@ describe('BillingRepository', () => {
     expect(billingOrder.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
       where: { organizationId: 'o1', productId: 'team', payType: 'native', status: 'PENDING', qr: { not: null }, createdAt: { gte: since } },
     }));
-    await r.paidUnfulfilled(since);
+    const weekAgo = new Date(since.getTime() - 7 * 86400_000);
+    await r.paidUnfulfilled(since, weekAgo);
     expect(billingOrder.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: {
         OR: [
-          { status: 'PAID', fulfilledAt: null, paidAt: { lte: since } },
-          { status: 'PENDING', provider: 'internal', createdAt: { lte: since } },
+          { status: 'PAID', fulfilledAt: null, paidAt: { lte: since, gte: weekAgo } },
+          { status: 'PENDING', provider: 'internal', createdAt: { lte: since, gte: weekAgo } },
         ],
       },
     }));

@@ -15,6 +15,7 @@ import {
 import {
   count,
   discountLabel,
+  durationDiscountLabel,
   durationLabel,
   planName,
   shortYuan,
@@ -208,7 +209,7 @@ export const PriceCalculator: FC<{
               </div>
               {quote.durationPercent < 100 && (
                 <div className="flex justify-between gap-[8px]">
-                  <dt className="text-textItemBlur">{t('calc_duration_discount', '{{duration}}优惠', { duration: durationLabel(t, quote.months) })}</dt>
+                  <dt className="text-textItemBlur">{durationDiscountLabel(t, quote.months)}</dt>
                   <dd className="text-green-600 font-[600]">{discountLabel(t, quote.durationPercent)}</dd>
                 </div>
               )}

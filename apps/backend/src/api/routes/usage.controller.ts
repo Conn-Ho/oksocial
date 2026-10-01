@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { ThrottlerRealIpGuard } from '@gitroom/nestjs-libraries/throttler/throttler.provider';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Organization, User } from '@prisma/client';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
@@ -142,6 +144,9 @@ export class UsageController {
     return this._checkinService.checkIn(org.id, user.id);
   }
 
+  // codes can be guessed: a few tries an hour per client
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 20, ttl: 3600000 } })
   @Post('/coupons/redeem')
   @RequireRoles('ADMIN')
   @ApiOperation({ summary: '使用兑换券', description: '兑换积分和/或套餐天数；每个团队每个兑换码只能用一次。' })

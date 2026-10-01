@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FC, useCallback, useState } from 'react';
+import React, { FC, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
@@ -46,7 +46,13 @@ const softTab = (selected: boolean) =>
 /** The period a selection would give this organization, from the server (renewal, upgrade...). */
 const TermNote: FC<{ sel: PlanSelection; enabled: boolean }> = ({ sel, enabled }) => {
   const t = useT();
-  const { data, error } = usePlanQuote(enabled ? sel : null);
+  // ask once the selection settles, not on every click of the account stepper
+  const [asked, setAsked] = useState(sel);
+  useEffect(() => {
+    const timer = setTimeout(() => setAsked(sel), 400);
+    return () => clearTimeout(timer);
+  }, [sel.tier, sel.accounts, sel.months]);
+  const { data, error } = usePlanQuote(enabled ? asked : null);
   if (!enabled) {
     return null;
   }
@@ -204,7 +210,7 @@ const SubscriptionTab: FC<{ usage: Usage; catalogue?: Catalogue; canBuy: boolean
         classNames: { modal: 'bg-transparent text-textColor' },
         children: (close) => <PlanPayDialog sel={sel} onPaid={refresh} close={close} />,
       }),
-    [refresh]
+    [refresh, modal, t]
   );
 
   const addAccounts = () =>

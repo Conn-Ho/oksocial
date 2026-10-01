@@ -50,8 +50,10 @@ const ORDER_TTL_MS = DAY_MS;
 const QR_TTL_MS = 2 * 60 * 60 * 1000;
 // an unpaid order of the same purchase and method is shown again for this long instead of a new one
 const REUSE_ORDER_MS = 60 * 60 * 1000;
-// paid orders whose grant did not finish are retried by the workflow after this
+// paid orders whose grant did not finish are retried by the workflow after this, for a week; older
+// ones (a Stripe plan started meanwhile, a bug) are left to ops so they cannot crowd out new ones
 const SETTLE_AFTER_MS = 5 * 60 * 1000;
+const SETTLE_FOR_MS = 7 * DAY_MS;
 // channels stored on the subscription of a plan without a channel limit
 const UNLIMITED_CHANNELS = 1000000;
 const PAYMENT_CHANNEL_UNAVAILABLE = '支付通道暂时不可用，请稍后再试；一直不行的话请联系我们。';
@@ -175,18 +177,23 @@ export const quoteTerm = (current: CurrentTerm, p: TermPurchase, now = new Date(
 };
 
 /**
- * The running paid period: the latest paid plan order, while its XorPay subscription is on. A trial
- * is not one: buying during a trial starts the paid period right away.
+ * The running paid period: the latest paid plan order, unless the organization is on another
+ * provider's subscription (or its XorPay one ended). Without a subscription row the order still
+ * counts: a second payment can be claimed before the first one's grant wrote the subscription.
+ * A trial is not a paid period: buying during a trial starts the paid period right away.
  */
 export const termFrom = ({ lastPaid, subscription }: TermInputs, now = new Date()): CurrentTerm =>
-  subscription?.provider === XORPAY_PROVIDER &&
-  !isExpired(subscription, now) &&
+  (!subscription || (subscription.provider === XORPAY_PROVIDER && !isExpired(subscription, now))) &&
   lastPaid?.tier &&
   lastPaid.periodEnd &&
   lastPaid.kind !== 'trial'
     ? {
         tier: tierOf(lastPaid.tier) as PaidTier,
-        accounts: lastPaid.totalAccounts ?? subscription.totalChannels,
+        accounts:
+          lastPaid.totalAccounts ??
+          subscription?.totalChannels ??
+          LEGACY_PLANS[lastPaid.productId]?.accounts ??
+          CATALOGUE.pricing.minAccounts,
         months: lastPaid.months ?? null,
         periodEnd: lastPaid.periodEnd,
         dailyPrice: lastPaid.dailyPrice,
@@ -764,7 +771,10 @@ export class BillingOrdersService {
 
   /** Paid orders whose grant never finished, granted again (the billing workflow). */
   async settlePaidOrders(now = new Date()) {
-    const orders = await this._repository.paidUnfulfilled(new Date(now.getTime() - SETTLE_AFTER_MS));
+    const orders = await this._repository.paidUnfulfilled(
+      new Date(now.getTime() - SETTLE_AFTER_MS),
+      new Date(now.getTime() - SETTLE_FOR_MS)
+    );
     let settled = 0;
     for (const order of orders) {
       try {

@@ -1,16 +1,15 @@
 'use client';
 
 import React, { FC, FormEvent, useCallback, useState } from 'react';
-import useSWR from 'swr';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
 import copy from 'copy-to-clipboard';
-import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { Button } from '@gitroom/react/form/button';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { count, planName } from '@gitroom/frontend/components/usage/usage.format';
+import { useJson, usePost } from '@gitroom/frontend/components/usage/usage.hooks';
 
 type Coupon = {
   id: string;
@@ -29,17 +28,7 @@ type Coupon = {
 
 const field = 'h-[38px] rounded-[8px] bg-newBgColorInner border border-newBorder px-[12px] text-[14px] outline-none focus:border-btnPrimary w-full';
 
-const useCoupons = (enabled: boolean) => {
-  const fetch = useFetch();
-  const load = useCallback(async (url: string) => {
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error('forbidden');
-    }
-    return (await res.json()) as Coupon[];
-  }, []);
-  return useSWR<Coupon[]>(enabled ? '/admin/coupons' : null, load);
-};
+const useCoupons = (enabled: boolean) => useJson<Coupon[]>(enabled ? '/admin/coupons' : null);
 
 const EMPTY = { code: '', credits: '', planDays: '', planTier: 'TEAM', planAccounts: '', maxUses: '1', expiresAt: '', note: '' };
 
@@ -47,12 +36,13 @@ const EMPTY = { code: '', credits: '', planDays: '', planTier: 'TEAM', planAccou
 export const AdminCouponsComponent: FC = () => {
   const t = useT();
   const user = useUser();
-  const fetch = useFetch();
+  const post = usePost();
   const toaster = useToaster();
-  const { data, mutate } = useCoupons(!!user?.isSuperAdmin);
+  const { data, error: loadError, mutate } = useCoupons(!!user?.isSuperAdmin);
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [disabling, setDisabling] = useState<string | null>(null);
 
   const set = (key: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [key]: e.target.value });
@@ -63,37 +53,42 @@ export const AdminCouponsComponent: FC = () => {
       setBusy(true);
       setError('');
       const num = (v: string) => (v.trim() === '' ? undefined : Number(v));
-      const res = await fetch('/admin/coupons', {
-        method: 'POST',
-        body: JSON.stringify({
-          code: form.code.trim() || undefined,
-          credits: num(form.credits),
-          planDays: num(form.planDays),
-          planTier: num(form.planDays) ? form.planTier : undefined,
-          planAccounts: num(form.planDays) ? num(form.planAccounts) : undefined,
-          maxUses: num(form.maxUses),
-          expiresAt: form.expiresAt ? dayjs(form.expiresAt).endOf('day').toISOString() : undefined,
-          note: form.note.trim() || undefined,
-        }),
+      const res = await post<Coupon>('/admin/coupons', {
+        code: form.code.trim() || undefined,
+        credits: num(form.credits),
+        planDays: num(form.planDays),
+        planTier: num(form.planDays) ? form.planTier : undefined,
+        planAccounts: num(form.planDays) ? num(form.planAccounts) : undefined,
+        maxUses: num(form.maxUses),
+        expiresAt: form.expiresAt ? dayjs(form.expiresAt).endOf('day').toISOString() : undefined,
+        note: form.note.trim() || undefined,
       });
-      const body = await res.json().catch(() => ({}));
       setBusy(false);
       if (!res.ok) {
-        setError(Array.isArray(body?.message) ? body.message.join('；') : body?.message || t('coupon_create_failed', '创建失败'));
+        setError(res.message || t('coupon_create_failed', '创建失败'));
         return;
       }
-      copy(body.code);
-      toaster.show(t('coupon_created', '兑换码 {{code}} 已创建并复制', { code: body.code }), 'success');
+      copy(res.data!.code);
+      toaster.show(t('coupon_created', '兑换码 {{code}} 已创建并复制', { code: res.data!.code }), 'success');
       setForm(EMPTY);
       mutate();
     },
-    [form]
+    [form, post, t, toaster, mutate]
   );
 
-  const disable = useCallback(async (id: string) => {
-    await fetch(`/admin/coupons/${id}/disable`, { method: 'POST' });
-    mutate();
-  }, []);
+  const disable = useCallback(
+    async (id: string) => {
+      setDisabling(id);
+      const res = await post(`/admin/coupons/${id}/disable`);
+      setDisabling(null);
+      if (!res.ok) {
+        toaster.show(res.message || t('coupon_disable_failed', '停用失败，请稍后再试'), 'warning');
+        return;
+      }
+      mutate();
+    },
+    [post, t, toaster, mutate]
+  );
 
   if (!user?.isSuperAdmin) {
     return <p className="text-[14px] text-textItemBlur">{t('admin_only', '只有平台管理员可以访问。')}</p>;
@@ -189,13 +184,25 @@ export const AdminCouponsComponent: FC = () => {
                   {c.disabledAt ? (
                     t('coupon_disabled', '已停用')
                   ) : (
-                    <button type="button" onClick={() => disable(c.id)} className="px-[12px] h-[30px] rounded-full ring-1 ring-newBorder hover:bg-boxHover">
+                    <button
+                      type="button"
+                      disabled={disabling === c.id}
+                      onClick={() => disable(c.id)}
+                      className="px-[12px] h-[30px] rounded-full ring-1 ring-newBorder hover:bg-boxHover disabled:opacity-50"
+                    >
                       {t('coupon_disable', '停用')}
                     </button>
                   )}
                 </td>
               </tr>
             ))}
+            {loadError && (
+              <tr>
+                <td colSpan={6} className="p-[20px] text-center text-red-500">
+                  {(loadError as Error).message}
+                </td>
+              </tr>
+            )}
             {data && !data.length && (
               <tr>
                 <td colSpan={6} className="p-[20px] text-center text-textItemBlur">

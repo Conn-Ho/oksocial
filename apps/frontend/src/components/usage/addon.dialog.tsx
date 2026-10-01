@@ -8,6 +8,8 @@ import { PayDialog } from '@gitroom/frontend/components/usage/pay.dialog';
 import { CurrentTerm, useAddonQuote } from '@gitroom/frontend/components/usage/usage.hooks';
 import { count, planName, yuan } from '@gitroom/frontend/components/usage/usage.format';
 
+const MAX_ADD = 9999;
+
 /** 加购账号: accounts added to the running paid period, charged until its end. */
 export const AddonDialog: FC<{ term: CurrentTerm; onPaid: () => void; close: () => void }> = ({ term, onPaid, close }) => {
   const t = useT();
@@ -68,13 +70,14 @@ export const AddonDialog: FC<{ term: CurrentTerm; onPaid: () => void; close: () 
             id="addon-count"
             inputMode="numeric"
             value={add}
-            onChange={(e) => setAdd(Math.max(1, Math.min(9999, Number.parseInt(e.target.value.replace(/\D/g, ''), 10) || 1)))}
+            onChange={(e) => setAdd(Math.max(1, Math.min(MAX_ADD, Number.parseInt(e.target.value.replace(/\D/g, ''), 10) || 1)))}
             className="w-[56px] h-[34px] rounded-[8px] bg-transparent text-center text-[16px] font-[700] tabular-nums outline-none"
           />
           <button
             type="button"
             aria-label={t('calc_more', '多一个账号')}
-            onClick={() => setAdd(add + 1)}
+            disabled={add >= MAX_ADD}
+            onClick={() => setAdd(Math.min(MAX_ADD, add + 1))}
             className="w-[40px] h-[40px] rounded-full text-[18px] hover:bg-boxHover"
           >
             +

@@ -112,7 +112,8 @@ export type ReferralSummary = {
   rows: Array<{ id: string; name: string; createdAt: string; paid: boolean; rewardCredits: number }>;
 };
 
-const useJson = <T>(key: string | null) => {
+/** One SWR resource: the parsed body, or an error carrying the API's message. */
+export const useJson = <T>(key: string | null) => {
   const fetch = useFetch();
   const load = useCallback(async (url: string) => {
     const res = await fetch(url);
@@ -146,7 +147,13 @@ export const useAddonQuote = (accounts: number | null) =>
 /** Polls a QR order every 3 seconds until it is no longer pending. */
 export const useOrderStatus = (orderNo: string | null, active: boolean) => {
   const fetch = useFetch();
-  const load = useCallback(async (url: string) => (await fetch(url)).json(), []);
+  const load = useCallback(async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return res.json();
+  }, []);
   return useSWR<{ orderNo: string; status: OrderStatus; paidAt: string | null }>(
     orderNo ? `/usage/orders/${orderNo}` : null,
     load,

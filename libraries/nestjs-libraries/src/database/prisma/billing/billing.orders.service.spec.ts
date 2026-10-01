@@ -121,11 +121,15 @@ describe('termFrom', () => {
     expect(termFrom({ lastPaid: old, subscription: { ...xorpay, totalChannels: 30 } }, T_NOW)).toMatchObject({ tier: 'TEAM', accounts: 30, months: null });
   });
 
+  it('a paid order counts before its grant wrote the subscription', () => {
+    expect(termFrom({ lastPaid, subscription: null }, T_NOW)).toMatchObject({ tier: 'TEAM', accounts: 8, periodEnd: lastPaid.periodEnd });
+    expect(termFrom({ lastPaid: { ...lastPaid, totalAccounts: null, productId: 'pro' }, subscription: null }, T_NOW)).toMatchObject({ accounts: 30 });
+  });
+
   it('nothing for other providers, ended periods, missing orders and trials', () => {
     expect(termFrom({ lastPaid, subscription: { ...xorpay, provider: 'stripe' } }, T_NOW)).toBeNull();
     expect(termFrom({ lastPaid, subscription: { ...xorpay, cancelAt: tAfter(-0.001) } }, T_NOW)).toBeNull();
     expect(termFrom({ lastPaid: null, subscription: xorpay }, T_NOW)).toBeNull();
-    expect(termFrom({ lastPaid, subscription: null }, T_NOW)).toBeNull();
     expect(termFrom({ lastPaid: { ...lastPaid, kind: 'trial' }, subscription: xorpay }, T_NOW)).toBeNull();
   });
 });
@@ -204,7 +208,9 @@ const setup = (
       return { ...o };
     }),
     markFulfilled: jest.fn(async (no: string) => Object.assign(orders.get(no)!, { fulfilledAt: new Date() })),
-    paidUnfulfilled: jest.fn(async () => [...orders.values()].filter((o) => o.status === 'PAID' && !o.fulfilledAt)),
+    paidUnfulfilled: jest.fn(async (_before: Date, since: Date) =>
+      [...orders.values()].filter((o) => o.status === 'PAID' && !o.fulfilledAt && o.paidAt >= since)
+    ),
     addOnce: jest.fn(async () => true),
     expiredSubscriptions: jest.fn(async () => [{ organizationId: 'o1' }, { organizationId: 'o2' }]),
   };
@@ -476,6 +482,18 @@ describe('BillingOrdersService', () => {
       expect(s.state.sub).toMatchObject({ identifier: b, cancelAt: new Date(dayjs(ordB.periodEnd).unix() * 1000) });
     });
 
+    it('a second payment claimed before the first one\'s grant still chains after it', async () => {
+      const s = setup();
+      const a = await newOrder(s);
+      const b = await newOrder(s, { ...team5, months: 3 });
+      // the first grant fails after the claim: no subscription row yet
+      s.subscriptions.createOrUpdateSubscriptionByOrg.mockRejectedValueOnce(new Error('db down'));
+      await expect(s.service.handleNotify(notifyFor(a, '345.00'))).rejects.toMatchObject({ status: 500 });
+      expect(s.state.sub).toBeNull();
+      await s.service.handleNotify(notifyFor(b, '983.25'));
+      expect(s.orders.get(b)!.periodStart.getTime()).toBe(s.orders.get(a)!.periodEnd.getTime());
+    });
+
     it('refuses a bad amount or a foreign XorPay order id (400), an unpaid order (400), and asks XorPay to retry when it cannot confirm (500)', async () => {
       const s = setup();
       const no = await newOrder(s);
@@ -541,6 +559,10 @@ describe('BillingOrdersService', () => {
       expect(await s.service.settlePaidOrders()).toBe(1);
       expect(await s.service.settlePaidOrders()).toBe(1);
       expect(await s.service.settlePaidOrders()).toBe(0);
+      expect(s.repo.paidUnfulfilled).toHaveBeenLastCalledWith(expect.any(Date), expect.any(Date));
+      const [before, since] = s.repo.paidUnfulfilled.mock.calls[0] as unknown as [Date, Date];
+      // retried for a week, then left to ops
+      expect(Math.round((before.getTime() - since.getTime()) / DAY)).toBe(7);
     });
 
     it('never marks paid an order whose product is unknown', async () => {

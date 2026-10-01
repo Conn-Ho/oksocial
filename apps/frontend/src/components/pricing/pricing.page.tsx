@@ -184,7 +184,7 @@ export const PricingPage: FC<{ data: PublicPricing | null }> = ({ data }) => {
           <Link href="/auth/login" className="text-[14px] font-[600] px-[14px] h-[36px] rounded-full hover:bg-boxHover flex items-center">
             {t('sign_in', '登录')}
           </Link>
-          <Link href={SIGN_UP} className={clsx(ctaPrimary, '!h-[36px] !px-[16px]')}>
+          <Link href={SIGN_UP} className={clsx(ctaSecondary, '!h-[36px] !px-[16px]')}>
             {t('pricing_sign_up', '免费注册')}
           </Link>
         </nav>

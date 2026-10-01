@@ -22,8 +22,12 @@ export class AnalyticsController {
     @Query('date') date: string
   ) {
     // `date` is a number of days back: no further than the plan keeps data
-    const days = await this._planService.clampDays(org.id, Number(date));
-    return this._integrationService.checkAnalytics(org, integration, String(days));
+    const days = Number(date);
+    return this._integrationService.checkAnalytics(
+      org,
+      integration,
+      Number.isFinite(days) ? String(await this._planService.clampDays(org.id, days)) : date
+    );
   }
 
   @Get('/post/:postId')
@@ -32,6 +36,11 @@ export class AnalyticsController {
     @Param('postId') postId: string,
     @Query('date') date: string
   ) {
-    return this._postsService.checkPostAnalytics(org.id, postId, await this._planService.clampDays(org.id, +date));
+    const days = +date;
+    return this._postsService.checkPostAnalytics(
+      org.id,
+      postId,
+      Number.isFinite(days) ? await this._planService.clampDays(org.id, days) : days
+    );
   }
 }

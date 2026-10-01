@@ -162,6 +162,8 @@ export function RegisterAfter({
       .then(async (response) => {
         setLoading(false);
         if (response.status === 200) {
+          // the referral was recorded with the new team
+          document.cookie = `${REF_COOKIE}=; path=/; max-age=0`;
           fireEvents('register');
           return track(TrackEnum.CompleteRegistration).then(() => {
             if (response.headers.get('activate') === 'true') {

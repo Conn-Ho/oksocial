@@ -29,9 +29,12 @@ export const PayDialog: FC<{
   doneText: string;
   onPaid: () => void;
   close: () => void;
-}> = ({ title, priceYuan, payTypes, body, details, giftCredits, doneText, onPaid, close }) => {
+}> = (props) => {
   const t = useT();
   const post = usePost();
+  // what the dialog was opened with: the page refreshes its quotes once the payment arrives
+  const [{ title, priceYuan, payTypes, body, details, giftCredits, doneText }] = useState(props);
+  const { onPaid, close } = props;
   const [payType, setPayType] = useState<PayType>(payTypes[0]);
   const [order, setOrder] = useState<CreatedOrder | null>(null);
   const [error, setError] = useState('');
@@ -73,7 +76,7 @@ export const PayDialog: FC<{
       return;
     }
     setOrder(res.data);
-  }, [body, payType]);
+  }, [body, payType, post, t]);
 
   if (!payTypes.length) {
     return (

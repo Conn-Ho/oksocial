@@ -340,14 +340,14 @@ export class BillingRepository {
 
   /**
    * Paid orders whose grant never finished (the process died between payment and grant), and free
-   * ones (trials, coupons) that were created but never applied.
+   * ones (trials, coupons) that were created but never applied, from `since` to `before`.
    */
-  paidUnfulfilled(before: Date) {
+  paidUnfulfilled(before: Date, since: Date) {
     return this._orders.model.billingOrder.findMany({
       where: {
         OR: [
-          { status: 'PAID', fulfilledAt: null, paidAt: { lte: before } },
-          { status: 'PENDING', provider: INTERNAL_PROVIDER, createdAt: { lte: before } },
+          { status: 'PAID', fulfilledAt: null, paidAt: { lte: before, gte: since } },
+          { status: 'PENDING', provider: INTERNAL_PROVIDER, createdAt: { lte: before, gte: since } },
         ],
       },
       orderBy: { createdAt: 'asc' },

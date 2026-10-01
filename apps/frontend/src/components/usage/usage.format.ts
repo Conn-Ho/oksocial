@@ -25,6 +25,16 @@ export const durationLabel = (t: Translate, months: number) =>
     ? t('billing_by_year', '按年')
     : t('billing_n_months', '{{n}} 个月', { n: months });
 
+/** 季付优惠 / 半年付优惠 / 年付优惠 */
+export const durationDiscountLabel = (t: Translate, months: number) =>
+  months === 3
+    ? t('billing_quarterly_discount', '季付优惠')
+    : months === 6
+    ? t('billing_half_year_discount', '半年付优惠')
+    : months === 12
+    ? t('billing_yearly_discount', '年付优惠')
+    : t('billing_n_months_discount', '{{n}} 个月优惠', { n: months });
+
 /** '8折' / '95折'; '' when there is no discount. */
 export const discountLabel = (t: Translate, percent: number) => {
   const n = discountNumber(percent);
