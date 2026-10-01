@@ -1,5 +1,7 @@
 import { Integration } from '@prisma/client';
 import {
+  AudienceShare,
+  ChannelAudienceData,
   CreationCapabilities,
   InboxCapabilities,
   InboxFetched,
@@ -39,6 +41,103 @@ const PROFILE_LINK = /xiaohongshu\.com\/user\/profile\/([0-9a-z]+)/i;
 /** Note ids are ObjectId-like: the first 8 hex digits are the creation time in unix seconds. */
 const noteTime = (id: string) => dateFrom(parseInt(id.slice(0, 8), 16));
 const noteUrl = (id: string) => `https://www.xiaohongshu.com/explore/${id}`;
+// 帖文报告 and the account totals: the creator center's whole note list (it scrolls, up to 4 minutes).
+const ALL_NOTES = ['xhs2', 'notes', '--limit', '500', '--timeout', '240'];
+// 受众分析: viewer portraits of this many of the latest notes, each at least a day old (its audience
+// has formed by then); every one is a creator-center page read.
+const AUDIENCE_NOTES = 3;
+const AUDIENCE_MIN_AGE_MS = 86_400_000;
+const PORTRAIT_GROUPS: Record<string, 'gender' | 'age' | 'regions' | 'interests'> = {
+  性别: 'gender',
+  年龄: 'age',
+  城市: 'regions',
+  兴趣: 'interests',
+};
+// at most this many cities / interests are kept
+const PORTRAIT_TOP = 10;
+const HOUR_POINT = /\d{2}-\d{2} (\d{2}):00=([\d.]+)/g;
+
+/** One row of the creator center's note list as a post with its numbers. */
+const fromNote = (r: Record<string, string>): MonitorPost => ({
+  externalId: r.id,
+  url: noteUrl(r.id),
+  title: r.title || undefined,
+  views: countFrom(r.views),
+  likes: countFrom(r.likes),
+  comments: countFrom(r.comments),
+  collects: countFrom(r.collects),
+  shares: countFrom(r.shares),
+  publishedAt: noteTime(r.id),
+  platformTime: r.time || undefined,
+});
+
+type NoteDetailRow = { section: string; metric: string; value: string; extra?: string };
+
+/**
+ * 受众分析 from `creator-note-detail` readings of several notes: the 观众画像 groups (性别, 年龄,
+ * 城市, 兴趣) averaged with each note's weight (its views) over the notes that show the group, and
+ * the hourly 观看数 trend summed into 24 hour-of-day shares. null when no note shows any of it. Pure.
+ */
+export const audienceFromNoteDetails = (
+  readings: Array<{ rows: NoteDetailRow[]; weight: number }>
+): ChannelAudienceData | null => {
+  const groups: Partial<Record<'gender' | 'age' | 'regions' | 'interests', Map<string, number>>> = {};
+  const weights: Partial<Record<keyof typeof groups, number>> = {};
+  const hours = Array.from({ length: 24 }, () => 0);
+  let sample = 0;
+  for (const { rows, weight } of readings) {
+    const shares: Partial<Record<keyof typeof groups, Map<string, number>>> = {};
+    for (const row of rows || []) {
+      const [group, label] = String(row.metric || '').split('/');
+      const key = row.section === '观众画像' ? PORTRAIT_GROUPS[group] : undefined;
+      const share = Number(String(row.value ?? '').replace(/[^\d.]/g, ''));
+      if (key && label && Number.isFinite(share)) {
+        (shares[key] ??= new Map()).set(label, share);
+      }
+      if (row.section === '趋势数据' && row.metric === '按小时/观看数') {
+        for (const [, hour, views] of String(row.extra || '').matchAll(HOUR_POINT)) {
+          hours[Number(hour)] += Number(views) || 0;
+        }
+      }
+    }
+    if (!Object.keys(shares).length) {
+      continue;
+    }
+    sample += 1;
+    for (const [key, labels] of Object.entries(shares) as Array<[keyof typeof groups, Map<string, number>]>) {
+      // some readings give fractions (0.42) instead of percent
+      const scale = [...labels.values()].reduce((a, b) => a + b, 0) <= 1.5 ? 100 : 1;
+      const total = (groups[key] ??= new Map());
+      for (const [label, share] of labels) {
+        total.set(label, (total.get(label) ?? 0) + share * scale * weight);
+      }
+      weights[key] = (weights[key] ?? 0) + weight;
+    }
+  }
+  const viewed = hours.reduce((a, b) => a + b, 0);
+  if (!sample && !viewed) {
+    return null;
+  }
+  const list = (key: keyof typeof groups, top?: number): AudienceShare[] | undefined => {
+    const total = groups[key];
+    if (!total || !weights[key]) {
+      return undefined;
+    }
+    return [...total.entries()]
+      .map(([label, sum]) => ({ label, share: Math.round((sum / weights[key]!) * 10) / 10 }))
+      .sort((a, b) => b.share - a.share)
+      .slice(0, top);
+  };
+  return {
+    basis: 'VIEWERS',
+    sample,
+    gender: list('gender'),
+    age: list('age'),
+    regions: list('regions', PORTRAIT_TOP),
+    interests: list('interests', PORTRAIT_TOP),
+    activeHours: viewed ? hours.map((h) => Math.round((h / viewed) * 1000) / 10) : undefined,
+  };
+};
 // The creator center and www.xiaohongshu.com keep separate logins; DMs, comment notifications, notes
 // and search are on www.
 export const XHS_WEB_LOGIN_NEEDED =
@@ -109,24 +208,45 @@ export class XiaohongshuWebProvider
     return metricRowsToAnalytics((rows || []).filter((r) => r.section === '基础数据'));
   }
 
+  // Every note of the creator center with its numbers (帖文报告).
+  postStats = async (slot: string) =>
+    (await this.list<Record<string, string>>(slot, ALL_NOTES, 300_000)).filter((r) => r.id).map(fromNote);
+
   // Followers from the creator profile; views and engagement summed over every note.
-  stats = async (slot: string) => {
+  stats = async (slot: string, _integration?: unknown, posts?: MonitorPost[]) => {
     const me = firstRow<Record<string, any>>(await this.exec(slot, ['xhs2', 'me'], 90_000));
-    const notes = await this.exec<Array<Record<string, any>>>(
-      slot,
-      ['xhs2', 'notes', '--limit', '500', '--timeout', '240'],
-      300_000
-    );
+    const notes = posts ?? (await this.postStats(slot));
     return {
       followers: Number(me?.followers) || 0,
       following: Number(me?.following) || 0,
-      posts: Array.isArray(notes) ? notes.length : 0,
+      posts: notes.length,
       views: sumOf(notes, 'views'),
       likes: sumOf(notes, 'likes'),
       comments: sumOf(notes, 'comments'),
       shares: sumOf(notes, 'shares'),
       collects: sumOf(notes, 'collects'),
     };
+  };
+
+  // 受众分析: opencli reads no follower portrait of the creator center yet, but each note's
+  // 观众画像 (gender, age, city, interests) and its hourly views: the latest notes are combined.
+  audience = async (slot: string, _integration?: unknown, posts?: MonitorPost[]) => {
+    const now = Date.now();
+    const notes = (posts ?? (await this.postStats(slot)))
+      .filter((p) => p.publishedAt && now - p.publishedAt.getTime() >= AUDIENCE_MIN_AGE_MS)
+      .sort((a, b) => b.publishedAt!.getTime() - a.publishedAt!.getTime())
+      .slice(0, AUDIENCE_NOTES);
+    const readings: Array<{ rows: NoteDetailRow[]; weight: number }> = [];
+    for (const [i, note] of notes.entries()) {
+      if (i) {
+        await this.pause(READ_GAP_MS);
+      }
+      readings.push({
+        rows: await this.list<NoteDetailRow>(slot, ['xiaohongshu', 'creator-note-detail', note.externalId], 180_000),
+        weight: Math.max(1, note.views ?? 0),
+      });
+    }
+    return readings.length ? audienceFromNoteDetails(readings) : null;
   };
 
   // Comments and @mentions from 消息 (no ids: hashed), DMs through the xhsdm plugin (web IM).
@@ -289,27 +409,16 @@ export class XiaohongshuWebProvider
           })),
       };
     },
-    ownPosts: async (slot, _integration, limit) => {
-      const rows = await this.list<Record<string, string>>(
-        slot,
-        ['xhs2', 'notes', '--limit', String(limit), '--timeout', '60'],
-        120_000
-      );
-      return rows
+    ownPosts: async (slot, _integration, limit) =>
+      (
+        await this.list<Record<string, string>>(
+          slot,
+          ['xhs2', 'notes', '--limit', String(limit), '--timeout', '60'],
+          120_000
+        )
+      )
         .filter((r) => r.id)
-        .map((r) => ({
-          externalId: r.id,
-          url: noteUrl(r.id),
-          title: r.title || undefined,
-          views: countFrom(r.views),
-          likes: countFrom(r.likes),
-          comments: countFrom(r.comments),
-          collects: countFrom(r.collects),
-          shares: countFrom(r.shares),
-          publishedAt: noteTime(r.id),
-          platformTime: r.time || undefined,
-        }));
-    },
+        .map(fromNote),
     search: async (slot, keyword, limit) => {
       const rows = await this.list<{ title: string; author: string; likes: string; url: string }>(
         slot,

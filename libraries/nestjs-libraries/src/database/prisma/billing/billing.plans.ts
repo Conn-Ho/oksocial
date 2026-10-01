@@ -136,6 +136,7 @@ const DEFAULT_CREDIT_PRICES = {
   ai_reply: { credits: 5, label: 'AI 回复草稿' },
   ai_rewrite: { credits: 10, label: 'AI 改写帖文' },
   ai_image: { credits: 60, label: 'AI 生成图片' },
+  ai_weekly_report: { credits: 30, label: 'AI 周报' },
   browser_write: { credits: 15, label: '浏览器账号写操作（发帖、评论、回复）' },
   monitor_sync: { credits: 2, label: '监控同步（竞品、帖文、关键词）' },
 };

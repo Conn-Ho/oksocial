@@ -22,6 +22,8 @@ import {
 import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 const MEDIA_MAX = 4;
+// own tweets whose numbers the analytics keep
+const STATS_TWEETS = 20;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 const statusId = (url = '') => url.match(/status\/(\d+)/)?.[1] || '';
 const TWEET_LINK = /(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/i;
@@ -113,6 +115,10 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
       { metric: '转发', value: tweet?.retweets },
     ]);
   }
+
+  // The latest own tweets (retweets left out) with their numbers (帖文报告).
+  postStats = async (slot: string, integration: { internalId: string }) =>
+    (await this.timeline(slot, { handle: integration.internalId, url: '' }, STATS_TWEETS)).posts;
 
   stats = async (slot: string, integration: { internalId: string }) => {
     const me = firstRow<Record<string, any>>(

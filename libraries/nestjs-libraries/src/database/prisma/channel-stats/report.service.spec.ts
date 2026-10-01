@@ -1,29 +1,35 @@
 process.env.JWT_SECRET = 'test';
 jest.mock('@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository', () => ({ ChannelStatsRepository: class {} }));
-jest.mock('@gitroom/nestjs-libraries/database/prisma/notifications/notification.service', () => ({ NotificationService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service', () => ({ ChannelStatsService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/plan.service', () => ({ PlanService: class {} }));
 
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
-import { renderWeeklyEmail, ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+
+const d = (iso: string) => new Date(iso);
+const CHANNELS = [
+  { id: 'a', name: 'WenWen', providerIdentifier: 'xiaohongshu' },
+  { id: 'b', name: '微博号', providerIdentifier: 'weibo' },
+];
 
 const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email']) => {
   const repo = {
-    orgChannels: jest.fn(async () => [{ id: 'a', name: 'WenWen', providerIdentifier: 'xiaohongshu' }]),
+    orgChannels: jest.fn(async () => CHANNELS),
     snapshotsSince: jest.fn(async () => []),
+    postMetrics: jest.fn(async (): Promise<any[]> => []),
+    publishedPosts: jest.fn(async (): Promise<any[]> => []),
     createShare: jest.fn(async (_o: string, token: string, days: number, hash: string | null, expiresAt: Date | null) => ({ id: 's1', token, days, expiresAt, createdAt: new Date() })),
     listShares: jest.fn(async () => [{ id: 's1', token: 'tok', days: 7, expiresAt: null, createdAt: new Date(), passwordHash: 'h' }]),
     getShare: jest.fn(async () => share ?? null),
-    orgsWithSnapshots: jest.fn(async () => [{ organizationId: 'o1' }, { organizationId: 'o2' }]),
-    reviewersOf: jest.fn(async (org: string) => (org === 'o1' ? [{ user: { email: 'a@x.cn' }, organization: { name: '团队<1>' } }, { user: { email: 'b@x.cn' }, organization: { name: '团队<1>' } }] : [])),
   };
-  const notifications = { sendEmail: jest.fn(async () => undefined) };
   const plans = {
     hasFeature: jest.fn(async (_o: string, f: string) => features.includes(f)),
     assertFeature: jest.fn(async (_o: string, f: string) => {
       if (!features.includes(f)) throw Object.assign(new Error('upgrade'), { status: 402 });
     }),
   };
-  return { service: new ReportService(repo as any, notifications as any, plans as any), repo, notifications, plans };
+  const channelStats = { hasPostStats: jest.fn((identifier: string) => identifier === 'xiaohongshu') };
+  return { service: new ReportService(repo as any, plans as any, channelStats as any), repo, plans };
 };
 
 describe('ReportService', () => {
@@ -61,46 +67,72 @@ describe('ReportService', () => {
     expect(ok.report.channels[0].name).toBe('WenWen');
   });
 
-  it('weekly reports go to reviewers of opted-in orgs only', async () => {
-    const { service, notifications } = setup();
-    expect(await service.sendWeeklyReports()).toEqual({ organizations: 2, sent: 2 });
-    expect(notifications.sendEmail).toHaveBeenCalledWith('a@x.cn', '【oksocial 周报】团队<1>', expect.stringContaining('团队&lt;1&gt;'));
-  });
-
-  it('plans without the features cannot share or turn the weekly email on, and get no email', async () => {
-    const { service, repo, notifications } = setup(undefined, []);
+  it('plans without the feature cannot share', async () => {
+    const { service, repo } = setup(undefined, []);
     await expect(service.createShare('o1', 7)).rejects.toMatchObject({ status: 402 });
     expect(repo.createShare).not.toHaveBeenCalled();
-    await expect(service.setWeeklyEmail('o1', true)).rejects.toMatchObject({ status: 402 });
-    expect(await service.sendWeeklyReports()).toEqual({ organizations: 2, sent: 0 });
-    expect(notifications.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('turning the weekly email off is always allowed', async () => {
+  it('turning the weekly email off is always allowed, on needs the feature', async () => {
     const { service } = setup(undefined, []);
     (service as any)._repository.setWeeklyEmail = jest.fn(async () => ({ weeklyReportEmail: false }));
     await expect(service.setWeeklyEmail('o1', false)).resolves.toEqual({ weeklyReportEmail: false });
+    await expect(service.setWeeklyEmail('o1', true)).rejects.toMatchObject({ status: 402 });
   });
 });
 
-describe('renderWeeklyEmail', () => {
-  it('escapes names and shows KPI changes', () => {
-    const html = renderWeeklyEmail('<b>org</b>', {
-      days: 7,
-      generatedAt: new Date(),
-      totals: {
-        followers: { value: 300, previous: 250, change: 20 },
-        posts: { value: null, previous: null, change: null },
-        views: { value: 1000, previous: 1250, change: -20 },
-        engagement: { value: 5, previous: 5, change: 0 },
-      },
-      channels: [{ id: 'a', name: '<script>', providerIdentifier: 'x', followers: 300, netFollowers: 50, posts: 1, views: 1000, engagement: 5, engagementRate: 0.5, lastCapturedAt: null }],
-    }, 'https://oksocial.online/reports');
-    expect(html).toContain('&lt;b&gt;org&lt;/b&gt;');
-    expect(html).toContain('&lt;script&gt;');
-    expect(html).not.toContain('<script>');
-    expect(html).toContain('(+20%)');
-    expect(html).toContain('(-20%)');
-    expect(html).toContain('发布数</b> —');
+describe('平台报告', () => {
+  it('a custom range loads the previous period too, and the posts of the range', async () => {
+    const { service, repo } = setup();
+    const report = await service.overview('o1', { from: '2026-09-01', to: '2026-09-30', granularity: 'week' });
+    expect(report.granularity).toBe('week');
+    expect(report.from).toEqual(d('2026-08-31T16:00:00Z'));
+    expect(repo.snapshotsSince).toHaveBeenCalledWith('o1', d('2026-08-01T16:00:00Z'), d('2026-09-30T16:00:00Z'));
+    expect(repo.postMetrics).toHaveBeenCalledWith('o1', d('2026-08-31T16:00:00Z'), d('2026-09-30T16:00:00Z'), ['a', 'b']);
+  });
+
+  it('filters by account or platform, and refuses a range it cannot report on', async () => {
+    const { service, repo } = setup();
+    expect((await service.overview('o1', { days: 30, platform: 'weibo' })).channels.map((c) => c.id)).toEqual(['b']);
+    expect((await service.overview('o1', { integrationId: 'a' })).channels.map((c) => c.id)).toEqual(['a']);
+    expect(repo.postMetrics).toHaveBeenLastCalledWith('o1', expect.any(Date), expect.any(Date), ['a']);
+    await expect(service.overview('o1', { from: '2026-09-30', to: '2026-09-01' })).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('帖文报告', () => {
+  const metric = (externalId: string, views: number | null, likes: number) => ({
+    integrationId: 'a', externalId, url: `https://x/${externalId}`, title: externalId, publishedAt: d('2026-09-10T00:00:00Z'),
+    firstSeenAt: d('2026-09-10T00:00:00Z'), capturedAt: d('2026-09-30T00:00:00Z'), views, likes, comments: 0, shares: 0, collects: 0,
+  });
+
+  it('sorted, paged rows with the channels and whether their platform shows per-post numbers', async () => {
+    const { service, repo } = setup();
+    repo.postMetrics.mockResolvedValue([metric('n1', 100, 5), metric('n2', 900, 1), metric('n3', null, 50)]);
+    repo.publishedPosts.mockResolvedValue([
+      { id: 'p1', integrationId: 'b', content: '微博', releaseId: 'w1', releaseURL: null, publishDate: d('2026-09-12T00:00:00Z') },
+    ]);
+    const res = await service.posts('o1', { from: '2026-09-01', to: '2026-09-30', sort: 'views', order: 'desc', page: 1, pageSize: 2 });
+    expect(res.total).toBe(4);
+    expect(res.rows.map((r) => r.externalId)).toEqual(['n2', 'n1']);
+    expect(res.channels).toEqual([
+      expect.objectContaining({ id: 'a', perPost: true }),
+      expect.objectContaining({ id: 'b', perPost: false }),
+    ]);
+    const page2 = await service.posts('o1', { from: '2026-09-01', to: '2026-09-30', sort: 'views', order: 'desc', page: 2, pageSize: 2 });
+    expect(page2.rows.map((r) => [r.externalId, r.status])).toEqual([['n3', 'ok'], ['w1', 'unsupported']]);
+  });
+
+  it('defaults to the last 30 days, newest first', async () => {
+    const { service, repo } = setup();
+    repo.postMetrics.mockResolvedValueOnce([
+      { ...metric('old', 1, 1), publishedAt: d('2026-09-01T00:00:00Z') },
+      { ...metric('new', 1, 1), publishedAt: d('2026-09-20T00:00:00Z') },
+    ]);
+    const res = await service.posts('o1', {});
+    const [, from, to] = repo.postMetrics.mock.calls[0] as unknown as [string, Date, Date];
+    expect(Math.round((to.getTime() - from.getTime()) / 86400_000)).toBe(30);
+    expect(res.rows.map((r) => r.externalId)).toEqual(['new', 'old']);
+    expect(res.pageSize).toBe(20);
   });
 });

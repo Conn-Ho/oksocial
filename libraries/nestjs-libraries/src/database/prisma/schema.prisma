@@ -57,6 +57,9 @@ model Organization {
   replyTemplates      ReplyTemplate[]
   channelSnapshots    ChannelSnapshot[]
   reportShares        ReportShare[]
+  postMetricSnapshots PostMetricSnapshot[]
+  channelAudiences    ChannelAudience[]
+  weeklyReports       WeeklyReport[]
   automations         Automation[]
   leads               Lead[]
   monitorTargets      MonitorTarget[]
@@ -416,6 +419,8 @@ model Integration {
   browserSlot           BrowserSlot?
   inboxItems            InboxItem[]
   channelSnapshots      ChannelSnapshot[]
+  postMetricSnapshots   PostMetricSnapshot[]
+  audience              ChannelAudience?
   monitorTargets        MonitorTarget[]
 
   @@unique([organizationId, internalId])
@@ -2042,6 +2047,81 @@ model ReportShare {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
+}
+
+// The latest numbers of each post of our channels, as the platform's own post list shows them
+// (帖文报告, Top 帖文, 竞品 VS). Every channel collection refreshes the row in place.
+model PostMetricSnapshot {
+  id             String       @id @default(uuid())
+  organizationId String
+  integrationId  String
+  // platform id of the post; equals Post.releaseId when it was published through oksocial
+  externalId     String
+  url            String?
+  title          String?
+  publishedAt    DateTime?
+  // null = the platform does not show that number
+  views          Int?
+  likes          Int?
+  comments       Int?
+  shares         Int?
+  collects       Int?
+  firstSeenAt    DateTime     @default(now())
+  capturedAt     DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  integration    Integration  @relation(fields: [integrationId], references: [id])
+
+  @@unique([integrationId, externalId])
+  @@index([organizationId, publishedAt])
+}
+
+enum AudienceBasis {
+  // the account's followers
+  FOLLOWERS
+  // the viewers of its recent posts
+  VIEWERS
+}
+
+// 受众分析: who follows or watches a channel, as far as its platform shows it. One row per channel,
+// refreshed at most daily by the channel collection.
+model ChannelAudience {
+  id             String        @id @default(uuid())
+  organizationId String
+  integrationId  String        @unique
+  basis          AudienceBasis
+  // [{ label, share }], share in percent
+  gender         Json?
+  age            Json?
+  regions        Json?
+  interests      Json?
+  // 24 shares in percent, index = hour of the day (China time)
+  activeHours    Json?
+  // how many posts the numbers come from (VIEWERS)
+  sample         Int?
+  capturedAt     DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  integration    Integration   @relation(fields: [integrationId], references: [id])
+
+  @@index([organizationId])
+}
+
+// AI 周报: one AI-written report per organization and Monday-Sunday week (China time).
+model WeeklyReport {
+  id             String       @id @default(uuid())
+  organizationId String
+  // Monday 00:00 China time
+  weekStart      DateTime
+  // the numbers it was written from (KPIs, accounts, top posts, operations)
+  data           Json
+  // the AI sections: summary, metrics, actions, highlights, risks, nextSteps
+  content        Json
+  // who pressed 立即生成 (null: written for the Monday email)
+  userId         String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, weekStart])
 }
 
 // oksocial automations: named objects (monitor -> trigger -> action) run by automationWorkflow.

@@ -49,7 +49,7 @@ export class MonitorItemsQueryDto {
 
 export class MonitorVsQueryDto {
   @IsString() @IsNotEmpty() integrationId: string;
-  @IsOptional() @Type(() => Number) @IsIn([7, 30]) days?: 7 | 30;
+  @IsOptional() @Type(() => Number) @IsIn([7, 30, 90]) days?: 7 | 30 | 90;
 }
 
 export class RemakeRewriteDto {

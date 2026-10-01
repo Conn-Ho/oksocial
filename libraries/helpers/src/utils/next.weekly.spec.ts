@@ -1,4 +1,4 @@
-import { msUntilNextMondayNine } from '@gitroom/helpers/utils/next.weekly';
+import { lastFullWeek, msUntilNextMondayNine } from '@gitroom/helpers/utils/next.weekly';
 
 const at = (iso: string) => new Date(iso).getTime();
 const H = 60 * 60 * 1000;
@@ -17,5 +17,21 @@ describe('msUntilNextMondayNine', () => {
   });
   it('handles a Sunday late in China time that is still Sunday in UTC', () => {
     expect(msUntilNextMondayNine(at('2026-10-04T23:30:00+08:00'))).toBe(9.5 * H);
+  });
+});
+
+describe('lastFullWeek', () => {
+  const week = (iso: string) => {
+    const w = lastFullWeek(at(iso));
+    return [w.start.toISOString(), w.end.toISOString()];
+  };
+  it('is the Monday-Sunday week before the current one, China time', () => {
+    // Monday 2026-10-05 09:00 -> 09-28 (Mon) 00:00 .. 10-05 (Mon) 00:00
+    expect(week('2026-10-05T09:00:00+08:00')).toEqual([new Date('2026-09-28T00:00:00+08:00').toISOString(), new Date('2026-10-05T00:00:00+08:00').toISOString()]);
+    expect(week('2026-10-01T12:00:00+08:00')[0]).toBe(new Date('2026-09-21T00:00:00+08:00').toISOString());
+  });
+  it('a Sunday night is still inside the current week', () => {
+    expect(week('2026-10-04T23:30:00+08:00')[0]).toBe(new Date('2026-09-21T00:00:00+08:00').toISOString());
+    expect(week('2026-10-05T00:00:00+08:00')[0]).toBe(new Date('2026-09-28T00:00:00+08:00').toISOString());
   });
 });

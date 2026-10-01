@@ -27,6 +27,8 @@ const PROFILE_LINK = /douyin\.com\/user\/([A-Za-z0-9_-]+)/i;
 const SEC_UID = /^MS4wLjABAAAA[A-Za-z0-9_-]{8,}$/;
 // The creator center lists this many of our own works; a monitored video must be among them.
 const OWN_WORKS_SCANNED = 50;
+// works whose numbers the analytics keep (and sum into the account totals)
+const STATS_WORKS = 50;
 const videoUrl = (id: string) => `https://www.douyin.com/video/${id}`;
 /** aweme ids carry their creation time (unix seconds) in the high 32 bits. */
 const awemeTime = (id: string) => {
@@ -109,23 +111,23 @@ export class DouyinWebProvider
     );
   }
 
+  // The latest 50 works with their creator-center numbers (帖文报告).
+  postStats = async (slot: string) =>
+    (await this.list<DouyinWork>(slot, ['douyin', 'videos', '--limit', String(STATS_WORKS)], 180_000)).map(fromWork);
+
   // Profile totals; plays and engagement summed over the latest 50 videos.
-  stats = async (slot: string) => {
+  stats = async (slot: string, _integration?: unknown, posts?: MonitorPost[]) => {
     const me = firstRow<Record<string, any>>(await this.exec(slot, ['douyin', 'profile'], 90_000));
-    const videos = await this.exec<Array<Record<string, any>>>(
-      slot,
-      ['douyin', 'videos', '--limit', '50'],
-      180_000
-    );
+    const videos = posts ?? (await this.postStats(slot));
     return {
       followers: Number(me?.follower_count) || 0,
       following: Number(me?.following_count) || 0,
       posts: Number(me?.aweme_count) || 0,
-      views: sumOf(videos, 'play_count'),
-      likes: sumOf(videos, 'digg_count'),
-      comments: sumOf(videos, 'comment_count'),
-      shares: sumOf(videos, 'share_count'),
-      collects: sumOf(videos, 'collect_count'),
+      views: sumOf(videos, 'views'),
+      likes: sumOf(videos, 'likes'),
+      comments: sumOf(videos, 'comments'),
+      shares: sumOf(videos, 'shares'),
+      collects: sumOf(videos, 'collects'),
     };
   };
 
