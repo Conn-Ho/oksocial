@@ -25,6 +25,13 @@ export class OAuthRepository {
     }));
   }
 
+  async hasFirstPartyGrant(organizationId: string) {
+    return !!(await this._oauthAuth.model.oAuthAuthorization.findFirst({
+      where: { organizationId, revokedAt: null, accessToken: { not: null }, oauthApp: { firstParty: true, deletedAt: null } },
+      select: { id: true },
+    }));
+  }
+
   getFirstPartyApp(name: string) {
     return this._oauthApp.model.oAuthApp.findFirst({
       where: { name, firstParty: true, deletedAt: null },

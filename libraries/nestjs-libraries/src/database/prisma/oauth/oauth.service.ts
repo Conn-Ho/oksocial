@@ -26,14 +26,22 @@ type EmailClaimsApp = Pick<OAuthApp, 'clientId' | 'dynamic' | 'redirectUris'> & 
 // Sign-in methods whose address is not an email (wallets, Farcaster ids)
 const NO_EMAIL_PROVIDERS = ['WALLET', 'FARCASTER'];
 
+// Sign-ins whose provider checked the address (GitHub and generic OIDC may hand over an unchecked one)
+const VERIFYING_PROVIDERS = ['GOOGLE', 'APPLE'];
+
 /**
- * Whether the user's email is verified: an activated account (email sign-ups activate from the
- * mail; Google, GitHub, Apple and OIDC give a checked address) whose address is a real email. Pure.
+ * Whether the user's email address is verified: an email sign-up activated from the activation mail
+ * (only sent when an email provider is configured; without one sign-ups activate unchecked), or a
+ * sign-in whose provider checks addresses. Wallets and Farcaster ids are never emails. Pure (reads
+ * EMAIL_PROVIDER).
  */
-export const isVerifiedEmail = (user: { email: string; activated: boolean; providerName?: string | null }) =>
-  !!user.activated &&
-  !NO_EMAIL_PROVIDERS.includes(String(user.providerName || '')) &&
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email || '');
+export const isVerifiedEmail = (user: { email: string; activated: boolean; providerName?: string | null }) => {
+  const provider = String(user.providerName || '');
+  if (!user.activated || NO_EMAIL_PROVIDERS.includes(provider) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email || '')) {
+    return false;
+  }
+  return provider === 'LOCAL' ? ['resend', 'nodemailer'].includes(process.env.EMAIL_PROVIDER || '') : VERIFYING_PROVIDERS.includes(provider);
+};
 
 /** An uploaded picture's address as another site loads it. Pure. */
 const absolutePicture = (path?: string | null) =>
@@ -496,15 +504,29 @@ export class OAuthService {
     }
 
     const { user, organization } = authorizationRecord;
+    const firstParty = !!authorizationRecord.oauthApp?.firstParty;
+    // a first-party grant lasts only while the member is in the team
+    if (firstParty && !(await this._oauthRepository.isMember(user.id, organization.id))) {
+      throw new HttpException(
+        { error: 'invalid_token', error_description: 'The member is no longer in this team' },
+        HttpStatus.UNAUTHORIZED
+      );
+    }
     return {
       sub: user.id,
       email: user.email,
-      email_verified: isVerifiedEmail(user),
+      // first-party apps create accounts from it: only an address that was really checked
+      email_verified: firstParty ? isVerifiedEmail(user) : user.activated,
       name: [user.name, user.lastName].filter(Boolean).join(' ') || user.email,
       picture: absolutePicture(user.picture?.path),
       // the team chosen on the consent page
       org: { id: organization.id, name: organization.name },
     };
+  }
+
+  /** Whether a member of the organization signed a first-party app (okchat) in and holds its token. */
+  hasFirstPartyGrant(organizationId: string) {
+    return this._oauthRepository.hasFirstPartyGrant(organizationId);
   }
 
   /** Whether the user is an active member of the organization (the consent page's team choice). */

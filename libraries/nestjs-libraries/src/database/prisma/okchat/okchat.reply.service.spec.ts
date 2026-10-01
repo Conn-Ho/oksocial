@@ -102,6 +102,9 @@ describe('OkchatReplyService.accept (POST /public/okchat/replies)', () => {
     const { service, repo } = setup({ existing: reply('r1') });
     expect(await service.accept(body())).toEqual({ accepted: true });
     expect(repo.createReply).not.toHaveBeenCalled();
+    // even once the account was unbound since: it was accepted before
+    const later = setup({ existing: reply('r1'), binding: null });
+    expect(await later.service.accept(body())).toEqual({ accepted: true });
     // a race on the unique id: the other request queued it
     const race = setup();
     race.repo.createReply.mockResolvedValueOnce(null);
@@ -130,6 +133,13 @@ describe('OkchatReplyService.accept (POST /public/okchat/replies)', () => {
     expect(await service.accept(body({ text: '😀'.repeat(500), okchatMessageId: 'm2' }))).toEqual({ accepted: true });
     const unknown = setup({ thread: null });
     expect(await refusal(unknown.service.accept(body()))).toEqual({ status: 422, body: { error: '找不到这个会话：它不属于这个小红书账号' } });
+    expect(await refusal(service.accept(body({ text: '你好\u0000' })))).toEqual({ status: 422, body: { error: expect.stringContaining('控制字符') } });
+  });
+
+  it('422 with the platform\'s reason for a text it cannot take', async () => {
+    const { service, dm } = setup();
+    (dm as any).checkText = (text: string) => (text.startsWith('-') ? '回复不能以「-」开头' : null);
+    expect(await refusal(service.accept(body({ text: '-_- 好的' })))).toEqual({ status: 422, body: { error: '回复不能以「-」开头' } });
   });
 });
 
@@ -211,7 +221,7 @@ describe('OkchatReplyService.sendDue', () => {
     const { service, repo, outbox } = setup({ queued: [reply('r1'), reply('r2')], send });
     await service.sendDue(NOW);
     const [, , { error }] = repo.finishReply.mock.calls[0] as any[];
-    expect(error).toBe('小红书网页版响应超时，这条没有发出，请稍后重发');
+    expect(error).toBe('小红书网页版响应超时，不确定这条是否已发出，请先在小红书 App 里确认，再决定要不要重发');
     expect(error).not.toMatch(/TIMEOUT|opencli|\d{3,}/);
     expect(repo.failQueued).not.toHaveBeenCalled();
     expect(outbox.queueDelivery).toHaveBeenCalledWith('i1', { okchatMessageId: 'm-r1', conversationId: 'cv1', ok: false, error });

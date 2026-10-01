@@ -352,6 +352,8 @@ describe('inbox fetch mapping', () => {
       ['xhsdm', 'send', 'c1', '您好，在的'],
     ]);
     expect(p.dm.maxLength).toBe(500);
+    expect(p.dm.checkText!('--help')).toMatch(/不能以「-」开头/);
+    expect(p.dm.checkText!('好的 -_-')).toBeNull();
     expect(p.dm.loggedOutReason).toMatch(/小红书网页版已退出登录/);
   });
 

@@ -3,7 +3,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', 
 import {
   OUTBOX_GIVE_UP_MS,
   OkchatOutboxService,
-  RECEIPT_ATTEMPTS,
+  STATUS_ATTEMPTS,
   outboxBackoffMs,
   retryableStatus,
 } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service';
@@ -26,9 +26,11 @@ const row = (over: Partial<any> = {}) => ({
   ...over,
 });
 
-const setup = (rows: any[], answers: Array<{ status: number; body?: any }>, bindings: Record<string, any> = {}) => {
+const setup = (rows: any[], answers: Array<{ status: number; body?: any }>, bindings: Record<string, any> = {}, waiting: string[] = []) => {
   const repo = {
-    pendingOutbox: jest.fn(async () => rows),
+    dueOutbox: jest.fn(async () => rows),
+    waitingBefore: jest.fn(async (r: any) => waiting.includes(r.id)),
+    deferOutbox: jest.fn(async () => ({ count: 0 })),
     bindingOf: jest.fn(async (id: string) =>
       id in bindings ? bindings[id] : { integrationId: id, bindingId: `b_${id}`, hookUrl: `https://hook.test/${id}`, active: true }
     ),
@@ -72,14 +74,17 @@ describe('OkchatOutboxService.pushDue', () => {
     });
     // r2 (same thread) was not sent before r1; r3 (another account) was
     expect(client.hook.mock.calls.map((c) => c[0])).toEqual(['https://hook.test/i1', 'https://hook.test/i2']);
+    // the rest of the account waits as long, so it does not fill the next rounds
+    expect(repo.deferOutbox).toHaveBeenCalledWith('i1', new Date(NOW.getTime() + 5 * MIN));
   });
 
-  it('a batch not due yet holds its thread and is not sent', async () => {
-    const waiting = row({ nextAttemptAt: new Date(NOW.getTime() + MIN) });
-    const behind = row({ id: 'r2', batchId: 'c1:2-2' });
-    const { service, client } = setup([waiting, behind], []);
-    expect(await service.pushDue(NOW)).toEqual({ delivered: 0, retrying: 0, failed: 0 });
-    expect(client.hook).not.toHaveBeenCalled();
+  it('a batch read after an earlier one of its conversation that waits for a retry is not sent first', async () => {
+    const later = row({ id: 'r2', batchId: 'c1:2-2' });
+    const receipt = row({ id: 'r3', kind: 'DELIVERY', threadId: null, batchId: 'delivery:m1', payload: { type: 'delivery' } });
+    const { service, client } = setup([later, receipt], [{ status: 200 }], {}, ['r2', 'r3']);
+    expect(await service.pushDue(NOW)).toEqual({ delivered: 1, retrying: 0, failed: 0 });
+    // receipts have no conversation order to keep
+    expect(client.hook.mock.calls.map((c) => c[1])).toEqual([{ type: 'delivery' }]);
   });
 
   it('network failures and timeouts are retried like 5xx', async () => {
@@ -110,11 +115,19 @@ describe('OkchatOutboxService.pushDue', () => {
     expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastError: 'okchat 拒收了这次推送（HTTP 400）：这个渠道已停用' });
   });
 
-  it('a receipt is tried a few times only, and does not mark the account', async () => {
-    const receipt = row({ kind: 'DELIVERY', threadId: null, batchId: 'delivery:m1', attempts: RECEIPT_ATTEMPTS - 1, payload: { type: 'delivery' } });
+  it('a delivery receipt is retried for 24 hours like DMs, without marking the account', async () => {
+    const receipt = row({ kind: 'DELIVERY', threadId: null, batchId: 'delivery:m1', attempts: 10, payload: { type: 'delivery' } });
     const { service, repo } = setup([receipt], [{ status: 503 }]);
+    expect(await service.pushDue(NOW)).toEqual({ delivered: 0, retrying: 1, failed: 0 });
+    expect(repo.updateOutbox).toHaveBeenCalledWith('r1', expect.objectContaining({ attempts: 11, nextAttemptAt: new Date(NOW.getTime() + 60 * MIN) }));
+    expect(repo.updateBinding).not.toHaveBeenCalled();
+  });
+
+  it('an account status is tried a few times only (a late "logged out" would mislead)', async () => {
+    const status = row({ kind: 'STATUS', threadId: null, batchId: 'status:1', attempts: STATUS_ATTEMPTS - 1, payload: { type: 'status' } });
+    const { service, repo } = setup([status], [{ status: 503 }]);
     expect(await service.pushDue(NOW)).toEqual({ delivered: 0, retrying: 0, failed: 1 });
-    expect(repo.updateOutbox).toHaveBeenCalledWith('r1', expect.objectContaining({ attempts: RECEIPT_ATTEMPTS, nextAttemptAt: null }));
+    expect(repo.updateOutbox).toHaveBeenCalledWith('r1', expect.objectContaining({ attempts: STATUS_ATTEMPTS, nextAttemptAt: null }));
     expect(repo.updateBinding).not.toHaveBeenCalled();
   });
 

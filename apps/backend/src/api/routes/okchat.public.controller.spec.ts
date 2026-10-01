@@ -33,8 +33,10 @@ const repo = {
 const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm: { maxLength: 500 } }) };
 const oauth = {
   getOrgByOAuthToken: jest.fn(async (token: string) =>
-    token === 'pos_good' ? { organization: { id: 'o1', name: '团队一' }, oauthApp: { firstParty: true } } : null
+    token === 'pos_good' ? { organization: { id: 'o1', name: '团队一' }, oauthApp: { firstParty: true }, user: { id: 'u1' } } : null
   ),
+  hasFirstPartyGrant: jest.fn(async () => true),
+  isMember: jest.fn(async () => true),
 };
 const link = new OkchatLinkService(repo as any, {} as any, manager as any, {} as any, oauth as any);
 const replies = new OkchatReplyService(repo as any, manager as any, {} as any);

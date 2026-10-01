@@ -173,6 +173,8 @@ export type DmCapabilities = {
   readGapMs: [number, number];
   // what the agent is told while the site the DMs live on is logged out
   loggedOutReason: string;
+  // why a reply cannot go out as written (shown to the agent), or null
+  checkText?(text: string): string | null;
   conversations(token: string): Promise<DmConversation[]>;
   // the last `limit` messages of a conversation, oldest first
   read(token: string, conversationId: string, limit: number): Promise<DmMessage[]>;

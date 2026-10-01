@@ -26,8 +26,9 @@ export const shanghaiDayStart = (now: Date) =>
 
 /** A failed send as the agent reads it on the message in okchat (Chinese, no codes). Pure. */
 export const sendFailureText = (platform: string, message: string) => {
+  // a send that timed out may have been typed already: no blind resend
   if (/TIMEOUT|timed out|超时/i.test(message)) {
-    return `${platform}网页版响应超时，这条没有发出，请稍后重发`;
+    return `${platform}网页版响应超时，不确定这条是否已发出，请先在${platform} App 里确认，再决定要不要重发`;
   }
   if (/did not appear|没有出现/i.test(message)) {
     return `消息没有出现在${platform}会话里，可能被平台拦下了，请在${platform} App 里确认后再重发`;
@@ -39,6 +40,8 @@ export const sendFailureText = (platform: string, message: string) => {
 };
 
 const refuse = (status: 409 | 422, error: string) => new HttpException({ error }, status);
+// control characters cannot be typed into a chat (and must not reach the browser command)
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
 type Account = { integrationId: string; slot: string; platform: string; dm: DmCapabilities };
 
@@ -62,14 +65,16 @@ export class OkchatReplyService {
 
   /** POST /public/okchat/replies: 202 once queued (also for a repeat), 409 / 422 refused at once. */
   async accept(body: OkchatReplyDto) {
+    // the same okchat message again: accepted before, never sent twice
+    const earlier = await this._repository.reply(body.okchatMessageId);
+    if (earlier && earlier.integrationId === body.integrationId) {
+      return { accepted: true };
+    }
     const binding = await this._repository.bindingById(body.bindingId);
     const channel = binding?.integration;
     const platform = channel ? this.platformOf(channel.providerIdentifier) : null;
     if (!binding?.active || binding.integrationId !== body.integrationId || !channel || channel.deletedAt || channel.disabled || !platform?.dm) {
       throw refuse(409, '这个账号已在 oksocial 删除、停用或解除关联，私信发不出了');
-    }
-    if (await this._repository.reply(body.okchatMessageId)) {
-      return { accepted: true };
     }
     const text = String(body.text ?? '').trim();
     if (!text) {
@@ -77,6 +82,13 @@ export class OkchatReplyService {
     }
     if ([...text].length > platform.dm.maxLength) {
       throw refuse(422, `回复太长了：${platform.name}私信一条最多 ${platform.dm.maxLength} 字`);
+    }
+    if (CONTROL.test(text)) {
+      throw refuse(422, '回复里有无法发送的控制字符，请删掉后再发');
+    }
+    const unsendable = platform.dm.checkText?.(text);
+    if (unsendable) {
+      throw refuse(422, unsendable);
     }
     if (channel.refreshNeeded || channel.inBetweenSteps) {
       throw refuse(409, `${platform.name}账号已退出登录，请在 oksocial 重新扫码`);

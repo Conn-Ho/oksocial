@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { Command, Option, Positional } from 'nestjs-command';
 import { Injectable } from '@nestjs/common';
 import { OAuthService } from '@gitroom/nestjs-libraries/database/prisma/oauth/oauth.service';
@@ -32,6 +32,8 @@ export class OkchatOAuthApp {
     const { clientId, clientSecret, created } = await this._oauthService.registerFirstPartyApp('okchat', redirectUris, rotate);
     if (clientSecret) {
       writeFileSync(secretFile, `${clientSecret}\n`, { mode: 0o600 });
+      // an existing file keeps its mode on write
+      chmodSync(secretFile, 0o600);
     }
     console.log(`client_id=${clientId}`);
     console.log(

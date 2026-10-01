@@ -4,11 +4,13 @@ import { OkchatRepository } from '@gitroom/nestjs-libraries/database/prisma/okch
 import { OkchatClient } from '@gitroom/nestjs-libraries/okchat/okchat.client';
 
 // okchat contract §7: 408 / 429 / 5xx / network errors are retried 1, 5, 15, then every 60
-// minutes, for at most 24 hours; any other 4xx is not retried and is shown on the account.
+// minutes, for at most 24 hours (DMs and delivery receipts); any other 4xx is not retried and is
+// shown on the account.
 const BACKOFF_MINUTES = [1, 5, 15, 60];
 export const OUTBOX_GIVE_UP_MS = 24 * 60 * 60_000;
-// receipts and account statuses are tried this many times in all
-export const RECEIPT_ATTEMPTS = 4;
+// an account status (optional, okchat checks itself every 15 minutes) is tried this many times:
+// a late "logged out" would only mislead
+export const STATUS_ATTEMPTS = 4;
 // rows looked at per round
 const PUSH_BATCH = 200;
 
@@ -52,18 +54,19 @@ export class OkchatOutboxService {
   /**
    * One round: every due row is posted to its account's hook. A conversation's batches go out in
    * the order they were read, so a batch waiting for a retry holds the later ones; an account whose
-   * hook did not answer sends nothing else this round.
+   * hook did not answer sends nothing else until its retry.
    */
   async pushDue(now = new Date()): Promise<PushResult> {
     const result: PushResult = { delivered: 0, retrying: 0, failed: 0 };
     const held = new Set<string>();
     const down = new Set<string>();
-    for (const row of await this._repository.pendingOutbox(PUSH_BATCH)) {
+    for (const row of await this._repository.dueOutbox(now, PUSH_BATCH)) {
       const lane = row.threadId ? `${row.integrationId}:${row.threadId}` : row.id;
       if (held.has(lane) || down.has(row.integrationId)) {
         continue;
       }
-      if (row.nextAttemptAt && row.nextAttemptAt > now) {
+      // a conversation's batches go out in order: an earlier one still waiting for a retry holds it
+      if (row.threadId && (await this._repository.waitingBefore(row))) {
         held.add(lane);
         continue;
       }
@@ -98,9 +101,12 @@ export class OkchatOutboxService {
     }
     if (retryableStatus(res.status)) {
       const next = new Date(now.getTime() + outboxBackoffMs(attempts));
-      const spent = messages ? next.getTime() - row.createdAt.getTime() > OUTBOX_GIVE_UP_MS : attempts >= RECEIPT_ATTEMPTS;
+      const spent = row.kind === 'STATUS' ? attempts >= STATUS_ATTEMPTS : next.getTime() - row.createdAt.getTime() > OUTBOX_GIVE_UP_MS;
       if (!spent) {
         await this._repository.updateOutbox(row.id, { attempts, nextAttemptAt: next, lastError: this.unavailable(res.status) });
+        // okchat does not take this account's pushes now: the rest of them wait as long (their
+        // order is kept, and they do not fill the next rounds)
+        await this._repository.deferOutbox(row.integrationId, next);
         return 'retrying';
       }
       const error = messages

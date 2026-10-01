@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { okchatSecret, okchatUrl } from '@gitroom/nestjs-libraries/okchat/okchat.config';
+import { okchatHookAllowed, okchatSecret, okchatUrl } from '@gitroom/nestjs-libraries/okchat/okchat.config';
 import { signedHeaders } from '@gitroom/nestjs-libraries/okchat/okchat.signature';
 
 // status 0: okchat could not be reached (network error, timeout, unusable address)
@@ -23,7 +23,8 @@ export class OkchatClient {
 
   /** POST to a binding's hook (/hook/platform/:bindingId): messages, receipts, account status. */
   hook(hookUrl: string, body: unknown) {
-    return this.post(hookUrl, body);
+    // only okchat's own addresses get signed pushes
+    return okchatHookAllowed(hookUrl) ? this.post(hookUrl, body) : Promise.resolve({ status: 0, body: null });
   }
 
   private async post(url: string, payload: unknown): Promise<OkchatResponse> {
@@ -36,6 +37,8 @@ export class OkchatClient {
         method: 'POST',
         headers: signedHeaders(okchatSecret(), body),
         body,
+        // a redirect is an answer, not somewhere to send the signed body again
+        redirect: 'manual',
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       const text = await res.text().catch(() => '');

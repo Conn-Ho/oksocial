@@ -22,7 +22,7 @@ const channel = (id: string, over: any = {}) => ({
   ...over,
 });
 
-const setup = (opts: { link?: any; accounts?: any[]; answer?: any; binding?: any; bindings?: any[]; org?: any; members?: string[]; token?: any } = {}) => {
+const setup = (opts: { link?: any; accounts?: any[]; answer?: any; binding?: any; bindings?: any[]; org?: any; members?: string[]; token?: any; granted?: boolean; member?: boolean } = {}) => {
   const repo = {
     link: jest.fn(async () => ('link' in opts ? opts.link : { organizationId: 'o1', okchatAccountId: 'w_1', status: 'LINKED' })),
     organization: jest.fn(async () => ('org' in opts ? opts.org : { id: 'o1', name: '团队一' })),
@@ -38,7 +38,11 @@ const setup = (opts: { link?: any; accounts?: any[]; answer?: any; binding?: any
   const client = { accounts: jest.fn(async () => opts.answer ?? { status: 200, body: { bindings: [] } }) };
   const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm: {} }) };
   const outbox = { queueStatus: jest.fn(async () => ({})) };
-  const oauth = { getOrgByOAuthToken: jest.fn(async () => opts.token ?? null) };
+  const oauth = {
+    getOrgByOAuthToken: jest.fn(async () => opts.token ?? null),
+    hasFirstPartyGrant: jest.fn(async () => opts.granted ?? true),
+    isMember: jest.fn(async () => opts.member ?? true),
+  };
   const service = new OkchatLinkService(repo as any, client as any, manager as any, outbox as any, oauth as any);
   return { service, repo, client, outbox, oauth };
 };
@@ -70,7 +74,7 @@ describe('account list', () => {
 
 describe('accounts sync', () => {
   it('posts the full list and keeps the bindings okchat returns', async () => {
-    const bindings = [{ integrationId: 'i1', bindingId: 'b_1', hookUrl: 'https://hook.test/b_1' }];
+    const bindings = [{ integrationId: 'i1', bindingId: 'b_1', hookUrl: 'https://okchat.test/hook/platform/b_1' }];
     const { service, repo, client } = setup({ answer: { status: 200, body: { bindings } } });
     expect(await service.syncAccounts('o1')).toBe('synced');
     expect(client.accounts).toHaveBeenCalledWith({ oksocialOrgId: 'o1', accounts: await service.accountsOf('o1') });
@@ -140,12 +144,21 @@ describe('login drops', () => {
   });
 });
 
+describe('web login again', () => {
+  it('clears the logged-out state and reads the account next round', async () => {
+    const { service, repo } = setup();
+    (repo as any).updateBinding = jest.fn(async () => ({ count: 1 }));
+    await service.webLoggedIn('i1');
+    expect((repo as any).updateBinding).toHaveBeenCalledWith('i1', { loggedOutReason: null, lastReadAt: null });
+  });
+});
+
 describe('POST /public/okchat/link', () => {
   const body = {
     oksocialOrgId: 'o1',
     okchatAccountId: 'w_abc',
     users: [{ oksocialUserId: 'u1', okchatUserId: 456 }, { oksocialUserId: 'stranger', okchatUserId: 7 }],
-    bindings: [{ integrationId: 'i1', bindingId: 'b_1', hookUrl: 'https://hook.test/b_1' }],
+    bindings: [{ integrationId: 'i1', bindingId: 'b_1', hookUrl: 'https://okchat.test/hook/platform/b_1' }],
   };
 
   it('stores the space, the members it names and the bindings; idempotent per organization', async () => {
@@ -161,6 +174,21 @@ describe('POST /public/okchat/link', () => {
   it('404 for an organization that does not exist', async () => {
     const { service } = setup({ org: null });
     await expect(service.link(body)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('403 unless a member of the team signed in to okchat with oksocial', async () => {
+    const { service, repo, oauth } = setup({ granted: false });
+    await expect(service.link(body)).rejects.toMatchObject({ status: 403 });
+    expect(oauth.hasFirstPartyGrant).toHaveBeenCalledWith('o1');
+    expect(repo.saveLink).not.toHaveBeenCalled();
+  });
+
+  it('400 for a hook that is not okchat\'s own address for the binding', async () => {
+    for (const hookUrl of ['https://evil.test/hook/platform/b_1', 'https://okchat.test/hook/platform/b_2', 'http://okchat.test/hook/platform/b_1', 'https://u:p@okchat.test/hook/platform/b_1']) {
+      const { service, repo } = setup();
+      await expect(service.link({ ...body, bindings: [{ integrationId: 'i1', bindingId: 'b_1', hookUrl }] })).rejects.toMatchObject({ status: 400 });
+      expect(repo.saveLink).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -193,7 +221,7 @@ describe('POST /public/okchat/verify', () => {
 
 describe('GET /public/okchat/accounts (oksocial access token)', () => {
   it('returns the token\'s team and its accounts', async () => {
-    const { service } = setup({ token: { organization: { id: 'o1', name: '团队一' }, oauthApp: { firstParty: true } } });
+    const { service } = setup({ token: { organization: { id: 'o1', name: '团队一' }, oauthApp: { firstParty: true }, user: { id: 'u1' } } });
     expect(await service.accountsForToken('Bearer pos_x')).toEqual({ org: { id: 'o1', name: '团队一' }, accounts: await service.accountsOf('o1') });
   });
 
@@ -201,9 +229,12 @@ describe('GET /public/okchat/accounts (oksocial access token)', () => {
     const none = setup();
     await expect(none.service.accountsForToken(undefined)).rejects.toMatchObject({ status: 401 });
     await expect(none.service.accountsForToken('Bearer pos_unknown')).rejects.toMatchObject({ status: 401 });
-    const other = setup({ token: { organization: { id: 'o1', name: 'x' }, oauthApp: { firstParty: false } } });
+    const other = setup({ token: { organization: { id: 'o1', name: 'x' }, oauthApp: { firstParty: false }, user: { id: 'u1' } } });
     await expect(other.service.accountsForToken('Bearer pos_x')).rejects.toBeInstanceOf(HttpException);
     await expect(other.service.accountsForToken('Bearer pos_x')).rejects.toMatchObject({ status: 403 });
+    // a member who left the team: the grant no longer reads it
+    const left = setup({ token: { organization: { id: 'o1', name: 'x' }, oauthApp: { firstParty: true }, user: { id: 'u1' } }, member: false });
+    await expect(left.service.accountsForToken('Bearer pos_x')).rejects.toMatchObject({ status: 401 });
   });
 });
 

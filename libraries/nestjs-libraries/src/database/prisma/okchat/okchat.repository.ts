@@ -96,7 +96,13 @@ export class OkchatRepository {
    */
   async replaceBindings(orgId: string, bindings: OkchatBindingInput[], providers: string[]) {
     const owned = await this._integrations.model.integration.findMany({
-      where: { organizationId: orgId, id: { in: bindings.map((b) => b.integrationId) }, providerIdentifier: { in: providers } },
+      where: {
+        organizationId: orgId,
+        id: { in: bindings.map((b) => b.integrationId) },
+        providerIdentifier: { in: providers },
+        deletedAt: null,
+        disabled: false,
+      },
       select: { id: true },
     });
     const ours = new Set(owned.map((o) => o.id));
@@ -212,12 +218,34 @@ export class OkchatRepository {
     }
   }
 
-  /** Everything still to be delivered, oldest first (also rows not due yet: they hold their lane). */
-  pendingOutbox(limit: number) {
+  /** What is due now, oldest first. */
+  dueOutbox(now: Date, limit: number) {
     return this._outbox.model.okchatOutbox.findMany({
-      where: { deliveredAt: null, nextAttemptAt: { not: null } },
+      where: { deliveredAt: null, nextAttemptAt: { lte: now } },
       orderBy: { createdAt: 'asc' },
       take: limit,
+    });
+  }
+
+  /** Whether an earlier batch of the same conversation is still to be delivered (it goes first). */
+  async waitingBefore(row: { integrationId: string; threadId: string | null; createdAt: Date }) {
+    return !!(await this._outbox.model.okchatOutbox.findFirst({
+      where: {
+        integrationId: row.integrationId,
+        threadId: row.threadId,
+        deliveredAt: null,
+        nextAttemptAt: { not: null },
+        createdAt: { lt: row.createdAt },
+      },
+      select: { id: true },
+    }));
+  }
+
+  /** Everything still owed for the account waits at least until `until`. */
+  deferOutbox(integrationId: string, until: Date) {
+    return this._outbox.model.okchatOutbox.updateMany({
+      where: { integrationId, deliveredAt: null, nextAttemptAt: { not: null, lt: until } },
+      data: { nextAttemptAt: until },
     });
   }
 

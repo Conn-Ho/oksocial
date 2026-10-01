@@ -4,7 +4,7 @@ import { OkchatOutboxService } from '@gitroom/nestjs-libraries/database/prisma/o
 import { OAuthService } from '@gitroom/nestjs-libraries/database/prisma/oauth/oauth.service';
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { OkchatClient } from '@gitroom/nestjs-libraries/okchat/okchat.client';
-import { okchatEnabled } from '@gitroom/nestjs-libraries/okchat/okchat.config';
+import { okchatEnabled, okchatHookAllowed } from '@gitroom/nestjs-libraries/okchat/okchat.config';
 import { extractBearerToken } from '@gitroom/nestjs-libraries/chat/oauth-types';
 import { OkchatLinkDto, OkchatVerifyDto } from '@gitroom/nestjs-libraries/dtos/okchat/okchat.dto';
 
@@ -33,7 +33,7 @@ const usableBinding = (b: any): b is OkchatBindingInput =>
   typeof b.bindingId === 'string' &&
   !!b.bindingId &&
   typeof b.hookUrl === 'string' &&
-  /^https?:\/\//i.test(b.hookUrl);
+  okchatHookAllowed(b.hookUrl, b.bindingId);
 
 const notConfigured = () => new HttpException({ error: 'okchat 还没有开通' }, 404);
 
@@ -133,10 +133,25 @@ export class OkchatLinkService {
     await this._outbox.queueStatus(integrationId, `${this.platformName(binding.integration.providerIdentifier)}账号已退出登录，请在 oksocial 重新扫码`);
   }
 
+  /** The DM site of the account was logged in again: replies are taken at once and it is read next. */
+  async webLoggedIn(integrationId: string) {
+    if (okchatEnabled() && integrationId) {
+      await this._repository.updateBinding(integrationId, { loggedOutReason: null, lastReadAt: null });
+    }
+  }
+
   /** POST /public/okchat/link: okchat linked a space (again, or a member joined); overwrites. */
   async link(body: OkchatLinkDto) {
     if (!(await this._repository.organization(body.oksocialOrgId))) {
       throw new HttpException({ error: '这个 oksocial 团队不存在' }, 404);
+    }
+    // okchat links a team only after one of its members signed in with oksocial for it
+    if (!(await this._oauthService.hasFirstPartyGrant(body.oksocialOrgId))) {
+      throw new HttpException({ error: '这个团队还没有成员用 oksocial 账号登录 okchat' }, 403);
+    }
+    const unusable = body.bindings.filter((b) => !usableBinding(b));
+    if (unusable.length) {
+      throw new HttpException({ error: 'hookUrl 必须是 okchat 自己的 /hook/platform/<bindingId> 地址' }, 400);
     }
     const users = body.users ?? [];
     const members = await this._repository.memberIds(body.oksocialOrgId, users.map((u) => u.oksocialUserId));
@@ -177,6 +192,10 @@ export class OkchatLinkService {
     }
     if (!grant.oauthApp?.firstParty) {
       throw new HttpException({ error: 'insufficient_scope', error_description: '这个应用不能读取团队的账号列表' }, 403);
+    }
+    // the grant lasts only while the member is in the team
+    if (!(await this._oauthService.isMember(grant.user.id, grant.organization.id))) {
+      throw new HttpException({ error: 'invalid_token', error_description: '这位成员已不在这个团队' }, 401);
     }
     return { org: { id: grant.organization.id, name: grant.organization.name }, accounts: await this.accountsOf(grant.organization.id) };
   }

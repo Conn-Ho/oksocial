@@ -287,6 +287,8 @@ export class XiaohongshuWebProvider
     maxLength: DM_MAX_LENGTH,
     readGapMs: READ_GAP_MS,
     loggedOutReason: XHS_DM_LOGGED_OUT,
+    // xhsdm takes the text as an argument: one starting with "-" would be read as an option
+    checkText: (text) => (text.startsWith('-') ? '回复不能以「-」开头（网页版发送会出错），请改一下开头再发' : null),
     conversations: async (slot) =>
       (
         await this.list<{ id: string; name: string; unread: number | string; summary: string; group: boolean | string }>(

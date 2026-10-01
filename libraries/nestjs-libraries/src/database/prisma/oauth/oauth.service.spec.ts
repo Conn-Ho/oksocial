@@ -4,7 +4,7 @@ import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { OAuthService, isVerifiedEmail } from '@gitroom/nestjs-libraries/database/prisma/oauth/oauth.service';
 
 const OKCHAT_CALLBACK = 'https://okchat.online/omniauth/oksocial/callback';
-const ENV = ['OPENAI_OAUTH_CLIENT_ID', 'JWT_SECRET', 'FRONTEND_URL'];
+const ENV = ['OPENAI_OAUTH_CLIENT_ID', 'JWT_SECRET', 'FRONTEND_URL', 'EMAIL_PROVIDER'];
 
 const okchatApp = (over: any = {}) => ({
   id: 'app1',
@@ -33,12 +33,12 @@ const grant = (over: any = {}) => ({
   ...over,
 });
 
-const setup = (opts: { app?: any; grant?: any; approved?: boolean; firstPartyApp?: any } = {}) => {
+const setup = (opts: { app?: any; grant?: any; approved?: boolean; firstPartyApp?: any; member?: boolean } = {}) => {
   const repo = {
     getAppByClientId: jest.fn(async () => opts.app ?? okchatApp()),
     findByAccessToken: jest.fn(async () => ('grant' in opts ? opts.grant : grant())),
     hasApproved: jest.fn(async () => opts.approved ?? false),
-    isMember: jest.fn(async () => true),
+    isMember: jest.fn(async () => opts.member ?? true),
     getFirstPartyApp: jest.fn(async () => opts.firstPartyApp ?? null),
     createFirstPartyApp: jest.fn(async (d: any) => d),
     updateFirstPartyApp: jest.fn(async () => ({})),
@@ -51,6 +51,7 @@ beforeEach(() => {
   delete process.env.OPENAI_OAUTH_CLIENT_ID;
   process.env.JWT_SECRET = 'test-jwt-secret-for-oauth-spec';
   process.env.FRONTEND_URL = 'https://oksocial.test';
+  process.env.EMAIL_PROVIDER = 'resend';
 });
 afterEach(() => {
   for (const k of ENV) {
@@ -60,13 +61,21 @@ afterEach(() => {
 });
 
 describe('isVerifiedEmail', () => {
-  it('needs an activated account with a real email address', () => {
+  it('an email sign-up activated from the mail, or a provider that checks addresses', () => {
     expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL' })).toBe(true);
     expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GOOGLE' })).toBe(true);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'APPLE' })).toBe(true);
     expect(isVerifiedEmail({ email: 'a@b.com', activated: false, providerName: 'LOCAL' })).toBe(false);
     expect(isVerifiedEmail({ email: 'wallet_0xabc', activated: true, providerName: 'WALLET' })).toBe(false);
     expect(isVerifiedEmail({ email: 'farcaster_1@x.io', activated: true, providerName: 'FARCASTER' })).toBe(false);
-    expect(isVerifiedEmail({ email: 'not-an-email', activated: true, providerName: 'GITHUB' })).toBe(false);
+    // GitHub and generic OIDC may hand over an address nobody checked
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GITHUB' })).toBe(false);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GENERIC' })).toBe(false);
+  });
+
+  it('without an email provider, email sign-ups activate unchecked: not verified', () => {
+    delete process.env.EMAIL_PROVIDER;
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL' })).toBe(false);
   });
 });
 
@@ -81,6 +90,19 @@ describe('userinfo for okchat (first-party)', () => {
       picture: 'https://oksocial.test/uploads/me.png',
       org: { id: 'o1', name: '团队一' },
     });
+  });
+
+  it('a member who left the team: the grant no longer signs in', async () => {
+    const { service } = setup({ member: false });
+    await expect(service.getUserInfo('Bearer pos_token')).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('other clients keep email_verified = activated', async () => {
+    process.env.OPENAI_OAUTH_CLIENT_ID = 'pca_chatgpt';
+    const { service } = setup({
+      grant: grant({ oauthApp: { clientId: 'pca_chatgpt', dynamic: false, redirectUris: null, firstParty: false }, user: { ...grant().user, providerName: 'GITHUB' } }),
+    });
+    expect(await service.getUserInfo('Bearer pos_token')).toMatchObject({ email_verified: true });
   });
 
   it('an unverified address says so (okchat refuses it)', async () => {

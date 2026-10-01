@@ -24,6 +24,7 @@ import {
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { isOverseasChannel } from '@gitroom/helpers/utils/overseas.channels';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { OkchatLinkService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.link.service';
 
 // A login session nobody finished (closed the dialog, never scanned) is cleaned up after this.
 export const PENDING_SLOT_TTL_MS = 30 * 60 * 1000;
@@ -130,7 +131,8 @@ export class BrowserSlotService {
     private _integrationService: IntegrationService,
     private _integrationManager: IntegrationManager,
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _planService: PlanService
+    private _planService: PlanService,
+    private _okchat: OkchatLinkService
   ) {}
 
   private browserProvider(identifier: string) {
@@ -399,6 +401,8 @@ export class BrowserSlotService {
       }
       this._lastWhoami.delete(row!.id);
       await this._repository.setNotice(row!.id, null);
+      // okchat: the account's DMs can be read and answered again
+      await this._okchat.webLoggedIn(row!.integrationId!);
       await this.fleet.stopScreen(row!.slot).catch(() => undefined);
       return { status: 'connected' };
     } finally {
