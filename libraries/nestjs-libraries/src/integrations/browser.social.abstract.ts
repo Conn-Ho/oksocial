@@ -216,20 +216,31 @@ export const fieldsOf = (rows: unknown): Record<string, string> =>
       .map((r) => [String(r.field), String(r.value ?? '')])
   );
 
-const COUNT_UNITS: Record<string, number> = { 万: 1e4, w: 1e4, 亿: 1e8, k: 1e3, m: 1e6 };
+const COUNT_UNITS: Record<string, number> = { 万: 1e4, w: 1e4, 亿: 1e8, k: 1e3, m: 1e6, b: 1e9 };
 
-/** A count as platforms print it ("1.2万", "3w+", "1,234", 56); null when there is none. */
+/** A count as platforms print it ("1.2万", "3w+", "1,234", "1.5K", 56); null when there is none. */
 export const countFrom = (value: unknown): number | null => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Math.round(value) : null;
   }
   const match = String(value ?? '')
     .replace(/[,，\s]/g, '')
-    .match(/^(\d+(?:\.\d+)?)(万|亿|w|k|m)?\+?$/i);
+    .match(/^(\d+(?:\.\d+)?)(万|亿|w|k|m|b)?\+?$/i);
   if (!match) {
     return null;
   }
   return Math.round(Number(match[1]) * (COUNT_UNITS[(match[2] || '').toLowerCase()] ?? 1));
+};
+
+/** The count in a label ("1.2M views", "12万次观看", "3,456 likes"); null when there is none. Pure. */
+export const countIn = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return countFrom(value);
+  }
+  const match = String(value ?? '')
+    .replace(/[,，]/g, '')
+    .match(/(\d+(?:\.\d+)?)\s?(万|亿|[wkmb](?![a-z]))?/i);
+  return match ? countFrom(`${match[1]}${match[2] || ''}`) : null;
 };
 
 // Every supported platform launched after this; an earlier date is a parse accident.

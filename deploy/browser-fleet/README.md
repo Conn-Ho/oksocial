@@ -55,7 +55,7 @@ MEDIA_DIR=/tmp/oksocial-media
 MEDIA_ALLOWED_ORIGINS=https://oksocial.online
 MEDIA_MAX_BYTES=1073741824
 # Optional but recommended: only these opencli sites may be run (comma-separated first args).
-# RUN_ALLOWED_SITES=twitter,xq,xq2,xapi,xiaohongshu,xhs2,weibo,douyin
+# RUN_ALLOWED_SITES=twitter,xq,xq2,xapi,xiaohongshu,xhs2,xhsdm,weibo,douyin,wechat-channels,bilibili,zhihu,jike,toutiao,instagram,facebook,tiktok,youtube,linkedin,reddit,pinterest,pinterest-auth,weixin,weixin-auth
 EOF
 
 # 5. service
@@ -70,6 +70,17 @@ Port 7788 must stay closed in the GCP firewall: only the containers (via `host.d
 talk to it. The traffic is plain HTTP on the host, so for defense in depth you can set `HOST=172.17.0.1` (the
 docker0 gateway that `host.docker.internal` resolves to) instead of `0.0.0.0`; the unit then needs Docker up first. Logs: `journalctl -u oksocial-browser-worker -f` (pino JSON; the token and proxy credentials are
 never logged). Rollback: `sudo systemctl disable --now oksocial-browser-worker` and restore `account-ctl.bak`.
+
+### opencli plugins
+
+`plugins/` holds the commands oksocial needs that opencli does not ship: `xhs2` (小红书 creator identity and
+notes), `xhs-dm` (`xhsdm`, 小红书 web DMs), `pinterest-auth` and `weixin-auth` (`whoami` of the Pinterest and
+公众号 channels: opencli has no login check for those sites). Each folder is a plugin; install or update one with
+
+```bash
+opencli plugin install ~/oksocial/browser-fleet/plugins/<name>   # or copy the folder to ~/.opencli/plugins/<name>
+opencli <site> --help                                            # e.g. opencli pinterest-auth --help
+```
 
 ### Updating the bridge extension
 
@@ -190,7 +201,7 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /slots/:slot/screen` | | `{path:"/screen/<slot>/vnc.html?autoconnect=1&resize=scale&reconnect=1&path=screen/<slot>/websockify"}` once the port listens |
 | `DELETE /slots/:slot/screen` | | `{ok:true, slot}` |
 | `GET /screen/:slot/*` (+ WebSocket) | | proxied to `127.0.0.1:<screenPort>/*`; 502 while the screen is not running |
-| `POST /slots/:slot/run` | `{args: string[1..40] (≤2000 chars, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
+| `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, ≤200000 in all, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
 
 **Runs** execute `opencli <args> -f json` (unless a format is given) with `OPENCLI_PROFILE=<profileId>` and

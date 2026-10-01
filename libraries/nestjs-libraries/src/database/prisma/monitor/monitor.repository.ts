@@ -201,7 +201,9 @@ export class MonitorRepository {
         content: c.content,
         likes: c.likes ?? null,
         platformTime: c.platformTime,
-        ...(post ? { url: post.url, title: post.title } : {}),
+        // the comment's own link when the platform gives one (replies need it), else its post's
+        url: c.url ?? post?.url,
+        ...(post ? { title: post.title } : {}),
       })),
       skipDuplicates: true,
       select: { id: true, content: true },

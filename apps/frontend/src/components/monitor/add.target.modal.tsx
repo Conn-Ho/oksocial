@@ -9,6 +9,8 @@ import {
   MonitorKind,
   MonitorPlatform,
   MonitorTarget,
+  platformNames,
+  platformsFor,
   useMonitorCall,
 } from '@gitroom/frontend/components/monitor/monitor.hooks';
 
@@ -46,22 +48,25 @@ export const AddTargetModal: FC<{
   const toaster = useToaster();
   const call = useMonitorCall();
   const [input, setInput] = useState('');
-  const [platform, setPlatform] = useState(kind === 'KEYWORD' ? platforms.find((p) => p.search)?.identifier || '' : '');
+  // the platforms that can be monitored for this kind (the others are listed as unsupported)
+  const choices = useMemo(() => platformsFor(platforms, kind), [platforms, kind]);
+  const [platform, setPlatform] = useState(kind === 'KEYWORD' ? choices[0]?.identifier || '' : '');
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [integrationId, setIntegrationId] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState(kind === 'POST' ? 60 : 180);
   const [saving, setSaving] = useState(false);
 
-  const choices = kind === 'KEYWORD' ? platforms.filter((p) => p.search) : platforms;
   // readers: our usable browser channels, of the chosen platform when there is one
   const readers = useMemo(
     () =>
       channels.filter(
-        (c) => !c.disabled && platforms.some((p) => p.identifier === c.identifier) && (!platform || c.identifier === platform)
+        (c) => !c.disabled && choices.some((p) => p.identifier === c.identifier) && (!platform || c.identifier === platform)
       ),
-    [channels, platforms, platform]
+    [channels, choices, platform]
   );
+  // POST: platforms that read a post's numbers but not its comments
+  const numbersOnly = kind === 'POST' ? choices.filter((p) => !p.comments) : [];
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -107,6 +112,11 @@ export const AddTargetModal: FC<{
           <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t(`monitor_input_${kind.toLowerCase()}_placeholder`, copy.placeholder)} className={fieldClass} autoFocus={true} />
         )}
         <span className="text-[12px] text-textColor/50 leading-[1.5]">{t(`monitor_input_${kind.toLowerCase()}_hint`, copy.hint)}</span>
+        <span className="text-[12px] text-textColor/50 leading-[1.5]">
+          {t('monitor_supported_platforms', '支持：{{names}}', { names: platformNames(choices), interpolation: { escapeValue: false } })}
+          {!!numbersOnly.length &&
+            t('monitor_numbers_only', '（{{names}} 只读数据，读不到评论）', { names: platformNames(numbersOnly), interpolation: { escapeValue: false } })}
+        </span>
       </label>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">

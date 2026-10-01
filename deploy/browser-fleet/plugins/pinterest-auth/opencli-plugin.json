@@ -1,0 +1,1 @@
+{ "name": "pinterest-auth", "version": "0.1.0", "description": "Pinterest: the logged-in account (whoami)", "opencli": ">=1.8.0" }

@@ -18,7 +18,13 @@ import {
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
 import { Automation } from '@gitroom/frontend/components/automations/automations.hooks';
-import { useMonitorTargets } from '@gitroom/frontend/components/monitor/monitor.hooks';
+import {
+  MonitorPlatform,
+  PlatformAction,
+  platformNames,
+  useMonitorPlatforms,
+  useMonitorTargets,
+} from '@gitroom/frontend/components/monitor/monitor.hooks';
 
 const field = 'bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[14px]';
 const INBOX_TYPES: AutomationType[] = ['COMMENT_ASSISTANT', 'DM_ASSISTANT', 'LEAD_COLLECTOR'];
@@ -31,17 +37,38 @@ const START_CONFIG: Partial<Record<AutomationType, Record<string, any>>> = {
   PROSPECTING: { lookbackDays: 3, keywords: [], leadPrompt: '', minScore: 70, replyWith: 'ai', templateMatch: 'ai', extraPrompt: '', saveLeads: true },
 };
 
+/** Whether automations of this type can act on a platform: 拓客 replies under comments it reads, 帖文操作 needs one of the actions. */
+const canAct = (p: MonitorPlatform, type: AutomationType, actions: string[]) =>
+  type === 'PROSPECTING'
+    ? p.comments && p.interact.includes('replyToComment')
+    : actions.some((a) => p.interact.includes(a as PlatformAction));
+
 /** Which 监控 an automation works from: keyword + competitor monitors, or monitored posts. */
-const MonitorPicker: FC<{ type: AutomationType; value: string[]; onChange: (v: string[]) => void }> = ({ type, value, onChange }) => {
+const MonitorPicker: FC<{ type: AutomationType; actions: string[]; value: string[]; onChange: (v: string[]) => void }> = ({
+  type,
+  actions,
+  value,
+  onChange,
+}) => {
   const t = useT();
   const { data: keywords } = useMonitorTargets('KEYWORD');
   const { data: accounts } = useMonitorTargets('ACCOUNT');
   const { data: posts } = useMonitorTargets('POST');
+  const { data: platforms } = useMonitorPlatforms();
   const choices = type === 'PROSPECTING' ? posts || [] : [...(keywords || []), ...(accounts || [])];
+  const supported = (platforms || []).filter((p) => canAct(p, type, actions));
+  // a monitor on a platform that cannot do it stays selectable (it is skipped with a reason), but says so
+  const usable = (platform: string) => supported.some((p) => p.identifier === platform);
   return (
     <Row
       label={type === 'PROSPECTING' ? t('auto_monitor_posts', '在哪些监控帖子的评论区里找') : t('auto_monitor_sources', '对哪些监控里的新帖操作')}
-      hint={t('auto_monitor_hint', '在「监控」里添加关键词、竞品或帖子后可选；只有 X 支持这些操作，且账号要绑定出口代理。')}
+      hint={`${t('auto_monitor_hint', '在「监控」里添加关键词、竞品或帖子后可选；账号要绑定出口代理。')}${
+        platforms
+          ? supported.length
+            ? t('auto_supported_platforms', '支持的平台：{{names}}。', { names: platformNames(supported), interpolation: { escapeValue: false } })
+            : t('auto_no_supported_platforms', '所选操作暂时没有平台支持。')
+          : ''
+      }`}
     >
       {choices.length ? (
         <div className="flex flex-wrap gap-[6px]">
@@ -50,8 +77,13 @@ const MonitorPicker: FC<{ type: AutomationType; value: string[]; onChange: (v: s
               key={m.id}
               type="button"
               aria-pressed={value.includes(m.id)}
+              title={platforms && !usable(m.platform) ? t('auto_platform_unsupported', '这个平台不支持所选操作，运行时会跳过') : undefined}
               onClick={() => onChange(value.includes(m.id) ? value.filter((x) => x !== m.id) : [...value, m.id])}
-              className={clsx('flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border max-w-full', value.includes(m.id) ? 'bg-boxFocused text-textItemFocused border-btnPrimary/40 font-[600]' : 'border-newTableBorder')}
+              className={clsx(
+                'flex items-center gap-[6px] px-[10px] h-[30px] rounded-full text-[13px] border max-w-full',
+                value.includes(m.id) ? 'bg-boxFocused text-textItemFocused border-btnPrimary/40 font-[600]' : 'border-newTableBorder',
+                platforms && !usable(m.platform) && 'opacity-50'
+              )}
             >
               <img src={`/icons/platforms/${m.platform}.png`} alt="" className="w-[14px] h-[14px] rounded-full" />
               <span className="truncate">{m.title || m.query}</span>
@@ -63,6 +95,41 @@ const MonitorPicker: FC<{ type: AutomationType; value: string[]; onChange: (v: s
       )}
     </Row>
   );
+};
+
+/** For each chosen 帖文操作 action, the platforms that can do it. */
+const ActionSupport: FC<{ actions: string[] }> = ({ actions }) => {
+  const t = useT();
+  const { data: platforms } = useMonitorPlatforms();
+  if (!platforms || !actions.length) {
+    return null;
+  }
+  return (
+    <ul className="text-[12px] text-textColor/50 leading-[1.6] -mt-[6px]">
+      {actions.map((action) => (
+        <li key={action}>
+          {t('auto_action_support', '{{action}}：{{platforms}}', {
+            action: t(`automation_action_${action}`, POST_ACTION_TEXT[action]),
+            platforms:
+              platformNames(platforms.filter((p) => p.interact.includes(action as PlatformAction))) ||
+              t('auto_no_platform', '暂时没有平台支持'),
+            interpolation: { escapeValue: false },
+          })}
+        </li>
+      ))}
+      {actions.includes('follow') && (
+        <li>{t('auto_follow_needs_profile', '有的平台只能关注带主页链接的作者（比如竞品账号的帖子），关键词结果里只有昵称的作者会被跳过。')}</li>
+      )}
+    </ul>
+  );
+};
+
+/** 回关助手 hint: the platforms that read follower lists and follow back. */
+const FollowBackHint: FC = () => {
+  const t = useT();
+  const { data: platforms } = useMonitorPlatforms();
+  const names = platformNames((platforms || []).filter((p) => p.interact.includes('followBack')));
+  return <>{t('follow_back_hint', '能读粉丝列表并回关的平台：{{names}}；账号要绑定出口代理。', { names: names || '—', interpolation: { escapeValue: false } })}</>;
 };
 
 const Chips: FC<{ options: Record<string, string>; value: string[]; onChange: (v: string[]) => void; label: string }> = ({
@@ -90,7 +157,7 @@ const Chips: FC<{ options: Record<string, string>; value: string[]; onChange: (v
   </fieldset>
 );
 
-const Row: FC<{ label: string; children: React.ReactNode; hint?: string }> = ({ label, children, hint }) => (
+const Row: FC<{ label: string; children: React.ReactNode; hint?: React.ReactNode }> = ({ label, children, hint }) => (
   <label className="flex flex-col gap-[4px]">
     <span className="text-[13px] text-textColor/70">{label}</span>
     {children}
@@ -200,11 +267,12 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
         </>
       )}
       {MONITOR_TYPES.includes(type) && (
-        <MonitorPicker type={type} value={config.monitorTargetIds || []} onChange={(v) => set({ monitorTargetIds: v })} />
+        <MonitorPicker type={type} actions={config.actions || []} value={config.monitorTargetIds || []} onChange={(v) => set({ monitorTargetIds: v })} />
       )}
       {type === 'POST_ACTIONS' && (
         <>
           <Chips label={t('post_actions', '操作')} options={labels('automation_action_', POST_ACTION_TEXT)} value={config.actions || []} onChange={(v) => set({ actions: v })} />
+          <ActionSupport actions={config.actions || []} />
           <div className="flex flex-wrap gap-[16px]">
             <Row label={t('lookback_hours', '只看最近几小时的新帖')}>
               <input type="number" min={1} max={168} value={config.lookbackHours ?? 24} onChange={(e) => set({ lookbackHours: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
@@ -222,7 +290,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {type === 'FOLLOW_BACK' && (
         <>
-          <Row label={t('follow_back_scan', '每次看最新的多少个粉丝')} hint={t('follow_back_hint', '只有 X 能读粉丝列表；账号要绑定出口代理。')}>
+          <Row label={t('follow_back_scan', '每次看最新的多少个粉丝')} hint={<FollowBackHint />}>
             <input type="number" min={10} max={200} value={config.scan ?? 50} onChange={(e) => set({ scan: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
           </Row>
           <Row label={t('follow_back_skip', '名字或简介含这些词就不回关（逗号分隔）')}>

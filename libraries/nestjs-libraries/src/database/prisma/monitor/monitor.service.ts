@@ -69,6 +69,8 @@ const COMPETITOR_COMMENT_DAYS = 7;
 const SEARCH_ACCOUNTS_LIMIT = 20;
 // 竞品 › 批量导入: lines per batch
 const MAX_IMPORT_LINES = 100;
+// the interactions automations can ask of a platform, as the UI names them
+const INTERACT_ACTIONS = ['like', 'bookmark', 'follow', 'comment', 'replyToComment'] as const;
 
 type Channel = Pick<Integration, 'id' | 'token'> & Partial<Integration>;
 
@@ -247,15 +249,33 @@ export class MonitorService implements OnModuleInit {
     return socialIntegrationList.filter((p) => p.monitor);
   }
 
-  /** What each platform can be monitored for, for the UI. */
+  /** The monitor platforms that read single posts (POST) or accounts (ACCOUNT). */
+  private readers(kind: 'POST' | 'ACCOUNT') {
+    return this.monitorProviders().filter((p) => (kind === 'POST' ? p.monitor?.readPost : p.monitor?.readAccount));
+  }
+
+  /**
+   * What each platform can be monitored for, and which of its interactions automations can use
+   * (followBack: it reads follower lists and follows), for the UI.
+   */
   platforms() {
-    return this.monitorProviders().map((p) => ({
-      identifier: p.identifier,
-      name: p.name,
-      search: !!p.monitor?.search,
-      vs: !!p.monitor?.ownPosts,
-      searchAccounts: !!p.monitor?.searchAccounts,
-    }));
+    return this.monitorProviders().map((p) => {
+      const interact = p.interact || {};
+      return {
+        identifier: p.identifier,
+        name: p.name,
+        posts: !!p.monitor?.readPost,
+        comments: !!p.monitor?.readPost && p.monitor.comments !== false,
+        accounts: !!p.monitor?.readAccount,
+        search: !!p.monitor?.search,
+        vs: !!p.monitor?.readAccount && !!p.monitor?.ownPosts,
+        searchAccounts: !!p.monitor?.readAccount && !!p.monitor?.searchAccounts,
+        interact: [
+          ...INTERACT_ACTIONS.filter((a) => interact[a]),
+          ...(interact.followers && interact.following && interact.follow ? ['followBack' as const] : []),
+        ],
+      };
+    });
   }
 
   private provider(platform: string): SocialProvider & { name: string } {
@@ -266,10 +286,10 @@ export class MonitorService implements OnModuleInit {
     return provider;
   }
 
-  /** Recognises a pasted post link (or share text) by asking every monitor platform. */
+  /** Recognises a pasted post link (or share text) by asking every platform that reads posts. */
   detectPost(input: string): { platform: string; ref: MonitorPostRef } {
     const url = extractUrl(input) || input.trim();
-    for (const p of this.monitorProviders()) {
+    for (const p of this.readers('POST')) {
       let ref: MonitorPostRef | null;
       try {
         ref = p.monitor!.parsePostUrl(url);
@@ -281,7 +301,7 @@ export class MonitorService implements OnModuleInit {
       }
     }
     throw new HttpException(
-      `认不出这个链接。支持：${this.monitorProviders().map((p) => p.name).join('、')} 的帖子链接`,
+      `认不出这个链接。支持：${this.readers('POST').map((p) => p.name).join('、')} 的帖子链接`,
       400
     );
   }
@@ -289,11 +309,11 @@ export class MonitorService implements OnModuleInit {
   /** A profile link (any platform) or, with the platform chosen, a bare id / handle. */
   resolveAccount(input: string, platform?: string) {
     const value = extractUrl(input) || input.trim();
-    const candidates = platform
-      ? [this.provider(platform)]
-      : /^https?:\/\//i.test(value)
-        ? this.monitorProviders()
-        : [];
+    const chosen = platform ? this.provider(platform) : null;
+    if (chosen && !chosen.monitor?.readAccount) {
+      throw new HttpException(`${chosen.name}暂不支持竞品账号监控`, 400);
+    }
+    const candidates = chosen ? [chosen] : /^https?:\/\//i.test(value) ? this.readers('ACCOUNT') : [];
     for (const p of candidates) {
       const account = p.monitor!.parseAccount(value);
       if (account) {
@@ -347,7 +367,7 @@ export class MonitorService implements OnModuleInit {
    */
   async searchAccounts(orgId: string, platform: string, query: string): Promise<Array<MonitorAccountCandidate & { monitored: boolean }>> {
     const provider = this.provider(platform);
-    if (!provider.monitor?.searchAccounts) {
+    if (!provider.monitor?.searchAccounts || !provider.monitor.readAccount) {
       throw new HttpException('这个平台暂不支持搜索，请粘贴主页链接', 400);
     }
     const q = (query || '').trim();
@@ -584,6 +604,9 @@ export class MonitorService implements OnModuleInit {
   ) {
     const monitor = provider.monitor!;
     if (target.kind === 'POST') {
+      if (!monitor.readPost) {
+        throw new Error(`${provider.name}暂不支持监控单条帖子`);
+      }
       const { post, comments } = await monitor.readPost(
         channel.token,
         { externalId: target.externalId, url: target.url },
@@ -599,6 +622,9 @@ export class MonitorService implements OnModuleInit {
       return comments.length;
     }
     if (target.kind === 'ACCOUNT') {
+      if (!monitor.readAccount) {
+        throw new Error(`${provider.name}暂不支持竞品账号监控`);
+      }
       const { name, posts } = await monitor.readAccount(
         channel.token,
         { handle: target.query, url: target.url },
@@ -659,6 +685,10 @@ export class MonitorService implements OnModuleInit {
     channel: Channel,
     posts: MonitorPost[]
   ) {
+    const readPost = monitor.readPost;
+    if (!readPost || monitor.comments === false) {
+      return [];
+    }
     const since = Date.now() - COMPETITOR_COMMENT_DAYS * DAY_MS;
     const recent = posts
       .filter((p, i) => posts.findIndex((q) => q.externalId === p.externalId) === i)
@@ -673,7 +703,7 @@ export class MonitorService implements OnModuleInit {
       let comments;
       try {
         comments = await this._credits.withCredits(target.organizationId, 'monitor_sync', target.id, async () =>
-          (await monitor.readPost(channel.token, { externalId: post.externalId, url: post.url }, COMMENTS_PER_READ)).comments
+          (await readPost(channel.token, { externalId: post.externalId, url: post.url }, COMMENTS_PER_READ)).comments
         );
       } catch (err) {
         const message = (err as Error)?.message || '';
@@ -845,8 +875,11 @@ export class MonitorService implements OnModuleInit {
 
   private async readSource(orgId: string, platform: string, ref: MonitorPostRef, preferredId?: string | null) {
     const provider = this.provider(platform);
+    if (!provider.monitor?.readPost) {
+      throw new HttpException(`${provider.name}暂不支持读取单条帖子，请直接粘贴正文`, 400);
+    }
     const channel = await this.readerOrFail(orgId, provider, preferredId);
-    const { post } = await provider.monitor!.readPost(channel.token, ref, 0);
+    const { post } = await provider.monitor.readPost(channel.token, ref, 0);
     if (!post.content && !post.title) {
       throw new HttpException('没读到这条帖子的文字内容', 400);
     }

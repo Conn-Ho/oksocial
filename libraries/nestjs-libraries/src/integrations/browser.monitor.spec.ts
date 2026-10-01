@@ -1,5 +1,6 @@
 import {
   countFrom,
+  countIn,
   dateFrom,
   fieldsOf,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
@@ -45,6 +46,18 @@ describe('parsing helpers', () => {
     expect(countFrom('赞')).toBeNull();
     expect(countFrom(undefined)).toBeNull();
     expect(countFrom(NaN)).toBeNull();
+  });
+
+  it('countIn reads the count inside a label, and nothing from a label without one', () => {
+    expect(countIn('1.2M views')).toBe(1200000);
+    expect(countIn('12万次观看')).toBe(120000);
+    expect(countIn('3,456 likes')).toBe(3456);
+    expect(countIn('2.1B views')).toBe(2100000000);
+    expect(countIn('5 views')).toBe(5);
+    expect(countIn('1.5K')).toBe(1500);
+    expect(countIn(42)).toBe(42);
+    expect(countIn('No views')).toBeNull();
+    expect(countIn(undefined)).toBeNull();
   });
 
   it('dateFrom accepts date strings and unix times, and rejects nonsense', () => {

@@ -152,6 +152,22 @@ describe('帖文操作助手', () => {
     expect(s.recorded.map((r) => r.targetKey)).toEqual(['follow:xweb:alice', 'like:h4']);
   });
 
+  it('follows by profile link where the platform needs one, and skips hits that only carry a display name', async () => {
+    const follow = jest.fn(async () => undefined);
+    const s = setup({
+      interact: { follow, canFollow: (a: { url?: string }) => /\/people\//.test(a.url || '') },
+      items: [hit({ authorName: '豆豆', authorUrl: null }), hit({ id: 'h2', externalId: '1002', authorName: null, authorUrl: 'https://www.zhihu.com/people/rival' })],
+    });
+    const result = await s.runner.run(automation({ config: { monitorTargetIds: ['k1'], actions: ['follow'] } }) as any);
+    expect(follow).toHaveBeenCalledTimes(1);
+    expect(follow).toHaveBeenCalledWith('slot-x', { name: '', url: 'https://www.zhihu.com/people/rival' });
+    expect(s.recorded).toEqual([
+      expect.objectContaining({ targetKey: 'follow:xweb:https://www.zhihu.com/people/rival', payload: expect.objectContaining({ authorUrl: 'https://www.zhihu.com/people/rival' }) }),
+    ]);
+    // the named author without a link is skipped with the reason, not silently
+    expect(result).toMatchObject({ done: 1, failed: 0, skipped: 1, warning: expect.stringMatching(/主页链接/) });
+  });
+
   it('holds in review mode and carries what is needed to run it later', async () => {
     const s = setup();
     const result = await s.runner.run(automation({ reviewMode: true }) as any);
@@ -236,6 +252,20 @@ describe('回关助手', () => {
     expect(s.recorded.map((r) => r.targetKey)).toEqual(['follow:xweb:fan1']);
     expect(s.credits.withCredits).toHaveBeenCalledWith('o1', 'browser_write', 'follower:fan1', expect.any(Function));
     expect(result.done).toBe(1);
+  });
+
+  it('reads followers by the account\'s handle and follows back by the profile link the platform gives', async () => {
+    const s = setup({
+      interact: {
+        follow: jest.fn(async () => undefined),
+        followers: jest.fn(async () => [{ name: 'a-jie', displayName: '阿杰', url: 'https://www.zhihu.com/people/a-jie' }]),
+        following: jest.fn(async () => []),
+      },
+    });
+    s.repo.channels.mockResolvedValueOnce([{ id: 'ch1', name: '小鹿', providerIdentifier: 'xweb', token: 'slot-x', internalId: 'u9', profile: 'xiaolu' }] as any);
+    await s.runner.run(followBack() as any);
+    expect(s.interact.followers).toHaveBeenCalledWith('slot-x', 'xiaolu', 50);
+    expect(s.interact.follow).toHaveBeenCalledWith('slot-x', { name: 'a-jie', url: 'https://www.zhihu.com/people/a-jie' });
   });
 
   it('config reads as one sentence; platforms without a follower list are skipped with a reason', async () => {

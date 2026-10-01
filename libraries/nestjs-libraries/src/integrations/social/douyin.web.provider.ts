@@ -135,6 +135,7 @@ export class DouyinWebProvider
   // through their profile (likes) or search (likes). opencli has no read of someone else's single
   // video, nor of any video's comments.
   monitor: MonitorCapabilities = {
+    comments: false,
     parsePostUrl: (url) => {
       const id = url.match(VIDEO_LINK)?.[1];
       return id ? { externalId: id, url: videoUrl(id) } : null;

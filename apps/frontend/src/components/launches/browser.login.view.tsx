@@ -17,6 +17,7 @@ export const SCAN_APP: Record<string, string> = {
   weibo: '微博',
   douyin: '抖音',
   shipinhao: '微信',
+  gongzhonghao: '微信',
   bilibili: '哔哩哔哩',
   zhihu: '知乎',
   jike: '即刻',

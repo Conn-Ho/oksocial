@@ -20,7 +20,10 @@ import {
 import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
-import { InteractCapabilities } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+import {
+  InteractAuthor,
+  InteractCapabilities,
+} from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { SyncSettingsService, dmStrategyFor } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 dayjs.extend(utc);
 
@@ -38,9 +41,12 @@ export type InteractPayload = {
   externalId: string;
   url: string | null;
   authorName: string | null;
+  // the author's profile link, for platforms that follow by it (absent on older held actions)
+  authorUrl?: string | null;
 };
 type MonitorTargetRow = { id: string; kind: string; platform: string; title: string | null; query: string };
-type Channel = Pick<Integration, 'id' | 'token' | 'providerIdentifier'> & Partial<Pick<Integration, 'name' | 'internalId'>>;
+type Channel = Pick<Integration, 'id' | 'token' | 'providerIdentifier'> &
+  Partial<Pick<Integration, 'name' | 'internalId' | 'profile'>>;
 // how much of whom an account follows is read to tell who is not followed back yet
 const FOLLOWING_SCAN = 400;
 
@@ -62,6 +68,12 @@ type Context = {
   own: Set<string>;
   result: RunResult;
 };
+
+/** Who to follow: the author's name, with the profile link when there is one. Pure. */
+export const authorOf = (item: { authorName?: string | null; authorUrl?: string | null }): InteractAuthor => ({
+  name: item.authorName || '',
+  ...(item.authorUrl ? { url: item.authorUrl } : {}),
+});
 
 /** Lower-cased names/handles/ids of the organization's own accounts. Pure. */
 export const ownKeys = (rows: Array<{ internalId: string; name: string; profile: string | null }>) =>
@@ -403,6 +415,12 @@ export class AutomationRunner {
     return !ctx.own.has((item.authorName || '').toLowerCase());
   }
 
+  /** Whether the platform can follow this item's author: by name, or by profile link where it needs one. */
+  private followable(interact: InteractCapabilities, item: Pick<MonitorItem, 'authorName' | 'authorUrl'>) {
+    const author = authorOf(item);
+    return interact.canFollow ? interact.canFollow(author) : !!author.name;
+  }
+
   /** 帖文操作助手: like / bookmark / follow the authors of new keyword hits and competitor posts. */
   private async postActions(ctx: Context, c: AutomationConfig<'POST_ACTIONS'>) {
     const org = ctx.automation.organizationId;
@@ -423,7 +441,9 @@ export class AutomationRunner {
           matchesTriggers({ content: i.content || i.title || '', sentiment: i.sentiment, intent: i.intent }, c)
       );
       const keyOf = (i: MonitorItem, action: string) =>
-        action === 'follow' ? `follow:${target.platform}:${(i.authorName || '').toLowerCase()}` : `${action}:${i.id}`;
+        action === 'follow'
+          ? `follow:${target.platform}:${(i.authorName || i.authorUrl || '').toLowerCase()}`
+          : `${action}:${i.id}`;
       const acted = await this._repository.actedTargets(
         ctx.automation.id,
         items.flatMap((i) => actions.map((a) => keyOf(i, a)))
@@ -434,7 +454,15 @@ export class AutomationRunner {
             return;
           }
           const targetKey = keyOf(item, action);
-          if (acted.has(targetKey) || (action === 'follow' && !item.authorName)) {
+          if (acted.has(targetKey)) {
+            continue;
+          }
+          if (action === 'follow' && !this.followable(interact, item)) {
+            // a named author the platform cannot find by name (it follows by profile link)
+            if (item.authorName) {
+              ctx.result.skipped += 1;
+              ctx.result.warning = `「${target.title || target.query}」里的作者没有主页链接，这个平台只能关注带主页链接的作者（比如竞品账号的帖子），已跳过关注。`;
+            }
             continue;
           }
           acted.add(targetKey);
@@ -449,7 +477,7 @@ export class AutomationRunner {
             {
               integrationId: channel.id,
               targetKey,
-              targetLabel: action === 'follow' ? `@${item.authorName}` : (item.title || item.content || '').slice(0, 60),
+              targetLabel: action === 'follow' ? `@${item.authorName || item.authorUrl}` : (item.title || item.content || '').slice(0, 60),
               kind: action,
               content,
               payload,
@@ -541,8 +569,10 @@ export class AutomationRunner {
         ctx.result.warning = `「${channel.name}」所在平台暂不支持回关，已跳过。`;
         continue;
       }
-      const followers = await interact.followers(channel.token, channel.internalId, c.scan);
-      const following = new Set((await interact.following(channel.token, channel.internalId, FOLLOWING_SCAN)).map((f) => f.name.toLowerCase()));
+      // the account's handle as the platform shows it (profile), else its id
+      const handle = channel.profile || channel.internalId;
+      const followers = await interact.followers(channel.token, handle, c.scan);
+      const following = new Set((await interact.following(channel.token, handle, FOLLOWING_SCAN)).map((f) => f.name.toLowerCase()));
       const keyOf = (name: string) => `follow:${channel.providerIdentifier}:${name.toLowerCase()}`;
       const todo = followers.filter((f) => {
         const name = f.name.toLowerCase();
@@ -564,6 +594,7 @@ export class AutomationRunner {
           externalId: f.name,
           url: null,
           authorName: f.name,
+          authorUrl: f.url ?? null,
         };
         await this.act(
           ctx,
@@ -575,7 +606,15 @@ export class AutomationRunner {
   }
 
   private payload(action: InteractPayload['action'], platform: string, item: MonitorItem): InteractPayload {
-    return { action, platform, itemId: item.id, externalId: item.externalId, url: item.url, authorName: item.authorName };
+    return {
+      action,
+      platform,
+      itemId: item.id,
+      externalId: item.externalId,
+      url: item.url,
+      authorName: item.authorName,
+      authorUrl: item.authorUrl,
+    };
   }
 
   /** One interaction through the channel's browser, charged as a browser write (refunded on failure). */
@@ -585,7 +624,7 @@ export class AutomationRunner {
     const run = {
       like: interact?.like && (() => interact.like!(channel.token, post)),
       bookmark: interact?.bookmark && (() => interact.bookmark!(channel.token, post)),
-      follow: interact?.follow && p.authorName && (() => interact.follow!(channel.token, { name: p.authorName! })),
+      follow: interact?.follow && (p.authorName || p.authorUrl) && (() => interact.follow!(channel.token, authorOf(p))),
       comment: interact?.comment && (() => interact.comment!(channel.token, post, text)),
       comment_reply: interact?.replyToComment && (() => interact.replyToComment!(channel.token, post, text)),
     }[p.action];

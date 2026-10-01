@@ -1,0 +1,1 @@
+{ "name": "weixin-auth", "version": "0.1.0", "description": "微信公众号后台 (mp.weixin.qq.com): the logged-in account (whoami)", "opencli": ">=1.8.0" }
