@@ -36,7 +36,7 @@ export class BrowserSessionsController {
   constructor(private _browserSlotService: BrowserSlotService) {}
 
   @Post('/')
-  @ApiOperation({ summary: '开始浏览器账号登录', description: '为新账号（或 integrationId 指定的重连）在浏览器集群开一个浏览器并打开平台登录页，返回可嵌入的画面地址；新账号计入套餐账号数。' })
+  @ApiOperation({ summary: '开始浏览器账号登录', description: '为新账号（或 integrationId 指定的重连）在浏览器集群开一个浏览器并打开平台登录页，返回可嵌入的画面地址；新账号计入套餐账号数。proxyId 让新账号从第一页起就走这个出口 IP。' })
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   startLogin(
     @GetOrgFromRequest() org: Organization,
@@ -47,7 +47,7 @@ export class BrowserSessionsController {
       org.id,
       body.provider,
       body.integrationId,
-      { simulated: body.simulated, superAdmin: !!user?.isSuperAdmin }
+      { simulated: body.simulated, superAdmin: !!user?.isSuperAdmin, proxyId: body.proxyId }
     );
   }
 

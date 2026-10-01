@@ -18,6 +18,11 @@ export class StartBrowserLoginDto {
   @IsString()
   integrationId?: string;
 
+  // A new account's exit IP (出口代理 id): its browser starts behind it, before the login page opens.
+  @IsOptional()
+  @IsString()
+  proxyId?: string;
+
   // E2E only: connect a simulated account (worker slot sim-*). Superadmins with
   // OKSOCIAL_SIM_ACCOUNTS=1 only; everyone else gets 403.
   @IsOptional()

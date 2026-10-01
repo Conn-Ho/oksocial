@@ -11,6 +11,18 @@ const QR_MISSES_BEFORE_SCREEN = 4;
 // is loading a new code) is taken down rather than left up to be scanned in vain.
 const QR_MISSES_BEFORE_CLEAR = 2;
 
+/** Overseas platforms: a new account picks its exit IP before its first login. */
+export const OVERSEAS_BROWSER = new Set([
+  'xweb',
+  'instagramweb',
+  'facebookweb',
+  'tiktokweb',
+  'youtubeweb',
+  'linkedinweb',
+  'redditweb',
+  'pinterestweb',
+]);
+
 /** The phone app that scans each platform's login QR code; platforms without one log in on the full view. */
 export const SCAN_APP: Record<string, string> = {
   xiaohongshu: '小红书',

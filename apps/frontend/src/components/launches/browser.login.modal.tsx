@@ -11,8 +11,10 @@ import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Button } from '@gitroom/react/form/button';
 import {
   BrowserLoginView,
+  OVERSEAS_BROWSER,
   SCAN_APP,
 } from '@gitroom/frontend/components/launches/browser.login.view';
+import { BrowserExitPicker } from '@gitroom/frontend/components/launches/browser.exit.picker';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -56,6 +58,8 @@ export const BrowserLoginModal: FC<{
   // the 2nd step is being opened (the poll and 我已登录 can both see the first login finish)
   const advancing = useRef(false);
   const app = SCAN_APP[identifier] && t(`scan_app_${identifier}`, SCAN_APP[identifier]);
+  // a new overseas account picks its exit IP before the browser starts
+  const [picking, setPicking] = useState(!integrationId && mode === 'login' && OVERSEAS_BROWSER.has(identifier));
 
   const show = useCallback((next: Step) => {
     current.current = next;
@@ -148,21 +152,24 @@ export const BrowserLoginModal: FC<{
     }
   }, [fetch, onConnected, finish, startWeb]);
 
+  const start = useCallback(async (proxyId?: string) => {
+    const res = await fetch('/browser-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ provider: identifier, integrationId, proxyId }),
+    });
+    if (!res.ok) {
+      return fail(res);
+    }
+    const { id, screenPath } = await res.json();
+    show({ kind: 'login', id, screenPath });
+  }, [fail, show]);
+
   useEffect(() => {
-    (async () => {
-      if (mode === 'web' && integrationId) {
-        return startWeb(integrationId);
-      }
-      const res = await fetch('/browser-sessions', {
-        method: 'POST',
-        body: JSON.stringify({ provider: identifier, integrationId }),
-      });
-      if (!res.ok) {
-        return fail(res);
-      }
-      const { id, screenPath } = await res.json();
-      show({ kind: 'login', id, screenPath });
-    })();
+    if (mode === 'web' && integrationId) {
+      startWeb(integrationId);
+    } else if (!picking) {
+      start();
+    }
     return () => {
       closed.current = true;
       // a new account's unfinished browser is removed; a connected one only stops its screen
@@ -200,6 +207,18 @@ export const BrowserLoginModal: FC<{
   }, [check]);
 
   const web = step?.kind === 'web';
+
+  if (picking) {
+    return (
+      <BrowserExitPicker
+        name={name}
+        onStart={(proxyId) => {
+          setPicking(false);
+          start(proxyId);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-[16px] w-full">

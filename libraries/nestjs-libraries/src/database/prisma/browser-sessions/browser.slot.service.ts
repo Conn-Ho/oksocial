@@ -70,6 +70,8 @@ export interface StartLoginOptions {
   // connect a simulated account instead of opening the platform's login page
   simulated?: boolean;
   superAdmin?: boolean;
+  // a new account's exit IP (出口代理) from its first page on; a reconnect keeps its own
+  proxyId?: string;
 }
 
 @Injectable()
@@ -111,7 +113,8 @@ export class BrowserSlotService {
       assertSimulatedAllowed(options.superAdmin);
     }
     const provider = this.browserProvider(providerIdentifier);
-    // A new browser starts without a proxy (it is bound after connecting); a reconnect keeps its own.
+    // A reconnect keeps its own proxy; a new browser starts behind the one picked for it, if any, so
+    // the platform never sees the account from the server's own IP.
     const existing = integrationId
       ? await this._repository.getByIntegration(orgId, integrationId)
       : null;
@@ -127,14 +130,20 @@ export class BrowserSlotService {
     if (!existing) {
       await this._planService.assertWithinLimit(orgId, 'channels');
     }
+    const picked = !existing && options.proxyId ? await this._repository.getProxy(orgId, options.proxyId) : null;
+    if (!existing && options.proxyId && !picked) {
+      throw new HttpException('出口代理不存在', 404);
+    }
     const row =
       existing ??
       (await this._repository.createPending(
         orgId,
         providerIdentifier,
-        simulated ? simSlotName(providerIdentifier) : newSlotName()
+        simulated ? simSlotName(providerIdentifier) : newSlotName(),
+        picked?.id
       ));
-    const proxy = existing?.proxy ? AuthService.fixedDecryption(existing.proxy.url) : null;
+    const proxyUrl = existing?.proxy?.url ?? picked?.url;
+    const proxy = proxyUrl ? AuthService.fixedDecryption(proxyUrl) : null;
     await this.fleet.ensureSlot(row.slot, proxy);
     if (simulated) {
       return { id: row.id, screenPath: null, simulated: true };

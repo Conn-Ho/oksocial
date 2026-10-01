@@ -112,6 +112,22 @@ describe('BrowserSlotService', () => {
     expect(fleet.ensureSlot).toHaveBeenCalledWith('sreuse', 'http://u:pw@1.2.3.4:8000');
   });
 
+  it('startLogin for a new account starts behind the exit IP picked for it, from the very first page', async () => {
+    const { service, fleet, repo } = setup();
+    await service.startLogin('org1', 'xiaohongshu', undefined, { proxyId: 'p1' });
+    const [org, , slot, proxyId] = repo.createPending.mock.calls[0];
+    expect([org, proxyId]).toEqual(['org1', 'p1']);
+    expect(fleet.ensureSlot).toHaveBeenCalledWith(slot, 'http://u:pw@1.2.3.4:8000');
+    expect(fleet.ensureSlot.mock.invocationCallOrder[0]).toBeLessThan(fleet.open.mock.invocationCallOrder[0]);
+  });
+
+  it('startLogin with an exit IP the team does not have is 404 before any browser is created', async () => {
+    const { service, fleet, repo } = setup();
+    await expect(service.startLogin('org1', 'xiaohongshu', undefined, { proxyId: 'nope' })).rejects.toMatchObject({ status: 404 });
+    expect(repo.createPending).not.toHaveBeenCalled();
+    expect(fleet.ensureSlot).not.toHaveBeenCalled();
+  });
+
   it('startLogin refuses a new account beyond the plan before any browser is created', async () => {
     const { service, fleet, repo, plans } = setup({ overLimit: true });
     await expect(service.startLogin('org1', 'xiaohongshu')).rejects.toMatchObject({ status: 402 });
