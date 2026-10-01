@@ -131,6 +131,12 @@ gcloud compute scp jackwener-opencli-*.tgz social-ops-1:/tmp/opencli-oksocial.tg
 sudo npm i -g /tmp/opencli-oksocial.tgz && opencli --version
 ```
 
+The bridge extension ships separately: `./package-extension.sh <opencli-oksocial checkout>` builds it
+into the VM's flat layout with `extension-manifest.json` (name okcli, the VM's permission set), then
+`./update-extension.sh <tgz>` rolls it out. Keep the manifest's permissions unchanged: Chrome disables
+an unpacked extension whose permissions grow (`disable_reasons` [4] in the profile's Preferences), and
+update-extension.sh re-enables any slot where that happened anyway.
+
 The previous build stays in `/usr/lib/node_modules/@jackwener/opencli-1.8.8-upstream` for a rollback
 (`sudo rm -rf …/opencli && sudo cp -a …/opencli-1.8.8-upstream …/opencli`). To take an upstream
 release, merge it into `oksocial` (the repo keeps `upstream-main`). Plugins in `~/.opencli/plugins` are
