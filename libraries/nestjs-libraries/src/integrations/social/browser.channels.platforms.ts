@@ -17,7 +17,6 @@ import {
   fieldsOf,
   firstRow,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
-import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 // What each browser channel's opencli commands (1.8.8) read for 监控 and the inbox and do as
 // interactions, mapped onto the shared row shapes. A platform or action without a command is left
@@ -50,8 +49,9 @@ export const clip = (value: string, max: number) => {
 };
 
 /**
- * The inbox items of each of our posts, one read per post. A post that cannot be read is skipped;
- * a logout, or no post read at all, fails the sync.
+ * The inbox items of each of our posts, one read per post. A post that cannot be read is skipped
+ * (知乎 answers a burst of reads with "not logged in" now and then, though the listing just read);
+ * when none can be read, the sync fails with the first reason (a real logout fails them all).
  */
 const threadItems = async <T>(threads: T[], readThread: (thread: T) => Promise<InboxFetched[]>) => {
   const items: InboxFetched[] = [];
@@ -60,9 +60,6 @@ const threadItems = async <T>(threads: T[], readThread: (thread: T) => Promise<I
     try {
       items.push(...(await readThread(thread)));
     } catch (err) {
-      if (err instanceof RefreshToken) {
-        throw err;
-      }
       failures.push(err);
     }
   }

@@ -673,13 +673,18 @@ describe('互动收件箱 of B站 and 知乎: comments on our own posts, and rep
     expect(calls).toHaveLength(1);
   });
 
-  it('a video whose comments cannot be read is skipped; all of them failing or a logout fails the sync', async () => {
+  it('a post whose comments cannot be read is skipped; when none can be read the sync fails with the first reason', async () => {
     const failed = { ok: false, code: 'FAILED', message: 'view API failed' };
+    const loggedOut = { ok: false, code: 'NOT_LOGGED_IN', message: '请登录' };
     const partly = await inbox('bilibili', [ok([biliVideoRow(1), biliVideoRow(2)]), failed, ok([biliComment('2001', '豆子', '好')])], (i) => i.fetch('s1', BILI_ME));
     expect(partly.result.map((r: any) => r.externalId)).toEqual(['2001']);
     await expect(inbox('bilibili', [ok([biliVideoRow(1), biliVideoRow(2)]), failed, failed], (i) => i.fetch('s1', BILI_ME))).rejects.toThrow(/view API failed/);
-    const loggedOut = inbox('bilibili', [ok([biliVideoRow(1), biliVideoRow(2)]), { ok: false, code: 'NOT_LOGGED_IN', message: '请登录' }], (i) => i.fetch('s1', BILI_ME));
-    await expect(loggedOut).rejects.toBeInstanceOf(RefreshToken);
+    // 知乎 now and then answers one read of a burst with "not logged in": that answer is skipped
+    const flaky = await inbox('zhihu', [ok([zhihuAnswerRow('202', 4), zhihuAnswerRow('203', 1)]), loggedOut, ok([zhihuComment('9003', '豆豆', '有道理')])], (i) => i.fetch('s1', ZHIHU_ME));
+    expect(flaky.result.map((r: any) => r.externalId)).toEqual(['9003']);
+    // a real logout fails every read
+    const out = inbox('zhihu', [ok([zhihuAnswerRow('202', 4), zhihuAnswerRow('203', 1)]), loggedOut, loggedOut], (i) => i.fetch('s1', ZHIHU_ME));
+    await expect(out).rejects.toBeInstanceOf(RefreshToken);
   });
 
   it('B站 replies under the comment by its rpid (writes need --execute)', async () => {
