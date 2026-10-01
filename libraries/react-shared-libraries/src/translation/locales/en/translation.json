@@ -3115,14 +3115,6 @@
   "auto_action_support": "{{action}}: {{platforms}}",
   "browser_login_not_yet": "No login detected yet: finish logging in on the screen above (after scanning, tap Confirm on your phone)",
   "browser_login_unreadable": "You seem to be logged in, but the account can't be read yet. Wait a few seconds and click \"I've logged in\" again; if it keeps happening, contact us (we have logged the problem)",
-  "browser_exit_loading": "Loading exit IPs…",
-  "browser_exit_proxy_detail": "{{host}} · used by {{n}} accounts",
-  "browser_exit_none_option": "No exit IP",
-  "browser_exit_none_detail": "Use the oksocial server's own IP (Hong Kong data center)",
-  "browser_exit_title": "Pick an exit IP first",
-  "browser_exit_intro": "This account's browser goes through this IP from the first page on, and so do its posts and interactions later. Pick one in the region where you usually use this account.",
-  "browser_exit_empty": "Your team has no exit IP yet. You can add one in Settings → Outbound proxies, then come back to log in.",
-  "browser_exit_add": "Add an exit IP",
-  "browser_exit_start": "Start login",
-  "refresh_started": "Updating every account in the background; the report refreshes when it is done"
+  "refresh_started": "Updating every account in the background; the report refreshes when it is done",
+  "browser_login_exit": "Exit IP: {{name}} (logins, posts and interactions all go through it)"
 }

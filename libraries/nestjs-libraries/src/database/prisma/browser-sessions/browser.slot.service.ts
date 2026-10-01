@@ -16,6 +16,7 @@ import {
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
+import { isOverseasChannel } from '@gitroom/helpers/utils/overseas.channels';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
 // A login session nobody finished (closed the dialog, never scanned) is cleaned up after this.
@@ -64,7 +65,8 @@ const assertSimulatedAllowed = (superAdmin: boolean | undefined) => {
 };
 
 /** What the login dialog embeds; a simulated account has no screen to show. */
-export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true };
+// proxy: the name of the exit IP a new account's browser started behind
+export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true; proxy?: string };
 
 export interface StartLoginOptions {
   // connect a simulated account instead of opening the platform's login page
@@ -130,10 +132,7 @@ export class BrowserSlotService {
     if (!existing) {
       await this._planService.assertWithinLimit(orgId, 'channels');
     }
-    const picked = !existing && options.proxyId ? await this._repository.getProxy(orgId, options.proxyId) : null;
-    if (!existing && options.proxyId && !picked) {
-      throw new HttpException('出口代理不存在', 404);
-    }
+    const picked = existing ? null : await this.newAccountProxy(orgId, providerIdentifier, options.proxyId);
     const row =
       existing ??
       (await this._repository.createPending(
@@ -150,7 +149,27 @@ export class BrowserSlotService {
     }
     await this.fleet.open(row.slot, provider.browserSession!.loginUrl);
     const { path } = await this.fleet.startScreen(row.slot);
-    return { id: row.id, screenPath: path };
+    return { id: row.id, screenPath: path, ...(picked ? { proxy: picked.name } : {}) };
+  }
+
+  /**
+   * The exit IP a new account starts behind: the one asked for (404 if the team has no such one), else
+   * for an overseas platform the team's exit IP (its first, when there are several), else none.
+   */
+  private async newAccountProxy(orgId: string, providerIdentifier: string, proxyId?: string) {
+    if (proxyId) {
+      const proxy = await this._repository.getProxy(orgId, proxyId);
+      if (!proxy) {
+        throw new HttpException('出口代理不存在', 404);
+      }
+      return proxy;
+    }
+    if (!isOverseasChannel(providerIdentifier)) {
+      return null;
+    }
+    const proxies = await this._repository.listProxies(orgId);
+    // listed newest first: the first one the team added
+    return proxies.length ? proxies[proxies.length - 1] : null;
   }
 
   /** Polled by the login dialog: links the channel as soon as the browser is logged in. */

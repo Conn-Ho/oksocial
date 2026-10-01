@@ -11,10 +11,8 @@ import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Button } from '@gitroom/react/form/button';
 import {
   BrowserLoginView,
-  OVERSEAS_BROWSER,
   SCAN_APP,
 } from '@gitroom/frontend/components/launches/browser.login.view';
-import { BrowserExitPicker } from '@gitroom/frontend/components/launches/browser.exit.picker';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -58,8 +56,8 @@ export const BrowserLoginModal: FC<{
   // the 2nd step is being opened (the poll and 我已登录 can both see the first login finish)
   const advancing = useRef(false);
   const app = SCAN_APP[identifier] && t(`scan_app_${identifier}`, SCAN_APP[identifier]);
-  // a new overseas account picks its exit IP before the browser starts
-  const [picking, setPicking] = useState(!integrationId && mode === 'login' && OVERSEAS_BROWSER.has(identifier));
+  // the exit IP a new overseas account's browser started behind (the server picks the team's)
+  const [exit, setExit] = useState<string | null>(null);
 
   const show = useCallback((next: Step) => {
     current.current = next;
@@ -152,22 +150,23 @@ export const BrowserLoginModal: FC<{
     }
   }, [fetch, onConnected, finish, startWeb]);
 
-  const start = useCallback(async (proxyId?: string) => {
+  const start = useCallback(async () => {
     const res = await fetch('/browser-sessions', {
       method: 'POST',
-      body: JSON.stringify({ provider: identifier, integrationId, proxyId }),
+      body: JSON.stringify({ provider: identifier, integrationId }),
     });
     if (!res.ok) {
       return fail(res);
     }
-    const { id, screenPath } = await res.json();
+    const { id, screenPath, proxy } = await res.json();
+    setExit(proxy ?? null);
     show({ kind: 'login', id, screenPath });
   }, [fail, show]);
 
   useEffect(() => {
     if (mode === 'web' && integrationId) {
       startWeb(integrationId);
-    } else if (!picking) {
+    } else {
       start();
     }
     return () => {
@@ -208,17 +207,6 @@ export const BrowserLoginModal: FC<{
 
   const web = step?.kind === 'web';
 
-  if (picking) {
-    return (
-      <BrowserExitPicker
-        onStart={(proxyId) => {
-          setPicking(false);
-          start(proxyId);
-        }}
-      />
-    );
-  }
-
   return (
     <div className="flex flex-col gap-[16px] w-full">
       {web ? (
@@ -243,6 +231,11 @@ export const BrowserLoginModal: FC<{
             'browser_login_intro',
             '这个账号有自己专属的浏览器。请在下面登录{{name}}，登录成功后会自动连接。',
             { name }
+          )}
+          {exit && (
+            <span className="block mt-[4px] text-[13px] text-textItemBlur">
+              {t('browser_login_exit', '出口 IP：{{name}}（登录、发帖、互动都走这个 IP）', { name: exit, interpolation: { escapeValue: false } })}
+            </span>
           )}
         </p>
       )}

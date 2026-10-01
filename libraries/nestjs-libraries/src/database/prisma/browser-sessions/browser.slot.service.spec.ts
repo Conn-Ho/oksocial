@@ -121,6 +121,25 @@ describe('BrowserSlotService', () => {
     expect(fleet.ensureSlot.mock.invocationCallOrder[0]).toBeLessThan(fleet.open.mock.invocationCallOrder[0]);
   });
 
+  it('a new overseas account logs in behind the team exit IP without being asked, and says which one', async () => {
+    const { service, fleet, repo } = setup({ provider: { ...provider, identifier: 'instagramweb' } });
+    const res = await service.startLogin('org1', 'instagramweb');
+    expect(repo.createPending.mock.calls[0][3]).toBe('p1');
+    expect(fleet.ensureSlot).toHaveBeenCalledWith(expect.any(String), 'http://u:pw@1.2.3.4:8000');
+    expect(res).toMatchObject({ proxy: 'TW' });
+  });
+
+  it('a domestic account, or a team without an exit IP, starts on the server IP', async () => {
+    const domestic = setup();
+    await domestic.service.startLogin('org1', 'xiaohongshu');
+    expect(domestic.repo.createPending.mock.calls[0][3]).toBeUndefined();
+    expect(domestic.fleet.ensureSlot).toHaveBeenCalledWith(expect.any(String), null);
+    const none = setup({ provider: { ...provider, identifier: 'instagramweb' } });
+    none.repo.listProxies.mockResolvedValueOnce([]);
+    expect(await none.service.startLogin('org1', 'instagramweb')).not.toHaveProperty('proxy');
+    expect(none.fleet.ensureSlot).toHaveBeenCalledWith(expect.any(String), null);
+  });
+
   it('startLogin with an exit IP the team does not have is 404 before any browser is created', async () => {
     const { service, fleet, repo } = setup();
     await expect(service.startLogin('org1', 'xiaohongshu', undefined, { proxyId: 'nope' })).rejects.toMatchObject({ status: 404 });
