@@ -1,4 +1,4 @@
-import { MonitorRepository } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository';
+import { MonitorRepository, monitorPostsWhere } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository';
 
 /** One fake Prisma delegate per model; every method records its argument. */
 const delegate = (overrides: Record<string, jest.Mock> = {}) =>
@@ -113,6 +113,46 @@ describe('MonitorRepository', () => {
         OR: [{ publishedAt: { gte: since } }, { publishedAt: null, createdAt: { gte: since } }],
       },
     });
+  });
+
+  it('竞品帖文: competitor posts of the organization\'s live targets, most liked first with unknown counts last, 30 a page', async () => {
+    const { repo, monitorItem } = setup();
+    monitorItem.count.mockResolvedValueOnce(65);
+    const page = await repo.allPosts('o1', { sort: 'likes', order: 'desc', page: 3 });
+    expect(page).toEqual(expect.objectContaining({ total: 65, page: 3, pages: 3 }));
+    expect(monitorItem.findMany).toHaveBeenCalledWith({
+      where: { kind: { in: ['POST'] }, target: { organizationId: 'o1', deletedAt: null, kind: { in: ['ACCOUNT'] } } },
+      orderBy: [{ likes: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+      skip: 60,
+      take: 30,
+      include: { target: { select: { id: true, kind: true, platform: true, query: true, title: true } } },
+    });
+    expect(monitorItem.count).toHaveBeenCalledWith({ where: monitorItem.findMany.mock.calls[0][0].where });
+  });
+
+  it('竞品帖文 sorts by any number or the publish time, either way', async () => {
+    const { repo, monitorItem } = setup();
+    await repo.allPosts('o1', { sort: 'publishedAt', order: 'asc', page: 0 });
+    expect(monitorItem.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      orderBy: [{ publishedAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
+      skip: 0,
+    }));
+    await repo.allPosts('o1', { sort: 'views', order: 'desc', page: 1 });
+    expect(monitorItem.findMany.mock.calls.at(-1)[0].orderBy[0]).toEqual({ views: { sort: 'desc', nulls: 'last' } });
+  });
+
+  it('竞品帖文 narrows to a platform, one competitor and a date range, and can add keyword hits', () => {
+    const from = new Date('2026-09-01T00:00:00Z');
+    const to = new Date('2026-09-30T23:59:59Z');
+    expect(monitorPostsWhere('o1', { withHits: true, platform: 'bilibili', targetId: 't9', from, to })).toEqual({
+      kind: { in: ['POST', 'HIT'] },
+      targetId: 't9',
+      target: { organizationId: 'o1', deletedAt: null, kind: { in: ['ACCOUNT', 'KEYWORD'] }, platform: 'bilibili' },
+      // posts without a publish date count from when they were first seen
+      OR: [{ publishedAt: { gte: from, lte: to } }, { publishedAt: null, createdAt: { gte: from, lte: to } }],
+    });
+    expect(monitorPostsWhere('o1', { from }).OR).toEqual([{ publishedAt: { gte: from } }, { publishedAt: null, createdAt: { gte: from } }]);
+    expect(monitorPostsWhere('o1', {})).not.toHaveProperty('OR');
   });
 
   it('reader channels are the usable, unbraked ones of that platform, oldest first', async () => {

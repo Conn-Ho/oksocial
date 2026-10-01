@@ -31,6 +31,46 @@ export type MonitorTargetChanges = {
   paused?: boolean;
 };
 
+// 竞品帖文: posts of competitor accounts across targets (keyword hits too when asked), filtered and
+// sorted by a number; items without that number come last.
+export type MonitorPostSort = 'views' | 'likes' | 'comments' | 'shares' | 'collects' | 'publishedAt';
+export type MonitorPostsFilter = {
+  withHits?: boolean;
+  platform?: string;
+  targetId?: string;
+  from?: Date;
+  to?: Date;
+  sort: MonitorPostSort;
+  order: 'asc' | 'desc';
+  page: number;
+};
+
+const targetSummary = {
+  select: { id: true, kind: true, platform: true, query: true, title: true },
+};
+
+/** Published (or, without a date, first seen) inside the range. Pure. */
+const publishedWithin = (from?: Date, to?: Date) => {
+  if (!from && !to) {
+    return {};
+  }
+  const range = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
+  return { OR: [{ publishedAt: range }, { publishedAt: null, createdAt: range }] };
+};
+
+/** The where of 竞品帖文 for one organization's live targets. Pure. */
+export const monitorPostsWhere = (orgId: string, f: Omit<MonitorPostsFilter, 'sort' | 'order' | 'page'>) => ({
+  kind: { in: (f.withHits ? ['POST', 'HIT'] : ['POST']) as MonitorItemKind[] },
+  ...(f.targetId ? { targetId: f.targetId } : {}),
+  target: {
+    organizationId: orgId,
+    deletedAt: null,
+    kind: { in: (f.withHits ? ['ACCOUNT', 'KEYWORD'] : ['ACCOUNT']) as MonitorKind[] },
+    ...(f.platform ? { platform: f.platform } : {}),
+  },
+  ...publishedWithin(f.from, f.to),
+});
+
 const integrationSummary = {
   select: { id: true, name: true, picture: true, providerIdentifier: true },
 };
@@ -233,6 +273,22 @@ export class MonitorRepository {
         orderBy: [{ publishedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
         skip: (Math.max(1, page) - 1) * MONITOR_PAGE_SIZE,
         take: MONITOR_PAGE_SIZE,
+      }),
+    ]);
+    return { total, page, pages: Math.ceil(total / MONITOR_PAGE_SIZE), items };
+  }
+
+  async allPosts(orgId: string, f: MonitorPostsFilter) {
+    const where = monitorPostsWhere(orgId, f);
+    const page = Math.max(1, f.page);
+    const [total, items] = await Promise.all([
+      this._items.model.monitorItem.count({ where }),
+      this._items.model.monitorItem.findMany({
+        where,
+        orderBy: [{ [f.sort]: { sort: f.order, nulls: 'last' } }, { createdAt: 'desc' }],
+        skip: (page - 1) * MONITOR_PAGE_SIZE,
+        take: MONITOR_PAGE_SIZE,
+        include: { target: targetSummary },
       }),
     ]);
     return { total, page, pages: Math.ceil(total / MONITOR_PAGE_SIZE), items };

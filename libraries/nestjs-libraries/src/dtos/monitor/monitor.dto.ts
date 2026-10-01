@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -59,6 +60,22 @@ export class UpdateMonitorTargetDto {
 export class MonitorItemsQueryDto {
   @IsIn(ITEM_KINDS) kind: (typeof ITEM_KINDS)[number];
   @IsOptional() @IsString() sentiment?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+}
+
+// 竞品帖文: what the table is sorted by, and where its posts come from (competitor accounts, or
+// keyword hits as well)
+export const MONITOR_POST_SORTS = ['views', 'likes', 'comments', 'shares', 'collects', 'publishedAt'] as const;
+export const MONITOR_POST_SOURCES = ['COMPETITORS', 'ALL'] as const;
+
+export class MonitorPostsQueryDto {
+  @IsOptional() @IsIn(MONITOR_POST_SOURCES) source?: (typeof MONITOR_POST_SOURCES)[number];
+  @IsOptional() @IsString() platform?: string;
+  @IsOptional() @IsString() targetId?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+  @IsOptional() @IsIn(MONITOR_POST_SORTS) sort?: (typeof MONITOR_POST_SORTS)[number];
+  @IsOptional() @IsIn(['asc', 'desc']) order?: 'asc' | 'desc';
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
 }
 

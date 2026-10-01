@@ -13,6 +13,7 @@ import {
   CreateMonitorTargetDto,
   ImportMonitorAccountsDto,
   MonitorItemsQueryDto,
+  MonitorPostsQueryDto,
   MonitorTargetsQueryDto,
   MonitorVsQueryDto,
   RemakeDraftDto,
@@ -92,6 +93,13 @@ export class MonitoringController {
     @Query() query: MonitorItemsQueryDto
   ) {
     return this._monitorService.items(org.id, id, query.kind, query.page || 1, query.sentiment);
+  }
+
+  // 竞品帖文: competitor posts across every competitor (keyword hits too with source=ALL), sortable by
+  // their numbers, for 爆款 research and 一键复刻
+  @Get('/items')
+  allPosts(@GetOrgFromRequest() org: Organization, @Query() query: MonitorPostsQueryDto) {
+    return this._monitorService.allPosts(org.id, query);
   }
 
   @Get('/targets/:id/vs')
