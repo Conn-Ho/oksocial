@@ -3297,5 +3297,6 @@
   "team_tz_america_new_york": "New York",
   "team_tz_america_chicago": "Chicago",
   "team_tz_america_denver": "Denver",
-  "team_tz_america_los_angeles": "Los Angeles"
+  "team_tz_america_los_angeles": "Los Angeles",
+  "team_delete_owner_only": "Only the team owner can delete the team."
 }

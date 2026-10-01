@@ -172,7 +172,7 @@ describe('TeamsService', () => {
   describe('info', () => {
     it('reads Asia/Shanghai when the team has no timezone, and what the caller may do', async () => {
       const { service } = setup();
-      expect(await service.info('t1', 'ADMIN', 'u1')).toMatchObject({
+      expect(await service.info('t1', 'SUPERADMIN', 'u1')).toMatchObject({
         id: 't1',
         name: '客户 A',
         timezone: 'Asia/Shanghai',
@@ -181,6 +181,8 @@ describe('TeamsService', () => {
         canDelete: true,
         lastTeam: false,
       });
+      // an invited admin edits the team but cannot delete it
+      expect(await service.info('t1', 'ADMIN', 'u1')).toMatchObject({ canEdit: true, canDelete: false });
     });
 
     it('a member who is not an admin can read but neither edit nor delete', async () => {
@@ -244,7 +246,7 @@ describe('TeamsService', () => {
   });
 
   describe('delete', () => {
-    it.each(['MANAGER', 'USER', 'VIEWER'])('refuses a %s: only admins delete the team, nothing is stopped', async (role) => {
+    it.each(['ADMIN', 'MANAGER', 'USER', 'VIEWER'])('refuses a %s: only the owner deletes the team, nothing is stopped', async (role) => {
       const { service, calls } = setup();
       expect((await failure(service.delete('u1', 't1', role, '客户 A'))).getStatus()).toBe(403);
       expect(calls).toEqual([]);
@@ -252,7 +254,7 @@ describe('TeamsService', () => {
 
     it('refuses when the typed name is not the team name, nothing is stopped', async () => {
       const { service, calls } = setup();
-      expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户'))).getStatus()).toBe(400);
+      expect((await failure(service.delete('u1', 't1', 'SUPERADMIN', '客户'))).getStatus()).toBe(400);
       expect(calls).toEqual([]);
     });
 
@@ -267,7 +269,7 @@ describe('TeamsService', () => {
 
     it('cancels billing, stops what the team runs, deletes its channels, releases its browsers, then soft-deletes it', async () => {
       const { service, calls, automations, monitor, autopost, posts, integrations, slots, payment, repo } = setup();
-      await service.delete('u1', 't1', 'ADMIN', ' 客户 A ');
+      await service.delete('u1', 't1', 'SUPERADMIN', ' 客户 A ');
       expect(calls).toEqual([
         'cancelAllSubscriptions',
         'disableAll',
@@ -293,20 +295,20 @@ describe('TeamsService', () => {
 
     it('keeps the team when a browser could not be removed, so deleting again retries', async () => {
       const { service, calls, repo } = setup({ slotsFailed: 1 });
-      expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户 A'))).getStatus()).toBe(503);
+      expect((await failure(service.delete('u1', 't1', 'SUPERADMIN', '客户 A'))).getStatus()).toBe(503);
       expect(calls).toContain('releaseForOrganization');
       expect(repo.deleteOrganization).not.toHaveBeenCalled();
     });
 
     it('changes nothing when the subscription could not be cancelled', async () => {
       const { service, calls } = setup({ billingFails: true });
-      expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户 A'))).getStatus()).toBe(400);
+      expect((await failure(service.delete('u1', 't1', 'SUPERADMIN', '客户 A'))).getStatus()).toBe(400);
       expect(calls).toEqual(['cancelAllSubscriptions']);
     });
 
     it('404 for a team that is already gone', async () => {
       const { service, calls } = setup({ info: null });
-      expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户 A'))).getStatus()).toBe(404);
+      expect((await failure(service.delete('u1', 't1', 'SUPERADMIN', '客户 A'))).getStatus()).toBe(404);
       expect(calls).toEqual([]);
     });
   });

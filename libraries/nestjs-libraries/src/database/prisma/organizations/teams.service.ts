@@ -39,6 +39,10 @@ const assertAdmin = (role: string | undefined) => {
   }
 };
 
+// deleting cancels the team's subscription and removes its accounts: the owner's call only, not an
+// invited admin's
+const isOwner = (role: string | undefined) => role === 'SUPERADMIN';
+
 /** '' or only spaces read as "no value". */
 const blankToNull = (value: string | null | undefined) => (value?.trim() ? value.trim() : null);
 
@@ -118,7 +122,7 @@ export class TeamsService {
       timezone: team.timezone || DEFAULT_TEAM_TIMEZONE,
       members: _count.users,
       canEdit: canManageOrg(role),
-      canDelete: canManageOrg(role) && !lastTeam,
+      canDelete: isOwner(role) && !lastTeam,
       lastTeam,
     };
   }
@@ -160,7 +164,9 @@ export class TeamsService {
    * team the user moves to.
    */
   async delete(userId: string, orgId: string, role: string | undefined, confirmName: string) {
-    assertAdmin(role);
+    if (!isOwner(role)) {
+      throw new HttpException('只有团队所有者可以删除团队', 403);
+    }
     const team = await this._organizationRepository.getTeamInfo(orgId);
     if (!team) {
       throw new HttpException('团队不存在', 404);

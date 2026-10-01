@@ -325,6 +325,8 @@ export const TeamSettings: FC = () => {
             <span className="text-[13px] text-textItemBlur">
               {team.lastTeam
                 ? t('team_delete_last', '这是你唯一的团队，不能删除。可以先创建或加入另一个团队。')
+                : !team.canDelete
+                ? t('team_delete_owner_only', '只有团队所有者可以删除团队。')
                 : t('team_delete_switch', '删除后会切换到你的另一个团队。')}
             </span>
             <Button
