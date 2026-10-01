@@ -42,6 +42,7 @@ import { XiaohongshuWebProvider } from '@gitroom/nestjs-libraries/integrations/s
 import { DouyinWebProvider } from '@gitroom/nestjs-libraries/integrations/social/douyin.web.provider';
 import { WeiboWebProvider } from '@gitroom/nestjs-libraries/integrations/social/weibo.web.provider';
 import { XWebProvider } from '@gitroom/nestjs-libraries/integrations/social/x.web.provider';
+import { BROWSER_CHANNELS } from '@gitroom/nestjs-libraries/integrations/social/browser.channels';
 
 export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   // oksocial browser channel (logged-in browser on the fleet, no official API needed)
@@ -49,6 +50,7 @@ export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new DouyinWebProvider(),
   new WeiboWebProvider(),
   new XWebProvider(),
+  ...BROWSER_CHANNELS,
   new XProvider(),
   new LinkedinProvider(),
   new LinkedinPageProvider(),

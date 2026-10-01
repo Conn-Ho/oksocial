@@ -168,7 +168,12 @@ export class AiCreationService {
         ...p.creation!,
         channel: true,
       }));
-    const taken = new Set(channels.map((p) => p.identifier));
+    // a channel writing for a catalog platform under another identifier (instagramweb) takes its place
+    const taken = new Set(
+      socialIntegrationList
+        .filter((p) => p.creation && !this._integrationManager.isHiddenProvider(p.identifier))
+        .flatMap((p) => [p.identifier, p.platform].filter((x): x is string => !!x))
+    );
     const rest = CREATION_CATALOG.filter((p) => !taken.has(p.identifier))
       .sort((a, b) => Number(a.region === 'global') - Number(b.region === 'global'))
       .map((p) => ({ ...p, channel: false }));

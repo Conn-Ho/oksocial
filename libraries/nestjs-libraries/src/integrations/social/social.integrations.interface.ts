@@ -390,6 +390,10 @@ export interface SocialProvider
   writeCreditAction?: CreditAction;
   // oksocial AI 创作: how to write for this platform.
   creation?: CreationCapabilities;
+  // the AI 创作 catalog platform a channel writes for when its identifier differs (instagramweb → instagram)
+  platform?: string;
+  // oksocial browser channel: false while posts cannot go out through it yet (login, data and interactions only)
+  publishable?: boolean;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<
