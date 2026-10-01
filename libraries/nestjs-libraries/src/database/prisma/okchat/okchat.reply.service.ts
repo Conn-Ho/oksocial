@@ -13,9 +13,12 @@ import { OkchatReplyDto } from '@gitroom/nestjs-libraries/dtos/okchat/okchat.dto
 // between two DM sends and at most this many a day (Asia/Shanghai day).
 export const DM_SEND_GAP_MS = 30_000;
 export const DM_DAILY_CAP = 150;
+// replies of one account waiting to be sent: more are refused (429) until the queue goes down
+export const DM_QUEUE_CAP = 50;
 // a send still "SENDING" after this never finished (the process stopped)
 const STUCK_AFTER_MS = 10 * 60_000;
-const QUEUE_BATCH = 500;
+// accounts looked at per round (one reply each)
+const QUEUE_ACCOUNTS = 500;
 const SEND_CONCURRENCY = 3;
 const SHANGHAI_MS = 8 * 60 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
@@ -39,7 +42,7 @@ export const sendFailureText = (platform: string, message: string) => {
   return '这条私信没有发出（账号浏览器出错），请稍后重发';
 };
 
-const refuse = (status: 409 | 422, error: string) => new HttpException({ error }, status);
+const refuse = (status: 409 | 422 | 429, error: string) => new HttpException({ error }, status);
 // control characters cannot be typed into a chat (and must not reach the browser command)
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
@@ -63,7 +66,7 @@ export class OkchatReplyService {
     return { name: (provider as { name?: string } | undefined)?.name || providerIdentifier, dm: provider?.dm };
   }
 
-  /** POST /public/okchat/replies: 202 once queued (also for a repeat), 409 / 422 refused at once. */
+  /** POST /public/okchat/replies: 202 once queued (also for a repeat), 409 / 422 / 429 refused at once. */
   async accept(body: OkchatReplyDto) {
     // the same okchat message again: accepted before, never sent twice
     const earlier = await this._repository.reply(body.okchatMessageId);
@@ -99,6 +102,9 @@ export class OkchatReplyService {
     if (!(await this._repository.thread(channel.id, body.threadId))) {
       throw refuse(422, `找不到这个会话：它不属于这个${platform.name}账号`);
     }
+    if ((await this._repository.queuedCount(channel.id)) >= DM_QUEUE_CAP) {
+      throw refuse(429, '这个账号排队的回复太多了，请稍后再发');
+    }
     await this._repository.createReply({
       okchatMessageId: body.okchatMessageId,
       conversationId: body.conversationId,
@@ -109,11 +115,11 @@ export class OkchatReplyService {
     return { accepted: true };
   }
 
-  /** One round: at most one send per account (accounts in parallel), oldest reply first. */
+  /** One round: at most one send per account (accounts in parallel), each account's oldest reply. */
   async sendDue(now = new Date()) {
     await this.failStuck(now);
     const byAccount = new Map<string, OkchatReply[]>();
-    for (const reply of await this._repository.queuedReplies(QUEUE_BATCH)) {
+    for (const reply of await this._repository.queuedReplies(QUEUE_ACCOUNTS)) {
       byAccount.set(reply.integrationId, [...(byAccount.get(reply.integrationId) ?? []), reply]);
     }
     await inParallel([...byAccount.entries()], SEND_CONCURRENCY, async ([integrationId, queued]) => {

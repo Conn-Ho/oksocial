@@ -6,6 +6,7 @@ import { HttpException } from '@nestjs/common';
 import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
   DM_DAILY_CAP,
+  DM_QUEUE_CAP,
   DM_SEND_GAP_MS,
   OkchatReplyService,
   sendFailureText,
@@ -49,7 +50,7 @@ const reply = (id: string, over: any = {}) => ({
   ...over,
 });
 
-const setup = (opts: { binding?: any; queued?: any[]; lastAttempt?: Date | null; attempts?: number; send?: jest.Mock; existing?: any; thread?: any; stuck?: any[] } = {}) => {
+const setup = (opts: { binding?: any; queued?: any[]; lastAttempt?: Date | null; attempts?: number; send?: jest.Mock; existing?: any; thread?: any; stuck?: any[]; waiting?: number } = {}) => {
   const dm = { maxLength: 500, loggedOutReason: '小红书网页版已退出登录', readGapMs: [1, 2], send: opts.send ?? jest.fn(async () => undefined) };
   const repo = {
     bindingById: jest.fn(async () => ('binding' in opts ? opts.binding : binding())),
@@ -57,6 +58,7 @@ const setup = (opts: { binding?: any; queued?: any[]; lastAttempt?: Date | null;
     reply: jest.fn(async () => opts.existing ?? null),
     thread: jest.fn(async () => ('thread' in opts ? opts.thread : { threadId: 'c1' })),
     createReply: jest.fn(async (d: any) => ({ id: 'new', ...d })),
+    queuedCount: jest.fn(async () => opts.waiting ?? 0),
     queuedReplies: jest.fn(async () => opts.queued ?? []),
     claimReply: jest.fn(async () => true),
     finishReply: jest.fn(async () => ({})),
@@ -136,6 +138,18 @@ describe('OkchatReplyService.accept (POST /public/okchat/replies)', () => {
     expect(await refusal(service.accept(body({ text: '你好\u0000' })))).toEqual({ status: 422, body: { error: expect.stringContaining('控制字符') } });
   });
 
+  it('429 once 50 replies of the account wait; a repeat of an accepted one is still 202', async () => {
+    expect(DM_QUEUE_CAP).toBe(50);
+    const full = setup({ waiting: DM_QUEUE_CAP });
+    expect(await refusal(full.service.accept(body()))).toEqual({ status: 429, body: { error: '这个账号排队的回复太多了，请稍后再发' } });
+    expect(full.repo.queuedCount).toHaveBeenCalledWith('i1');
+    expect(full.repo.createReply).not.toHaveBeenCalled();
+    const room = setup({ waiting: DM_QUEUE_CAP - 1 });
+    expect(await room.service.accept(body())).toEqual({ accepted: true });
+    const repeat = setup({ waiting: DM_QUEUE_CAP, existing: reply('r1') });
+    expect(await repeat.service.accept(body())).toEqual({ accepted: true });
+  });
+
   it('422 with the platform\'s reason for a text it cannot take', async () => {
     const { service, dm } = setup();
     (dm as any).checkText = (text: string) => (text.startsWith('-') ? '回复不能以「-」开头' : null);
@@ -153,6 +167,13 @@ describe('OkchatReplyService.sendDue', () => {
     expect(outbox.queueDelivery).toHaveBeenCalledWith('i1', { okchatMessageId: 'm-r1', conversationId: 'cv1', ok: true });
     // one send per account per round
     expect(dm.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('each account with replies waiting gets its oldest one sent in the round', async () => {
+    const { service, repo, dm } = setup({ queued: [reply('r1'), reply('r2', { integrationId: 'i2' }), reply('r3', { integrationId: 'i3' })] });
+    repo.bindingOf.mockImplementation(async (id: string) => binding({ integrationId: id, integration: channel({ id, token: `slot-${id}` }) }));
+    await service.sendDue(NOW);
+    expect(dm.send.mock.calls.map((c: any[]) => c[0]).sort()).toEqual(['slot-i1', 'slot-i2', 'slot-i3']);
   });
 
   it('waits at least 30 seconds after the account\'s last send', async () => {

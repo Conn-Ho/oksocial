@@ -317,12 +317,29 @@ export class OkchatRepository {
     }
   }
 
-  queuedReplies(limit: number) {
-    return this._replies.model.okchatReply.findMany({
+  /**
+   * The oldest queued reply of each account (at most `limit` accounts, the ones waiting longest
+   * first): one account's long queue does not hold the others back.
+   */
+  async queuedReplies(limit: number) {
+    const accounts = await this._replies.model.okchatReply.groupBy({
+      by: ['integrationId'],
       where: { status: 'QUEUED' },
-      orderBy: { createdAt: 'asc' },
+      _min: { createdAt: true },
+      orderBy: { _min: { createdAt: 'asc' } },
       take: limit,
     });
+    if (!accounts.length) {
+      return [];
+    }
+    return this._replies.model.okchatReply.findMany({
+      where: { status: 'QUEUED', OR: accounts.map((a) => ({ integrationId: a.integrationId, createdAt: a._min.createdAt! })) },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  queuedCount(integrationId: string) {
+    return this._replies.model.okchatReply.count({ where: { integrationId, status: 'QUEUED' } });
   }
 
   /** QUEUED → SENDING for this run only: false when another run took it. */

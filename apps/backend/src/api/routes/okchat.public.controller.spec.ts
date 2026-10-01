@@ -20,6 +20,7 @@ const repo = {
   bindingById: jest.fn(async (id: string) => (id === 'b_1' ? { bindingId: 'b_1', integrationId: 'i1', active: true, loggedOutReason: null, integration: channel } : null)),
   reply: jest.fn(async (id: string) => stored.get(id) ?? null),
   thread: jest.fn(async (_i: string, threadId: string) => (threadId === 'c1' ? { threadId } : null)),
+  queuedCount: jest.fn(async () => 0),
   createReply: jest.fn(async (d: { okchatMessageId: string }) => {
     stored.set(d.okchatMessageId, d);
     return d;
@@ -144,6 +145,11 @@ describe('POST /replies', () => {
       status: 409,
       body: { error: '这个账号已在 oksocial 删除、停用或解除关联，私信发不出了' },
     });
+  });
+
+  it('429 with the reason while the account has too many replies waiting', async () => {
+    repo.queuedCount.mockResolvedValueOnce(50);
+    expect(await call('/replies', replyBody({ okchatMessageId: 'm5' }))).toEqual({ status: 429, body: { error: '这个账号排队的回复太多了，请稍后再发' } });
   });
 
   it('422 for an empty or too long text', async () => {

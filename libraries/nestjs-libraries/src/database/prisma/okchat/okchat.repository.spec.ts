@@ -15,7 +15,12 @@ const setup = () => {
   };
   const integration = { findMany: jest.fn(async () => [{ id: 'i1' }, { id: 'i2' }]) };
   const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })) };
-  const okchatReply = { deleteMany: jest.fn(async () => ({ count: 5 })) };
+  const okchatReply = {
+    deleteMany: jest.fn(async () => ({ count: 5 })),
+    groupBy: jest.fn(async () => [] as any[]),
+    findMany: jest.fn(async () => [] as any[]),
+    count: jest.fn(async () => 7),
+  };
   const transaction = { $transaction: jest.fn(async (ops: any[]) => ops) };
   const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply };
   const r = { model } as any;
@@ -104,5 +109,42 @@ describe('OkchatRepository retention', () => {
     expect(okchatReply.deleteMany).toHaveBeenCalledWith({
       where: { status: { notIn: ['QUEUED', 'SENDING'] }, createdAt: { lt: before } },
     });
+  });
+});
+
+describe('OkchatRepository reply queue', () => {
+  it('the oldest waiting reply of each account, the accounts waiting longest first', async () => {
+    const { repo, okchatReply } = setup();
+    const t1 = new Date('2026-10-02T06:00:00Z');
+    const t2 = new Date('2026-10-02T06:05:00Z');
+    okchatReply.groupBy.mockResolvedValueOnce([
+      { integrationId: 'i1', _min: { createdAt: t1 } },
+      { integrationId: 'i2', _min: { createdAt: t2 } },
+    ]);
+    okchatReply.findMany.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+    expect(await repo.queuedReplies(100)).toEqual([{ id: 'r1' }, { id: 'r2' }]);
+    expect(okchatReply.groupBy).toHaveBeenCalledWith({
+      by: ['integrationId'],
+      where: { status: 'QUEUED' },
+      _min: { createdAt: true },
+      orderBy: { _min: { createdAt: 'asc' } },
+      take: 100,
+    });
+    expect(okchatReply.findMany).toHaveBeenCalledWith({
+      where: { status: 'QUEUED', OR: [{ integrationId: 'i1', createdAt: t1 }, { integrationId: 'i2', createdAt: t2 }] },
+      orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('nothing waiting: no second query', async () => {
+    const { repo, okchatReply } = setup();
+    expect(await repo.queuedReplies(100)).toEqual([]);
+    expect(okchatReply.findMany).not.toHaveBeenCalled();
+  });
+
+  it('counts the replies an account has waiting', async () => {
+    const { repo, okchatReply } = setup();
+    expect(await repo.queuedCount('i1')).toBe(7);
+    expect(okchatReply.count).toHaveBeenCalledWith({ where: { integrationId: 'i1', status: 'QUEUED' } });
   });
 });
