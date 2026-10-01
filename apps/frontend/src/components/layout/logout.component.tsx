@@ -6,12 +6,13 @@ import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { setCookie } from '@gitroom/frontend/components/layout/layout.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-export const LogoutComponent: FC<{ isIcon?: boolean }> = ({ isIcon }) => {
+/** 退出登录 after a confirmation: clears the session and goes back to the sign-in page. */
+export const useLogout = () => {
   const fetch = useFetch();
   const { isSecured } = useVariables();
   const t = useT();
 
-  const logout = useCallback(async () => {
+  return useCallback(async () => {
     if (
       await deleteDialog(
         t(
@@ -30,7 +31,12 @@ export const LogoutComponent: FC<{ isIcon?: boolean }> = ({ isIcon }) => {
       }
       window.location.href = '/';
     }
-  }, []);
+  }, [isSecured, t]);
+};
+
+export const LogoutComponent: FC<{ isIcon?: boolean }> = ({ isIcon }) => {
+  const t = useT();
+  const logout = useLogout();
   return (
     <>
       <div className="cursor-pointer" onClick={logout}>

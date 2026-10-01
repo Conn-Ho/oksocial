@@ -2,15 +2,7 @@
 
 import React, { ReactNode, useCallback, useEffect } from 'react';
 import { Brand } from '@gitroom/frontend/components/new-layout/logo';
-const ModeComponent = dynamic(
-  () => import('@gitroom/frontend/components/layout/mode.component'),
-  {
-    ssr: false,
-  }
-);
-
 import clsx from 'clsx';
-import dynamic from 'next/dynamic';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
@@ -36,7 +28,6 @@ import { TopMenu } from '@gitroom/frontend/components/layout/top.menu';
 import { LanguageComponent } from '@gitroom/frontend/components/layout/language.component';
 import { ChromeExtensionComponent } from '@gitroom/frontend/components/layout/chrome.extension.component';
 import NotificationComponent from '@gitroom/frontend/components/notifications/notification.component';
-import { OrganizationSelector } from '@gitroom/frontend/components/layout/organization.selector';
 import { StreakComponent } from '@gitroom/frontend/components/layout/streak.component';
 import { PreConditionComponent } from '@gitroom/frontend/components/layout/pre-condition.component';
 import { AttachToFeedbackIcon } from '@gitroom/frontend/components/new-layout/sentry.feedback.component';
@@ -44,6 +35,7 @@ import { FirstBillingComponent } from '@gitroom/frontend/components/billing/firs
 import { TrialTracker } from '@gitroom/frontend/components/layout/gtm.component';
 import { MobileNav } from '@gitroom/frontend/components/new-layout/mobile.nav';
 import { SetupChecklist } from '@gitroom/frontend/components/onboarding/setup.checklist';
+import { SidebarFooter } from '@gitroom/frontend/components/new-layout/sidebar/sidebar.footer';
 import { QuickCreate } from '@gitroom/frontend/components/layout/quick.create';
 import { TopBarCheckin } from '@gitroom/frontend/components/usage/checkin.button';
 import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
@@ -123,7 +115,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         <nav aria-label={t('layout_main_nav', '主导航')} className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
                           <TopMenu variant="row" />
                         </nav>
-                        <SetupChecklist variant="rail" />
+                        <SidebarFooter />
                       </div>
                     </aside>
                     <div className="flex-1 min-w-0 flex flex-col">
@@ -131,7 +123,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         <div className="text-[18px] md:text-[17px] font-[700] flex flex-1 min-w-0 text-textColor">
                           <Title />
                         </div>
-                        {/* phones keep the organisation and notifications; theme and language move to 「更多」 */}
+                        {/* the team, theme and logout live in the sidebar's account menu (phones: 「更多」) */}
                         <div className="flex items-center md:items-stretch gap-[12px] md:gap-[16px] text-textItemBlur">
                           <QuickCreate />
                           <div className="hidden md:contents">
@@ -139,11 +131,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                             <StreakComponent />
                             <div className="w-[1px] h-[20px] self-center bg-newBorder" />
                           </div>
-                          <OrganizationSelector />
                           <div className="hidden md:contents">
-                            <div className="hover:text-newTextColor flex items-center">
-                              <ModeComponent />
-                            </div>
                             <LanguageComponent />
                             <ChromeExtensionComponent />
                             <AttachToFeedbackIcon />

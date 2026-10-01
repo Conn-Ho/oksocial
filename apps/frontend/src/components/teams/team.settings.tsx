@@ -295,7 +295,7 @@ export const TeamSettings: FC = () => {
           <p className="text-[13px] text-textItemBlur leading-[1.6]">
             {t(
               'team_settings_intro',
-              '每个团队有自己的社媒账号、品牌资料、成员和套餐，互不影响。代理商可以给每个客户建一个团队，在顶部切换。'
+              '每个团队有自己的社媒账号、品牌资料、成员和套餐，互不影响。代理商可以给每个客户建一个团队，在左下角的账号菜单里切换。'
             )}
           </p>
         </div>

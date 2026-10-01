@@ -2,12 +2,15 @@
 
 import { FC, MouseEvent, useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useVisibleMenuItems } from '@gitroom/frontend/components/layout/top.menu';
 import { MenuItem } from '@gitroom/frontend/components/new-layout/menu-item';
 import { useInboxUnreplied } from '@gitroom/frontend/components/inbox/inbox.hooks';
 import { LanguageComponent } from '@gitroom/frontend/components/layout/language.component';
+import { useLogout } from '@gitroom/frontend/components/layout/logout.component';
+import { AccountSheetCard } from '@gitroom/frontend/components/new-layout/sidebar/account.sheet';
 
 const ModeComponent = dynamic(() => import('@gitroom/frontend/components/layout/mode.component'), {
   ssr: false,
@@ -15,6 +18,11 @@ const ModeComponent = dynamic(() => import('@gitroom/frontend/components/layout/
 
 // The pages a phone reaches straight from the bottom bar; every other menu entry sits behind 「更多」.
 const PRIMARY_PATHS = ['/launches', '/inbox', '/monitor', '/automations'];
+// 「更多」 links settings from its account part (个人设置), next to 退出登录, for every role
+const SHEET_ACCOUNT_PATHS = ['/settings'];
+
+const tileClass =
+  'flex items-center justify-between rounded-[12px] bg-newBgLineColor px-[14px] h-[48px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-btnPrimary';
 
 const MoreIcon: FC = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="23" height="23" viewBox="0 0 24 24" fill="none" aria-hidden={true}>
@@ -29,7 +37,8 @@ const MoreIcon: FC = () => (
 
 /**
  * Phone navigation (below `md`): a bottom bar with the four busiest pages and 「更多」, which opens
- * a sheet with the rest of the menu plus the theme and language switches that leave the header.
+ * a sheet with the account card (切换团队 / 创建团队 / 团队设置), the rest of the menu, the theme and
+ * language switches, 个人设置 and 退出登录: what the desktop sidebar's account menu holds.
  * Reads the same filtered menu as the desktop rail.
  */
 export const MobileNav: FC = () => {
@@ -39,10 +48,13 @@ export const MobileNav: FC = () => {
   const unreplied = useInboxUnreplied(firstMenu.some((item) => item.path === '/inbox'));
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const logout = useLogout();
 
   const primary = PRIMARY_PATHS.flatMap((path) => firstMenu.filter((item) => item.path === path));
-  const more = [...firstMenu, ...secondMenu].filter((item) => !PRIMARY_PATHS.includes(item.path));
-  const onMorePage = more.some((item) => pathname.indexOf(item.path) === 0);
+  const more = [...firstMenu, ...secondMenu].filter(
+    (item) => !PRIMARY_PATHS.includes(item.path) && !SHEET_ACCOUNT_PATHS.includes(item.path)
+  );
+  const onMorePage = [...more.map((item) => item.path), ...SHEET_ACCOUNT_PATHS].some((path) => pathname.indexOf(path) === 0);
 
   useEffect(() => setOpen(false), [pathname]);
 
@@ -122,6 +134,7 @@ export const MobileNav: FC = () => {
                 </svg>
               </button>
             </header>
+            <AccountSheetCard onDone={close} />
             <ul className="grid grid-cols-4 gap-[8px]" onClick={closeOnLink}>
               {more.map((item) => (
                 <li key={item.path}>
@@ -130,15 +143,35 @@ export const MobileNav: FC = () => {
               ))}
             </ul>
             <div className="grid grid-cols-2 gap-[8px] border-t border-newTableBorder pt-[16px] text-[14px]">
-              <div className="flex items-center justify-between rounded-[12px] bg-newBgLineColor px-[14px] h-[48px]">
+              <div className={tileClass}>
                 <span>{t('mobile_theme', '深色 / 浅色')}</span>
                 <ModeComponent />
               </div>
               {/* the language picker is a modal of its own: close the sheet first so it is not hidden behind it */}
-              <div className="flex items-center justify-between rounded-[12px] bg-newBgLineColor px-[14px] h-[48px]" onClickCapture={close}>
+              <div className={tileClass} onClickCapture={close}>
                 <span>{t('mobile_language', '语言')}</span>
                 <LanguageComponent />
               </div>
+              <Link href="/settings" onClick={close} className={tileClass}>
+                <span>{t('account_personal_settings', '个人设置')}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden={true} className="text-textItemBlur rtl:rotate-180">
+                  <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+              {/* the confirmation is a modal too: close the sheet first */}
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  logout();
+                }}
+                className={tileClass}
+              >
+                <span>{t('account_logout', '退出登录')}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden={true} className="text-textItemBlur">
+                  <path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
           </section>
         </div>
