@@ -161,13 +161,39 @@ export class ChannelStatsService {
   private _lastRefresh = new Map<string, number>();
 
   /** 立即更新 on the report page: this team's channels now, at most every REFRESH_EVERY_MS. */
-  async collectOrg(orgId: string) {
+  private _collecting = new Set<string>();
+  private _lastCollect = new Map<string, { at: string; channels: number; collected: number }>();
+
+  /**
+   * 立即更新: reads every account of the team now. With real accounts that takes minutes (a page
+   * load or two per account), longer than a request may hang, so it runs in the background and
+   * collectStatus tells when it ends. At most every 10 minutes per team.
+   */
+  startCollect(orgId: string) {
+    if (this._collecting.has(orgId)) {
+      return { started: false, running: true };
+    }
     const last = this._lastRefresh.get(orgId) ?? 0;
     if (Date.now() - last < REFRESH_EVERY_MS) {
       throw new HttpException(`数据刚刚更新过，${Math.ceil((REFRESH_EVERY_MS - (Date.now() - last)) / 60_000)} 分钟后可以再更新`, 429);
     }
     this._lastRefresh.set(orgId, Date.now());
-    return this.collectChannels(await this._repository.statChannels(this.statIdentifiers(), orgId));
+    this._collecting.add(orgId);
+    this._repository
+      .statChannels(this.statIdentifiers(), orgId)
+      .then((channels) => this.collectChannels(channels))
+      .catch((err) => {
+        console.log(`channel stats of ${orgId}`, (err as Error)?.message);
+        return { channels: 0, collected: 0 };
+      })
+      .then((result) => this._lastCollect.set(orgId, { at: new Date().toISOString(), ...result }))
+      .finally(() => this._collecting.delete(orgId));
+    return { started: true };
+  }
+
+  collectStatus(orgId: string) {
+    const last = this._lastCollect.get(orgId);
+    return { running: this._collecting.has(orgId), ...(last ? { last } : {}) };
   }
 
   private statIdentifiers() {

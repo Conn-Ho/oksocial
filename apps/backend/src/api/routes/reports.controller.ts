@@ -27,9 +27,15 @@ export class ReportsController {
 
   @Post('/refresh')
   @RequireRoles('ADMIN', 'MANAGER')
-  @ApiOperation({ summary: '立即更新数据', description: '马上读取本团队各账号的数据和帖文（每个团队 10 分钟一次），不用等每 3 小时的自动采集。' })
+  @ApiOperation({ summary: '立即更新数据', description: '在后台马上读取本团队各账号的数据和帖文（每个团队 10 分钟一次），不用等每 3 小时的自动采集；用 GET /reports/refresh 查进度。' })
   refresh(@GetOrgFromRequest() org: Organization) {
-    return this._channelStats.collectOrg(org.id);
+    return this._channelStats.startCollect(org.id);
+  }
+
+  @Get('/refresh')
+  @ApiOperation({ summary: '立即更新的进度', description: 'running 为 true 时还在读取；last 是上一次的结果（读到几个账号）。' })
+  refreshStatus(@GetOrgFromRequest() org: Organization) {
+    return this._channelStats.collectStatus(org.id);
   }
 
   @Get('/overview')

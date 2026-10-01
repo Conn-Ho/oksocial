@@ -4,6 +4,7 @@ import React, { FC, useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { Button } from '@gitroom/react/form/button';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
@@ -26,6 +27,9 @@ const TABS = [
 type Tab = (typeof TABS)[number]['key'];
 // tabs whose numbers 立即更新 reads (audiences are read once a day by the scheduled collection)
 const REFRESHABLE: Tab[] = ['platform', 'posts'];
+// 立即更新 is followed this long at most; the server keeps reading after that
+const REFRESH_WAIT_MS = 10 * 60_000;
+const REFRESH_POLL_MS = 5_000;
 const tabOf = (value: string | null): Tab => TABS.find((x) => x.key === value)?.key || 'platform';
 
 /** 报告: 平台报告 / 帖文报告 / 竞品报告 / 受众分析 / AI 周报. The tab lives in the URL (?tab=). */
@@ -37,6 +41,7 @@ export const ReportsComponent: FC = () => {
   const router = useRouter();
   const pathname = usePathname();
   const call = useReportCall();
+  const fetch = useFetch();
   const { mutate } = useSWRConfig();
   const platformName = usePlatformNames();
   const canManage = canManageChannels(user?.role);
@@ -56,13 +61,23 @@ export const ReportsComponent: FC = () => {
     [pathname, params, router]
   );
 
-  // 立即更新: read the accounts (totals and posts) now instead of waiting for the 3-hourly collection
+  // 立即更新: read the accounts (totals and posts) now instead of waiting for the 3-hourly collection.
+  // Real accounts take minutes, so it runs on the server in the background and this polls its status.
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const body = await call('/reports/refresh');
-      toaster.show(t('refresh_done', '已更新 {{n}} 个账号的数据', { n: body.collected ?? 0 }), 'success');
-      mutate((key) => typeof key === 'string' && key.startsWith('/reports/'));
+      await call('/reports/refresh');
+      toaster.show(t('refresh_started', '正在后台更新各账号的数据，完成后报告会自动刷新'), 'success');
+      const deadline = Date.now() + REFRESH_WAIT_MS;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, REFRESH_POLL_MS));
+        const status = await (await fetch('/reports/refresh')).json().catch(() => ({ running: true }));
+        if (!status.running) {
+          toaster.show(t('refresh_done', '已更新 {{n}} 个账号的数据', { n: status.last?.collected ?? 0 }), 'success');
+          mutate((key) => typeof key === 'string' && key.startsWith('/reports/'));
+          return;
+        }
+      }
     } catch (e) {
       toaster.show((e as Error).message || t('refresh_failed', '更新失败，请稍后再试'), 'warning');
     } finally {

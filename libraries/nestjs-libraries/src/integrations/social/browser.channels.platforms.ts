@@ -60,13 +60,16 @@ const biliTime = (value: unknown) => {
   }
   return dateFrom(s.length > 10 ? `${s.replace(' ', 'T')}:00Z` : `${s}T00:00:00Z`);
 };
-/** A user-videos / search row (plays: `plays`, or `score` in search). */
+/**
+ * A user-videos / search row (plays: `plays`, or `score` in search). Neither listing carries like
+ * counts (user-videos says 0 for every video), so likes stay unknown until the video itself is read.
+ */
 const biliVideo = (r: Row, extra: Partial<MonitorPost> = {}): MonitorPost[] => {
   const bv = bvOf(r.url);
   return bv
     ? [{
         externalId: bv, url: bvUrl(bv), title: opt(r.title), content: opt(r.title),
-        views: countFrom(r.plays ?? r.score), likes: maybe(r.likes),
+        views: countFrom(r.plays ?? r.score),
         publishedAt: biliTime(r.date), platformTime: opt(r.date), ...extra,
       }]
     : [];

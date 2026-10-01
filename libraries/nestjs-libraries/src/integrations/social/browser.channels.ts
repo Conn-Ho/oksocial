@@ -172,8 +172,9 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
         }),
     };
     if (spec.stats) {
+      // nothing published yet (opencli EMPTY) reads as no rows: the numbers are zeros, not a failure
       this.stats = (slot, integration) =>
-        spec.stats!((args, timeoutMs = 120_000) => this.exec(slot, args, timeoutMs), integration);
+        spec.stats!((args, timeoutMs = 120_000) => this.list(slot, args, timeoutMs), integration);
     }
     if (spec.monitor) {
       this.monitor = this.monitorOf(spec.monitor);
@@ -436,11 +437,12 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://passport.bilibili.com/login',
     loginCookies: { domain: 'bilibili.com', names: ['SESSDATA'] },
     idFrom: ['id'], nameFrom: ['username'], maxLength: 2000,
-    // followers from the profile; plays and likes summed over the latest 50 videos
+    // followers from the profile; plays summed over the latest 50 videos (user-videos has no like
+    // counts: opencli fills in 0, so likes are left out rather than reported as none)
     stats: async (run) => {
       const me = firstRow<Record<string, unknown>>(await run(['bilibili', 'me']));
       const videos = rowsOf(await run(['bilibili', 'user-videos', String(me?.uid ?? ''), '--limit', '50'], 180_000));
-      return { followers: num(me?.followers), following: num(me?.following), posts: videos.length, views: total(videos, 'plays'), likes: total(videos, 'likes') };
+      return { followers: num(me?.followers), following: num(me?.following), posts: videos.length, views: total(videos, 'plays') };
     },
     ...BILIBILI,
   })),

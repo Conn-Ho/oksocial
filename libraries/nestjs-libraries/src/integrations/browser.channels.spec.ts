@@ -177,13 +177,13 @@ describe('browser channels for every platform opencli can log in to', () => {
 describe('account stats of the new channels', () => {
   const account = { internalId: 'id1', profile: 'xiaolu' } as any;
 
-  it('B站: followers from the profile, plays and likes summed over the latest videos', async () => {
+  it('B站: followers from the profile, plays summed over the latest videos (their listing has no likes)', async () => {
     const fleet = fakeFleet([
       { ok: true, data: [{ name: '小鹿', uid: 1234, followers: 980, following: 12 }] },
-      { ok: true, data: [{ plays: '1.2万', likes: 300 }, { plays: 800, likes: 20 }] },
+      { ok: true, data: [{ plays: '1.2万', likes: 0 }, { plays: 800, likes: 0 }] },
     ]);
     const c = withFleet(channel('bilibili'), fleet);
-    expect(await c.stats!('s1', account)).toEqual({ followers: 980, following: 12, posts: 2, views: 12800, likes: 320 });
+    expect(await c.stats!('s1', account)).toEqual({ followers: 980, following: 12, posts: 2, views: 12800 });
     expect(fleet.calls[1]).toEqual(['bilibili', 'user-videos', '1234', '--limit', '50']);
   });
 
@@ -201,6 +201,12 @@ describe('account stats of the new channels', () => {
       expect(await c.stats!('s1', account)).toEqual(expected);
       expect(fleet.calls[0]).toEqual(call);
     }
+  });
+
+  it('an account with nothing published yet records zeros instead of failing (opencli EMPTY)', async () => {
+    const fleet = fakeFleet([{ ok: false, code: 'EMPTY' }]);
+    const c = withFleet(channel('toutiao'), fleet);
+    expect(await c.stats!('s1', account)).toEqual({ posts: 0, views: 0, likes: 0, comments: 0 });
   });
 
   it('platforms without readable numbers yet have no stats', () => {
@@ -236,14 +242,16 @@ describe('监控 through each platform\'s opencli reads', () => {
     );
     expect(search.calls[0]).toEqual(['bilibili', 'search', '手冲', '--type', 'video', '--limit', '20']);
     expect(search.result).toEqual([
-      expect.objectContaining({ externalId: BV, url: `https://www.bilibili.com/video/${BV}`, title: '手冲咖啡入门', authorName: '咖啡研究所', views: 125000, likes: null }),
+      expect.objectContaining({ externalId: BV, url: `https://www.bilibili.com/video/${BV}`, title: '手冲咖啡入门', authorName: '咖啡研究所', views: 125000 }),
     ]);
 
-    const account = await read('bilibili', [ok([{ rank: 1, title: '新品发布', plays: '1.2万', likes: 300, date: '2026-09-28', url: `https://www.bilibili.com/video/${BV}` }])], (m) =>
+    // user-videos says likes: 0 for every video (the listing has no likes): unknown, not none
+    const account = await read('bilibili', [ok([{ rank: 1, title: '新品发布', plays: '1.2万', likes: 0, date: '2026-09-28', url: `https://www.bilibili.com/video/${BV}` }])], (m) =>
       m.readAccount('s1', m.parseAccount('https://space.bilibili.com/12345?spm=x'), 10)
     );
     expect(account.calls[0]).toEqual(['bilibili', 'user-videos', '12345', '--limit', '10']);
-    expect(account.result.posts[0]).toMatchObject({ externalId: BV, views: 12000, likes: 300, authorUrl: 'https://space.bilibili.com/12345' });
+    expect(account.result.posts[0]).toMatchObject({ externalId: BV, views: 12000, authorUrl: 'https://space.bilibili.com/12345' });
+    expect(account.result.posts[0].likes).toBeUndefined();
     expect(account.result.posts[0].publishedAt.toISOString()).toBe('2026-09-28T00:00:00.000Z');
 
     const video = [

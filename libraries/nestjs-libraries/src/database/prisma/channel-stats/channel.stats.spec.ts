@@ -174,23 +174,51 @@ describe('ChannelStatsService', () => {
     expect(repo.statChannels).toHaveBeenCalledWith(['xiaohongshu', 'weibo']);
   });
 
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
   it('the scheduled collection reads audiences, 立即更新 does not', async () => {
     const stats = jest.fn(async () => ({ followers: 1 }));
     const audience = jest.fn(async () => null);
     const { service } = setup(stats, { audience });
-    await service.collectOrg('o9');
+    service.startCollect('o9');
+    await settle();
     expect(audience).not.toHaveBeenCalled();
     await service.collectAll();
     expect(audience).toHaveBeenCalledTimes(2);
   });
 
-  it('立即更新 collects only that team, at most every 10 minutes per team', async () => {
-    const stats = jest.fn(async () => ({ followers: 1 }));
+  it('立即更新 reads the team in the background (real accounts take minutes) and says when it ends', async () => {
+    let release: () => void = () => undefined;
+    const stats = jest.fn(() => new Promise((resolve) => (release = () => resolve({ followers: 1 }))));
     const { service, repo } = setup(stats);
-    expect(await service.collectOrg('o1')).toEqual({ channels: 2, collected: 2 });
+    expect(service.startCollect('o1')).toEqual({ started: true });
+    expect(service.startCollect('o1')).toEqual({ started: false, running: true });
+    expect(service.collectStatus('o1')).toEqual({ running: true });
+    await settle();
+    release();
+    await settle();
+    release();
+    await settle();
+    expect(service.collectStatus('o1')).toEqual({ running: false, last: { at: expect.any(String), channels: 2, collected: 2 } });
     expect(repo.statChannels).toHaveBeenCalledWith(expect.any(Array), 'o1');
-    await expect(service.collectOrg('o1')).rejects.toMatchObject({ status: 429 });
-    await expect(service.collectOrg('o2')).resolves.toMatchObject({ collected: 2 });
+  });
+
+  it('立即更新 runs at most every 10 minutes per team', async () => {
+    const { service } = setup(jest.fn(async () => ({ followers: 1 })));
+    service.startCollect('o1');
+    await settle();
+    expect(() => service.startCollect('o1')).toThrow(expect.objectContaining({ status: 429 }));
+    expect(service.startCollect('o2')).toEqual({ started: true });
+  });
+
+  it('立即更新 that fails still ends', async () => {
+    const { service, repo } = setup(jest.fn(async () => ({ followers: 1 })));
+    repo.statChannels.mockRejectedValueOnce(new Error('db down'));
+    service.startCollect('o1');
+    await settle();
+    expect(service.collectStatus('o1')).toEqual({ running: false, last: { at: expect.any(String), channels: 0, collected: 0 } });
   });
 
   it('usesSnapshots follows the provider capability', () => {

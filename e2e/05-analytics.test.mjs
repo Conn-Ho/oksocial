@@ -1,6 +1,6 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { BASE, api, ok, simChannels, sql } from './lib.mjs';
+import { BASE, api, ok, simChannels, sql, waitFor } from './lib.mjs';
 
 let ch;
 before(async () => {
@@ -11,7 +11,12 @@ test('立即更新 reads every account now; the report shows followers and engag
   const res = await api('/reports/refresh', { method: 'POST' });
   if (res.status !== 429) {
     assert.equal(res.status, 201, JSON.stringify(res.body));
-    assert.ok(res.body.collected >= 3, `collected ${JSON.stringify(res.body)}`);
+    // it runs in the background: the status says when it ends and how many accounts it read
+    const done = await waitFor(async () => {
+      const s = await ok('/reports/refresh');
+      return s.running ? null : s;
+    }, { timeoutMs: 300_000, everyMs: 3000, what: '立即更新' });
+    assert.ok(done.last.collected >= 3, `collected ${JSON.stringify(done)}`);
   }
   const snaps = sql(`SELECT "integrationId", count(*)::int n FROM "ChannelSnapshot" WHERE "integrationId" IN ('${Object.values(ch).map((c) => c.id).join("','")}') GROUP BY 1`);
   assert.ok(snaps.length >= 3, `snapshots for ${snaps.length} accounts`);
