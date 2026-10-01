@@ -7,12 +7,12 @@ import React, { FC, useId } from 'react';
 export const WORDMARK_FONT = "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
 
 /**
- * The oksocial mark, okchat's sibling: the same brand-blue tile (rx 118 of 512) and tilted ledger bars
- * with fading opacity, each row led by an avatar dot, so the bars read as a feed of posts.
- * Kept in sync with public/favicon.svg and public/logo.svg.
+ * The oksocial mark: an "o" ring (you) and one account on an orbit that brightens towards it (your
+ * reach), on okchat's brand-blue tile (rx 118 of 512). Only okchat's visual language is shared, not
+ * its mark. Kept in sync with public/favicon.svg and public/logo.svg.
  */
 export const OkMark: FC<{ size?: number; className?: string; title?: string }> = ({ size = 28, className, title }) => {
-  const clip = `okmark-${useId().replace(/:/g, '')}`;
+  const id = `okmark-${useId().replace(/:/g, '')}`;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -25,20 +25,21 @@ export const OkMark: FC<{ size?: number; className?: string; title?: string }> =
       aria-hidden={title ? undefined : true}
     >
       <defs>
-        <clipPath id={clip}>
+        <clipPath id={`${id}-c`}>
           <rect width="512" height="512" rx="118" />
         </clipPath>
+        <linearGradient id={`${id}-g`} gradientUnits="userSpaceOnUse" x1="140.5" y1="406.5" x2="380.5" y2="149.2">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.1" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0.85" />
+        </linearGradient>
       </defs>
-      <g clipPath={`url(#${clip})`}>
+      <g clipPath={`url(#${id}-c)`}>
         <rect width="512" height="512" fill="#0A6CFB" />
-        <g transform="rotate(-24 256 256)" fill="#fff">
-          <circle cx="104" cy="162" r="38" />
-          <rect x="164" y="136" width="268" height="52" rx="26" />
-          <circle cx="104" cy="256" r="38" opacity=".66" />
-          <rect x="164" y="230" width="190" height="52" rx="26" opacity=".66" />
-          <circle cx="104" cy="350" r="38" opacity=".36" />
-          <rect x="164" y="324" width="268" height="52" rx="26" opacity=".36" />
-        </g>
+        <path d="M 140.5 406.5 A 176 176 0 0 1 380.5 149.2" fill="none" stroke={`url(#${id}-g)`} strokeWidth="32" strokeLinecap="round" />
+        <circle cx="265" cy="282" r="86" fill="none" stroke="#fff" strokeWidth="58" />
+        {/* a ring of the tile's blue keeps the account clear of the orbit's bright end */}
+        <circle cx="389.5" cy="157.5" r="58" fill="#0A6CFB" />
+        <circle cx="389.5" cy="157.5" r="46" fill="#fff" />
       </g>
     </svg>
   );

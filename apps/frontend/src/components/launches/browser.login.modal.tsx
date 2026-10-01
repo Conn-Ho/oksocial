@@ -56,8 +56,6 @@ export const BrowserLoginModal: FC<{
   // the 2nd step is being opened (the poll and 我已登录 can both see the first login finish)
   const advancing = useRef(false);
   const app = SCAN_APP[identifier] && t(`scan_app_${identifier}`, SCAN_APP[identifier]);
-  // the exit IP a new overseas account's browser started behind (the server picks the team's)
-  const [exit, setExit] = useState<string | null>(null);
   // a password platform: oksocial's own login form types the account and password into its browser
   const [form, setForm] = useState(false);
 
@@ -160,8 +158,7 @@ export const BrowserLoginModal: FC<{
     if (!res.ok) {
       return fail(res);
     }
-    const { id, screenPath, proxy, form: withForm } = await res.json();
-    setExit(proxy ?? null);
+    const { id, screenPath, form: withForm } = await res.json();
     setForm(!!withForm);
     show({ kind: 'login', id, screenPath });
   }, [fail, show]);
@@ -236,11 +233,6 @@ export const BrowserLoginModal: FC<{
             '这个账号有自己专属的浏览器。请在下面登录{{name}}，登录成功后会自动连接。',
             { name }
           )}
-          {exit && (
-            <span className="block mt-[4px] text-[13px] text-textItemBlur">
-              {t('browser_login_exit', '出口 IP：{{name}}（登录、发帖、互动都走这个 IP）', { name: exit, interpolation: { escapeValue: false } })}
-            </span>
-          )}
         </p>
       )}
       {step?.screenPath ? (
@@ -284,11 +276,11 @@ export const BrowserLoginModal: FC<{
         {typed
           ? t(
               'browser_login_note_form',
-              '密码只用于这一次登录，直接填进这个账号自己的浏览器，oksocial 不保存。建议在“代理”里为要发帖、评论的账号绑定独立出口 IP。'
+              '密码只用于这一次登录，直接填进这个账号自己的浏览器，oksocial 不保存。'
             )
           : t(
               'browser_login_note',
-              '登录信息只保存在这个账号自己的浏览器里，oksocial 不接触你的密码。建议在“代理”里为要发帖、评论的账号绑定独立出口 IP。'
+              '登录信息只保存在这个账号自己的浏览器里，oksocial 不接触你的密码。'
             )}
       </p>
     </div>
