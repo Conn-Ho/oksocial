@@ -124,6 +124,7 @@ Fixes the VM runs before upstream opencli releases them. Reinstalling or upgradi
 |---|---|---|
 | `opencli-patches/toutiao-auth.js` | `clis/toutiao/auth.js` (1.8.8) | `toutiao whoami` failed on the profile_v4 backend (no user in page globals); reads `/mp/agw/creator_center/user_info`. Branch `fix/toutiao-whoami-creator-api` in the opencli repo. |
 | `opencli-patches/zhihu-answer-detail.js` | `clis/zhihu/answer-detail.js` (1.8.8) | `zhihu answer-detail` failed on every answer (the v4 API wants a signed request); reads the answer page's js-initialData on 401/403. Branch `fix/zhihu-answer-detail-initial-data`. |
+| `opencli-patches/weixin-search.js` | `clis/weixin/search.js` (1.8.8) | `weixin search` was rejected in a 公众号 browser (the admin page refuses to navigate away); retries in a fresh window. Branch `fix/weixin-search-navigation-retry`. |
 
 ```bash
 d=/usr/lib/node_modules/@jackwener/opencli/clis
@@ -131,6 +132,8 @@ sudo cp -n $d/toutiao/auth.js $d/toutiao/auth.js.orig
 sudo install -m 0644 ~/oksocial/browser-fleet/opencli-patches/toutiao-auth.js $d/toutiao/auth.js
 sudo cp -n $d/zhihu/answer-detail.js $d/zhihu/answer-detail.js.orig
 sudo install -m 0644 ~/oksocial/browser-fleet/opencli-patches/zhihu-answer-detail.js $d/zhihu/answer-detail.js
+sudo cp -n $d/weixin/search.js $d/weixin/search.js.orig
+sudo install -m 0644 ~/oksocial/browser-fleet/opencli-patches/weixin-search.js $d/weixin/search.js
 ```
 
 ## account-ctl
