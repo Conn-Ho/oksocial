@@ -222,6 +222,8 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /slots/:slot/screen` | | `{path:"/screen/<slot>/vnc.html?autoconnect=1&resize=scale&reconnect=1&path=screen/<slot>/websockify"}` once the port listens |
 | `DELETE /slots/:slot/screen` | | `{ok:true, slot}` |
 | `GET /screen/:slot/*` (+ WebSocket) | | proxied to `127.0.0.1:<screenPort>/*`; 502 while the screen is not running |
+| `GET /slots/:slot/login-form?hints=<JSON>` | `hints`: optional `{loginUrls?: string[≤10], identifier?, password?, code?, submit?, error?, prompt?, captcha?}` (CSS selectors ≤300 chars; `loginUrls` are host+path prefixes) | `{step: identifier\|password\|code\|captcha\|done\|unknown, prompt, detail, error, field: {kind, label, inputType, inputMode, autocomplete, maxLength}\|null, next?: "password"}` of the screen tab |
+| `POST /slots/:slot/login-form` | `{step: identifier\|password\|code, value: string[1..512] (no control characters), hints?}` | the state after typing `value` into that step's field and submitting it (`next:"password"`: only typed); `stale:true` when the page was on another step (nothing typed); `409 BUSY` while another submit types into the slot |
 | `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, ≤200000 in all, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
 
@@ -239,6 +241,16 @@ waits up to 40 s for its profile in `opencli profile list`, and retries once (th
 A transient "tab not ready" failure is retried once immediately. Both are safe because the command never reached the
 page. A stuck bridge tab (`Target closed`, `tab lease`, …) also gets that Chrome restarted, but the run is **not**
 retried, because a write may already have gone through. Retries share the run's `timeoutMs` budget (at least 5 s each).
+
+**Login form** (oksocial's own form for password platforms): `LOGIN_FORM_PAGE` runs in the screen tab and detects the
+step generically (visible password inputs, `autocomplete`/`inputmode`/name hints, split code boxes, open shadow roots,
+captcha frames such as Arkose, reCAPTCHA, hCaptcha, GeeTest and Turnstile, and the URL leaving `loginUrls`); `hints` add
+per-platform selectors. It reads the page's heading, the text under it and its error text, never what a field holds.
+Typing is a real click into the field, its old text selected and deleted, then CDP key presses (`Input.insertText` for
+non-ASCII) with 45-140 ms gaps, then a click on the step's button (or Enter), and the next state once the page changed
+(at most ~8 s). The value is only ever in the request body and in `Input.*` events: never in an evaluated expression, a
+response, an error message (typing failures become `TYPING_FAILED`) or a log line (`req.body`/`value` are redacted and
+errors of `/login-form` requests are logged without their message). A captcha is never touched: the step is `captcha`.
 
 **Media**: only http(s) URLs on `MEDIA_ALLOWED_ORIGINS`, re-checked after each of at most 3 redirects; `MEDIA_MAX_BYTES`
 enforced on `Content-Length` and while streaming (the partial file is deleted); extension from the content type

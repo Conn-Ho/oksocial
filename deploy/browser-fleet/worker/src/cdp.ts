@@ -12,7 +12,7 @@ const OPEN_TIMEOUT_MS = 10_000;
 // A slot whose unit just became active may not have opened its DevTools port yet.
 const OPEN_RETRY_FOR_MS = 20_000;
 const OPEN_RETRY_EVERY_MS = 500;
-const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Open a new tab: PUT /json/new?<url>. Chrome unescapes the query, so the URL is percent-encoded
@@ -105,16 +105,16 @@ interface CdpTarget {
 
 const PAGE_CALL_TIMEOUT_MS = 8_000;
 
-async function listTargets(cdpPort: number, fetchImpl: FetchLike): Promise<CdpTarget[]> {
+export async function listTargets(cdpPort: number, fetchImpl: FetchLike): Promise<CdpTarget[]> {
   const res = await fetchImpl(`http://127.0.0.1:${cdpPort}/json/list`, { signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) }).catch(() => undefined);
   if (!res?.ok) throw new HttpError(502, 'CHROME_UNREACHABLE', `cannot reach Chrome DevTools on port ${cdpPort}`);
   return (await res.json()) as CdpTarget[];
 }
 
-type PageCall = (method: string, params?: Record<string, unknown>) => Promise<Record<string, any> | undefined>;
+export type PageCall = (method: string, params?: Record<string, unknown>) => Promise<Record<string, any> | undefined>;
 
 /** Runs `fn` with one DevTools socket to a page, then closes it. Every step is bounded by a timeout. */
-async function withPageSocket<T>(wsUrl: string, fn: (call: PageCall) => Promise<T>): Promise<T> {
+export async function withPageSocket<T>(wsUrl: string, fn: (call: PageCall) => Promise<T>): Promise<T> {
   const ws = new WebSocket(wsUrl);
   const pending = new Map<number, (msg: { result?: Record<string, any>; error?: { message?: string } }) => void>();
   // a socket that closes or fails answers every call still waiting, instead of leaving it to its timer

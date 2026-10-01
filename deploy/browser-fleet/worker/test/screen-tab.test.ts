@@ -1,52 +1,14 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { WebSocketServer } from 'ws';
 import { QR_FINDER, captureQr, pickScreenTab, showTab } from '../src/cdp.ts';
+import { DROP, withDevtools as devtools } from './devtools.ts';
+import type { Answer, Target } from './devtools.ts';
 
-type Target = { id: string; type: string; url: string };
-type Answer = (method: string, params: Record<string, unknown>) => unknown;
-const DROP = Symbol('drop the socket');
-
-/** Chrome DevTools stand-in: /json/list, /json/activate, /json/new and one socket per page. */
-async function withDevtools(targets: Target[], answer: Answer, fn: (port: number, log: string[]) => Promise<void>) {
-  const log: string[] = [];
-  let port = 0;
-  const server = createServer((req, res) => {
-    log.push(`${req.method} ${req.url}`);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    if (req.url === '/json/list') {
-      res.end(JSON.stringify(targets.map((t) => ({ ...t, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/${t.id}` }))));
-    } else if (req.url?.startsWith('/json/new')) {
-      res.end(JSON.stringify({ id: 'NEW', url: decodeURIComponent(req.url.split('?')[1] ?? '') }));
-    } else {
-      res.end('{}');
-    }
-  });
-  const wss = new WebSocketServer({ server });
-  wss.on('connection', (socket, req) => {
-    const page = req.url?.split('/').pop();
-    socket.on('message', (raw) => {
-      const { id, method, params } = JSON.parse(String(raw));
-      log.push(`${page} ${method}${method === 'Runtime.evaluate' ? ` ${String(params.expression).includes('click()') ? 'click ' + String(params.expression).match(/querySelector\((".*?")\)/)?.[1] : 'find'}` : ''}`);
-      const result = answer(method, params);
-      if (result === DROP) return socket.close();
-      socket.send(JSON.stringify({ id, result: result ?? {} }));
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  port = (server.address() as AddressInfo).port;
-  try {
-    await fn(port, log);
-  } finally {
-    for (const c of wss.clients) c.terminate();
-    wss.close();
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-  }
-}
+// log lines: "<page> Runtime.evaluate find" for the finder, "… click <selector>" for a reveal click
+const describeCall = (page: string, method: string, params: Record<string, unknown>) =>
+  `${page} ${method}${method === 'Runtime.evaluate' ? ` ${String(params.expression).includes('click()') ? 'click ' + String(params.expression).match(/querySelector\((".*?")\)/)?.[1] : 'find'}` : ''}`;
+const withDevtools = (targets: Target[], answer: Answer, fn: (port: number, log: string[]) => Promise<void>) => devtools(targets, answer, fn, describeCall);
 
 const tabs: Target[] = [
   { id: 'SW', type: 'service_worker', url: 'https://www.xiaohongshu.com/sw.js' },

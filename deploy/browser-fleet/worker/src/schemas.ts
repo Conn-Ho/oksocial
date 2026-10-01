@@ -121,6 +121,49 @@ export function parseAllowedSites(csv: string | undefined): ReadonlySet<string> 
 
 export const MediaFetchBody = z.object({ urls: z.array(z.string().max(8192)).min(1).max(20) });
 
+/** oksocial's login form: per-platform hints (CSS selectors and login page prefixes, nothing secret). */
+const SELECTOR_MAX = 300;
+const Selector = z.string().max(SELECTOR_MAX).optional();
+export const LoginFormHintsSchema = z.object({
+  loginUrls: z.array(z.string().max(200)).max(10).optional(),
+  identifier: Selector,
+  password: Selector,
+  code: Selector,
+  submit: Selector,
+  error: Selector,
+  prompt: Selector,
+  captcha: Selector,
+});
+
+/** Longest value the login form types (an account, a password or a code). */
+export const LOGIN_FORM_VALUE_MAX = 512;
+// Enter, Tab and the like would act on the page instead of being typed
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** What the user typed for one login step. The value is typed into the page and never echoed back. */
+export const LoginFormBody = z.object({
+  step: z.enum(['identifier', 'password', 'code']),
+  value: z
+    .string()
+    .min(1, 'value is required')
+    .max(LOGIN_FORM_VALUE_MAX, `value must be at most ${LOGIN_FORM_VALUE_MAX} characters`)
+    .refine((v) => !CONTROL_CHARS.test(v), 'value must not contain control characters'),
+  hints: LoginFormHintsSchema.optional(),
+});
+
+/** GET /slots/:slot/login-form?hints=<JSON>: the hints, or 400. */
+export function parseHintsQuery(raw: unknown): z.output<typeof LoginFormHintsSchema> {
+  if (raw === undefined || raw === '') return {};
+  if (typeof raw !== 'string' || raw.length > 8192) throw badRequest('hints must be a JSON object');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw badRequest('hints must be a JSON object');
+  }
+  return parseOrThrow(LoginFormHintsSchema, parsed);
+}
+
 /** Parse or throw a 400 with the issues listed (values are never echoed back). */
 export function parseOrThrow<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
   const result = schema.safeParse(value);

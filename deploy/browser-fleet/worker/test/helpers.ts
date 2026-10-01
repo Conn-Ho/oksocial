@@ -178,6 +178,8 @@ export async function buildTestApp({
       return { id: 'TARGET1', url };
     },
     captureQr: async () => ({ image: null, revealed: false }),
+    probeLoginForm: async () => ({ step: 'unknown', prompt: null, detail: null, error: null, field: null }),
+    fillLoginForm: async () => ({ step: 'unknown', prompt: null, detail: null, error: null, field: null }),
     media: noMedia,
     ...deps,
   });
