@@ -187,11 +187,14 @@ export async function showTab(cdpPort: number, url: string, reuseId?: string, fe
   return { id: tab.id, url };
 }
 
-// The login QR code on the page: a visible, square img/canvas/svg that either says so (its class,
-// id, alt, src or its parents mention qr/code/scan) or sits in a block that tells you to scan
-// (扫码 / 扫一扫 / 二维码). Anything else square (an avatar, a logo, a cover) is not one. Page coordinates.
-const QR_FINDER = `(() => {
+// The login QR code on the page: a visible, square img/canvas/svg, or a frame showing one (WeChat's
+// open.weixin.qq.com qrconnect in 视频号 / 公众号), that either says so (its class, id, alt, src or its
+// parents mention qr/code/scan) or sits in a block that tells you to scan (扫码 / 扫一扫 / 二维码).
+// Anything else square (an avatar, a logo, a cover) is not one. Page coordinates.
+export const QR_FINDER = `(() => {
   const QR_WORDS = /qr|code|scan|二维码/i;
+  // a frame's url says "code" for many non-QR reasons (OAuth response_type=code)
+  const FRAME_QR_WORDS = /qr|二维码/i;
   const SCAN_TEXT = /扫码|扫一扫|二维码|scan|qr/i;
   const hintOf = (el) => [el, el.parentElement, el.parentElement && el.parentElement.parentElement]
     .filter(Boolean)
@@ -204,18 +207,22 @@ const QR_FINDER = `(() => {
     return false;
   };
   let best = null;
-  for (const el of document.querySelectorAll('img, canvas, svg')) {
+  for (const el of document.querySelectorAll('img, canvas, svg, iframe')) {
     const r = el.getBoundingClientRect();
     const s = getComputedStyle(el);
     if (r.width < 80 || r.width > 480 || Math.abs(r.width - r.height) > Math.max(4, r.width * 0.05)) continue;
     if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) < 0.2) continue;
     if (r.bottom <= 0 || r.right <= 0 || r.top >= innerHeight || r.left >= innerWidth) continue;
-    const hinted = QR_WORDS.test(hintOf(el));
+    const hinted = (el.tagName === 'IFRAME' ? FRAME_QR_WORDS : QR_WORDS).test(hintOf(el));
     if (!hinted && !scanContext(el)) continue;
     const score = (hinted ? 1000 : 0) + r.width;
-    if (!best || score > best.score) best = { score, x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height };
+    if (!best || score > best.score) {
+      best = { score, x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height };
+      // where the frame's own page starts, to place the code found inside it
+      if (el.tagName === 'IFRAME') best.frame = { url: el.src, x: best.x + el.clientLeft, y: best.y + el.clientTop };
+    }
   }
-  return best && { x: best.x, y: best.y, width: best.width, height: best.height };
+  return best && { x: best.x, y: best.y, width: best.width, height: best.height, frame: best.frame };
 })()`;
 const QR_MARGIN = 8;
 const QR_REVEAL_WAIT_MS = 1_500;
@@ -225,6 +232,46 @@ interface QrRect {
   y: number;
   width: number;
   height: number;
+  // set when the code is a frame: its url and where its page starts
+  frame?: { url: string; x: number; y: number };
+}
+
+interface FrameTree {
+  frame: { id: string; url: string };
+  childFrames?: FrameTree[];
+}
+
+const framesOf = (tree: FrameTree | undefined): Array<{ id: string; url: string }> =>
+  tree ? [tree.frame, ...(tree.childFrames ?? []).flatMap(framesOf)] : [];
+
+const pageOf = (url: string) => {
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * The code inside a frame that shows one (WeChat's frame is the code plus a caption): the finder
+ * run in the frame's page, placed in the top page. Null when the frame cannot be reached (an
+ * out-of-process one, or it navigated away) or shows no code: the caller then clips the whole frame.
+ */
+async function findInFrame(call: PageCall, frame: NonNullable<QrRect['frame']>): Promise<QrRect | null> {
+  try {
+    const tree = (await call('Page.getFrameTree'))?.frameTree as FrameTree | undefined;
+    const match = framesOf(tree).find((f) => pageOf(f.url) === pageOf(frame.url));
+    if (!match) return null;
+    const world = await call('Page.createIsolatedWorld', { frameId: match.id, worldName: 'oksocial-qr' });
+    const evaluated = await call('Runtime.evaluate', { expression: QR_FINDER, contextId: world?.executionContextId, returnByValue: true });
+    const inner = (evaluated?.result?.value ?? null) as QrRect | null;
+    return inner && { x: frame.x + inner.x, y: frame.y + inner.y, width: inner.width, height: inner.height };
+  } catch (err) {
+    // the whole frame still shows the code, just with its caption: worth more than no code
+    if (err instanceof HttpError && err.code === 'CHROME_ERROR') return null;
+    throw err;
+  }
 }
 
 export interface QrCapture {
@@ -258,6 +305,7 @@ export async function captureQr(
       rect = await find();
     }
     if (!rect) return { image: null, revealed };
+    if (rect.frame) rect = (await findInFrame(call, rect.frame)) ?? rect;
     const clip = {
       x: Math.max(0, rect.x - QR_MARGIN),
       y: Math.max(0, rect.y - QR_MARGIN),

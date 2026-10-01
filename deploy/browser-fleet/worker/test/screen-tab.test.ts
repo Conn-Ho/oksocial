@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, it } from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { WebSocketServer } from 'ws';
-import { captureQr, pickScreenTab, showTab } from '../src/cdp.ts';
+import { QR_FINDER, captureQr, pickScreenTab, showTab } from '../src/cdp.ts';
 
 type Target = { id: string; type: string; url: string };
 type Answer = (method: string, params: Record<string, unknown>) => unknown;
@@ -110,6 +111,48 @@ describe('captureQr', () => {
     });
   });
 
+  it('clips the code inside a frame that shows one, not the frame and its caption', async () => {
+    const frame = { url: 'https://open.weixin.qq.com/connect/qrconnect?appid=wx1', x: 1091, y: 371 };
+    let clip: unknown;
+    const answer: Answer = (method, params) => {
+      if (method === 'Page.getFrameTree') {
+        return { frameTree: { frame: { id: 'TOP', url: 'https://channels.weixin.qq.com/login.html' }, childFrames: [{ frame: { id: 'WX', url: `${frame.url}&state=1` } }] } };
+      }
+      if (method === 'Page.createIsolatedWorld') return params.frameId === 'WX' ? { executionContextId: 7 } : undefined;
+      if (method === 'Runtime.evaluate') {
+        return { result: { value: params.contextId === 7 ? { x: 24, y: 10, width: 160, height: 160 } : { x: 1090, y: 370, width: 208, height: 208, frame } } };
+      }
+      clip = params.clip;
+      return { data: 'UE5H' };
+    };
+    await withDevtools(tabs, answer, async (port, log) => {
+      assert.deepEqual(await captureQr(port, 'LOGIN'), { image: 'data:image/png;base64,UE5H', revealed: false });
+      assert.deepEqual(clip, { x: 1107, y: 373, width: 176, height: 176, scale: 2 });
+      assert.deepEqual(log.slice(1), [
+        'LOGIN Runtime.evaluate find',
+        'LOGIN Page.getFrameTree',
+        'LOGIN Page.createIsolatedWorld',
+        'LOGIN Runtime.evaluate find',
+        'LOGIN Page.captureScreenshot',
+      ]);
+    });
+  });
+
+  it('clips the whole frame when its page cannot be reached (out of process, or navigated away)', async () => {
+    const frame = { url: 'https://open.weixin.qq.com/connect/qrconnect?appid=wx1', x: 1091, y: 371 };
+    let clip: unknown;
+    const answer: Answer = (method, params) => {
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'TOP', url: 'https://channels.weixin.qq.com/login.html' } } };
+      if (method === 'Runtime.evaluate') return { result: { value: { x: 1090, y: 370, width: 208, height: 208, frame } } };
+      clip = params.clip;
+      return { data: 'UE5H' };
+    };
+    await withDevtools(tabs, answer, async (port) => {
+      assert.equal((await captureQr(port, 'LOGIN')).image, 'data:image/png;base64,UE5H');
+      assert.deepEqual(clip, { x: 1082, y: 362, width: 224, height: 224, scale: 2 });
+    });
+  });
+
   it('is null when the page shows no code (a password login) or there is no page', async () => {
     await withDevtools(tabs, () => ({ result: { value: null } }), async (port, log) => {
       assert.deepEqual(await captureQr(port, 'LOGIN', undefined, { sleep: noSleep }), { image: null, revealed: false });
@@ -126,5 +169,54 @@ describe('captureQr', () => {
       await assert.rejects(captureQr(port, 'LOGIN'), /socket closed/);
     });
     assert.ok(Date.now() - started < 2000, `took ${Date.now() - started}ms`);
+  });
+});
+
+describe('QR_FINDER', () => {
+  type Box = { tag: string; size: [number, number]; at?: [number, number]; attrs?: Record<string, string>; text?: string };
+  /** A page of the given elements, each in its own block (whose text is `text`). */
+  const find = (boxes: Box[]) => {
+    const elements = boxes.map((b) => {
+      const block = { innerText: b.text ?? '', getAttribute: () => null, parentElement: null };
+      const [left, top] = b.at ?? [0, 0];
+      return {
+        tagName: b.tag.toUpperCase(),
+        src: b.attrs?.src,
+        clientLeft: 1,
+        clientTop: 1,
+        style: { visibility: 'visible', display: 'block', opacity: '1' },
+        getAttribute: (name: string) => b.attrs?.[name] ?? null,
+        parentElement: block,
+        getBoundingClientRect: () => ({ left, top, width: b.size[0], height: b.size[1], right: left + b.size[0], bottom: top + b.size[1] }),
+      };
+    });
+    const found = runInNewContext(QR_FINDER, {
+      document: { querySelectorAll: () => elements },
+      getComputedStyle: (el: { style: unknown }) => el.style,
+      innerWidth: 1440,
+      innerHeight: 900,
+      scrollX: 0,
+      scrollY: 10,
+    });
+    // as it arrives over CDP (returnByValue): plain JSON
+    return JSON.parse(JSON.stringify(found));
+  };
+
+  it('finds the frame WeChat shows its code in (视频号, 公众号), and where the frame page starts', () => {
+    const url = 'https://open.weixin.qq.com/connect/qrconnect?appid=wx1&scope=snsapi_login';
+    const page: Box[] = [
+      { tag: 'img', size: [40, 40], attrs: { src: 'https://res.wx.qq.com/logo.png' } },
+      { tag: 'iframe', size: [208, 208], at: [1090, 360], attrs: { src: url } },
+    ];
+    assert.deepEqual(find(page), { x: 1090, y: 370, width: 208, height: 208, frame: { url, x: 1091, y: 371 } });
+  });
+
+  it('ignores square frames that are not a code (an OAuth frame mentioning response_type=code)', () => {
+    assert.equal(find([{ tag: 'iframe', size: [200, 200], attrs: { src: 'https://accounts.example.com/o?response_type=code' } }]), null);
+  });
+
+  it('takes an unhinted square image only inside a block that says to scan', () => {
+    assert.equal(find([{ tag: 'img', size: [160, 160], text: '欢迎回来' }]), null);
+    assert.deepEqual(find([{ tag: 'img', size: [160, 160], at: [10, 20], text: '打开小红书 App 扫码登录' }]), { x: 10, y: 30, width: 160, height: 160 });
   });
 });
