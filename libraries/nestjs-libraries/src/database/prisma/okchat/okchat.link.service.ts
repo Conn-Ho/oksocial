@@ -38,7 +38,7 @@ const usableBinding = (b: any): b is OkchatBindingInput =>
 const notConfigured = () => new HttpException({ error: 'okchat 还没有开通' }, 404);
 const linkedElsewhere = () =>
   new HttpException({ error: '这个 oksocial 团队已经关联了另一个 okchat 空间，要换空间请先在 oksocial 解除关联' }, 409);
-const bindingTaken = () => new HttpException({ error: '有渠道编号已经属于另一个 oksocial 团队，这次关联没有保存' }, 409);
+const bindingTaken = () => new HttpException({ error: '有渠道编号已经属于另一个 oksocial 团队，这些渠道没有接上' }, 409);
 
 /**
  * The organization ↔ okchat space link: okchat signs members in with oksocial (OAuth), reads the
