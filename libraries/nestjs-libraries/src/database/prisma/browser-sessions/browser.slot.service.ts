@@ -449,8 +449,28 @@ export class BrowserSlotService {
     return this.fleet.loginForm(row.slot, loginFormHints(session)).catch((err) => this.formFailure(row, err));
   }
 
-  // when each login session submitted its form lately (timestamps only, this process)
+  // When an organization last submitted login forms (timestamps only, this process). Keyed by org, not
+  // by session, so closing the dialog and opening a new one does not reset the budget — this is the
+  // brake on credential-stuffing third-party accounts through the fleet. Single-process only; a
+  // multi-replica backend would want this in Redis.
   private _formSubmits = new Map<string, number[]>();
+
+  /** The org's submits inside the window, pruning expired keys so the map cannot grow without bound. */
+  private recentFormSubmits(orgId: string, now: number): number[] {
+    const kept: number[] = [];
+    for (const [key, times] of this._formSubmits) {
+      const live = times.filter((t) => now - t < LOGIN_FORM_SUBMITS_WINDOW_MS);
+      if (live.length) {
+        this._formSubmits.set(key, live);
+      } else {
+        this._formSubmits.delete(key);
+      }
+      if (key === orgId) {
+        kept.push(...live);
+      }
+    }
+    return kept;
+  }
 
   /**
    * Types what the user entered for one step into the session's login page and submits it; the page's
@@ -466,11 +486,11 @@ export class BrowserSlotService {
     }
     const row = await this.liveSession(orgId, id);
     const session = this.formSession(row.providerIdentifier);
-    const recent = (this._formSubmits.get(row.id) ?? []).filter((t) => now - t < LOGIN_FORM_SUBMITS_WINDOW_MS);
+    const recent = this.recentFormSubmits(orgId, now);
     if (recent.length >= LOGIN_FORM_SUBMITS_MAX) {
       throw new HttpException('尝试次数太多，请过几分钟再试', 429);
     }
-    this._formSubmits.set(row.id, [...recent, now]);
+    this._formSubmits.set(orgId, [...recent, now]);
     return this.fleet
       .loginFormSubmit(row.slot, step as BrowserLoginFillStep, value, loginFormHints(session))
       .catch((err) => this.formFailure(row, err));
@@ -498,7 +518,8 @@ export class BrowserSlotService {
       return { ok: true };
     }
     await this.fleet.stopScreen(row.slot).catch(() => undefined);
-    this._formSubmits.delete(row.id);
+    // the org's submit budget is deliberately NOT cleared here: closing and reopening the dialog must
+    // not reset the brake on guessing passwords
     if (row.status === 'PENDING') {
       await this.fleet.removeSlot(row.slot, true).catch(() => undefined);
       await this._repository.release(row.id);

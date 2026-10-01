@@ -254,6 +254,17 @@ describe('LOGIN_FORM_PAGE probe', () => {
     assert.equal(probe(page, { url: 'https://www.pinterest.com/login/' }).step, 'identifier');
   });
 
+  it('types nothing on a page off the login pages, even with a password field (an off-site redirect)', () => {
+    const page = '<h1>Third-party sign-in</h1><input name="username"><input name="password" type="password"><button type="submit">Go</button>';
+    // on a login page it would ask for the account; off it (loginUrls set, URL not under them) it does not
+    assert.equal(probe(page, { url: 'https://evil.example.com/login', hints: { loginUrls: X_LOGIN } }).step, 'unknown');
+    const window = open(page, { url: 'https://evil.example.com/login' });
+    assert.equal(act(window, 'focus', { loginUrls: X_LOGIN }, 'password'), null);
+    assert.deepEqual(act(window, 'submit', { loginUrls: X_LOGIN }, 'password'), { moved: true });
+    // and it is still "done" when such a page has no fields (the login finished and navigated away)
+    assert.equal(probe('<h1>Welcome</h1>', { url: 'https://evil.example.com/x', hints: { loginUrls: X_LOGIN } }).step, 'done');
+  });
+
   it('skips hidden fields and site search boxes', () => {
     const page = `
       <input type="text" name="q" placeholder="Search">

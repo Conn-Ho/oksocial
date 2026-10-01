@@ -162,9 +162,12 @@ async function evaluate(call: PageCall, expression: string): Promise<unknown> {
 
 const probe = async (call: PageCall, hints: LoginFormHints) => toFormState(await evaluate(call, pageExpression('probe', hints)));
 
-// a page in the middle of navigating answers evaluations with an error for a moment
+// a page in the middle of navigating answers an evaluation with an error for a moment (the context
+// was torn down, or the script could not run against a half-loaded document): while settling after a
+// submit this is expected and waited out, never surfaced as a failure
+const SETTLE_TRANSIENT = new Set(['CHROME_ERROR', 'CHROME_TIMEOUT', 'LOGIN_FORM_SCRIPT']);
 const transient = (err: unknown): null => {
-  if (err instanceof HttpError && err.code === 'CHROME_ERROR') return null;
+  if (err instanceof HttpError && SETTLE_TRANSIENT.has(err.code)) return null;
   throw err;
 };
 
@@ -195,6 +198,9 @@ async function type(call: PageCall, value: string, sleep: (ms: number) => Promis
   }
 }
 
+// the page responded to the submit: a new step or heading, or a new / changed error. A persistent
+// banner that was there before the submit (Reddit's network-security notice) is not a response, so
+// it is not counted — a repeated identical error waits out the settle instead of returning early.
 const moved = (before: LoginFormState, now: LoginFormState) =>
   now.step !== before.step || now.prompt !== before.prompt || (now.error !== null && now.error !== before.error);
 

@@ -61,18 +61,33 @@ export const BrowserLoginForm: FC<{
   const input = useRef<HTMLInputElement | null>(null);
   const busyRef = useRef(false);
   const last = useRef<FormState | null>(null);
+  // what is in the field right now, so a poll never wipes something half-typed
+  const valueRef = useRef('');
+  // bumped by every submit: a poll that started before it answers for a page that has moved on
+  const epoch = useRef(0);
 
-  const take = useCallback((next: FormState) => {
-    const prev = last.current;
-    // a new step (or a new question on the same step): what was typed for the old one goes
-    if (!prev || prev.step !== next.step || prev.prompt !== next.prompt) {
-      setValue('');
-      setShown(false);
-    }
-    last.current = next;
-    setState(next);
-    setUnknownReads((n) => (next.step === 'unknown' ? n + 1 : 0));
+  const put = useCallback((v: string) => {
+    valueRef.current = v;
+    setValue(v);
   }, []);
+
+  const take = useCallback(
+    (next: FormState) => {
+      const prev = last.current;
+      // a new step clears the field; a changed prompt on the same step only clears an empty field (a
+      // poll must never wipe what the user is in the middle of typing)
+      const stepChanged = !prev || prev.step !== next.step;
+      const promptChanged = !!prev && prev.step === next.step && prev.prompt !== next.prompt;
+      if (stepChanged || (promptChanged && !valueRef.current)) {
+        put('');
+        setShown(false);
+      }
+      last.current = next;
+      setState(next);
+      setUnknownReads((n) => (next.step === 'unknown' ? n + 1 : 0));
+    },
+    [put]
+  );
 
   useEffect(() => {
     if (!active) {
@@ -82,15 +97,22 @@ export const BrowserLoginForm: FC<{
     let timer: ReturnType<typeof setTimeout>;
     const loop = async () => {
       if (!busyRef.current) {
+        const started = epoch.current;
         const res = await fetch(`/browser-sessions/${sessionId}/form`).catch(() => null);
         if (stopped) {
           return;
         }
         if (res?.ok) {
-          take(await res.json());
+          // a 200 with a body that is not the expected JSON must not kill the loop
+          const next = (await res.json().catch((): FormState | null => null)) as FormState | null;
+          if (next && !stopped && started === epoch.current && !busyRef.current) {
+            take(next);
+          }
         }
       }
-      timer = setTimeout(loop, POLL_MS);
+      if (!stopped) {
+        timer = setTimeout(loop, POLL_MS);
+      }
     };
     loop();
     return () => {
@@ -99,32 +121,50 @@ export const BrowserLoginForm: FC<{
     };
   }, [active, sessionId]);
 
+  // a single `unknown` read (a page mid-navigation) keeps the form it was showing, so the input does
+  // not blink out from under the user; only a run of them (or a real other step) gives up the form
+  const lastFillable = useRef<FormState | null>(null);
   const fillable = !!state && FILL_STEPS.includes(state.step) && !!state.field;
+  if (fillable) {
+    lastFillable.current = state;
+  }
+  const holdForm = !!lastFillable.current && state?.step === 'unknown' && unknownReads < UNKNOWN_READS_BEFORE_SCREEN;
+  const formState = fillable ? state : holdForm ? lastFillable.current : null;
+  // the step a submit fills in: the live one, or the held form's while a page is mid-navigation
+  const fieldRef = useRef<FillStep | null>(null);
+  fieldRef.current = formState?.field?.kind ?? null;
   useEffect(() => {
-    if (fillable) {
+    if (formState && !busy) {
       input.current?.focus();
     }
-  }, [fillable, state?.step, state?.prompt]);
+  }, [!!formState, busy, formState?.step, formState?.prompt]);
 
   const submit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (!state?.field || !value || busyRef.current) {
+      const kind = fieldRef.current;
+      if (!kind || !valueRef.current || busyRef.current) {
         return;
       }
       busyRef.current = true;
+      epoch.current += 1;
       setBusy(true);
       setNotice(null);
-      const sent = value;
+      const sent = valueRef.current;
       // nothing typed is kept once it is on its way
-      setValue('');
+      put('');
       try {
         const res = await fetch(`/browser-sessions/${sessionId}/form`, {
           method: 'POST',
-          body: JSON.stringify({ step: state.field.kind, value: sent }),
+          body: JSON.stringify({ step: kind, value: sent }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
+          // 400 / 409 / 429 mean nothing was typed into the page: give the value back so a long
+          // password need not be retyped. A 5xx or a timeout may have typed it, so it is not restored.
+          if (res.status < 500 && !valueRef.current) {
+            put(sent);
+          }
           setNotice(body?.message || t('browser_form_failed', '暂时操作不了这个浏览器，请切换到完整画面登录'));
           return;
         }
@@ -140,20 +180,19 @@ export const BrowserLoginForm: FC<{
         setBusy(false);
       }
     },
-    [state, value, sessionId]
+    [sessionId, put, take, t]
   );
 
-  if (!state || (state.step === 'unknown' && unknownReads < UNKNOWN_READS_BEFORE_SCREEN)) {
-    return (
-      <div className="w-full min-h-[240px] rounded-[12px] bg-newTableHeader border border-newTableBorder flex items-center justify-center text-[14px] text-textColor/60" aria-live="polite">
-        {state
-          ? t('browser_form_waiting_page', '正在等待登录页加载…')
-          : t('browser_form_loading', '正在读取{{name}}的登录页…', { name })}
-      </div>
-    );
-  }
-
-  if (!fillable) {
+  if (!formState) {
+    if (!state || (state.step === 'unknown' && unknownReads < UNKNOWN_READS_BEFORE_SCREEN)) {
+      return (
+        <div className="w-full min-h-[240px] rounded-[12px] bg-newTableHeader border border-newTableBorder flex items-center justify-center text-[14px] text-textColor/60" aria-live="polite">
+          {state
+            ? t('browser_form_waiting_page', '正在等待登录页加载…')
+            : t('browser_form_loading', '正在读取{{name}}的登录页…', { name })}
+        </div>
+      );
+    }
     const say =
       state.step === 'captcha'
         ? t('browser_form_captcha', '{{name}}要求先完成一个安全验证（比如拖动滑块、选图片）。请直接在下面的画面里完成这一步，完成后会自动回到这里继续。', { name })
@@ -173,7 +212,7 @@ export const BrowserLoginForm: FC<{
     );
   }
 
-  const field = state.field!;
+  const field = formState.field!;
   const titles: Record<FillStep, string> = {
     identifier: t('browser_form_title_identifier', '登录{{name}}', { name }),
     password: t('browser_form_title_password', '输入密码'),
@@ -210,9 +249,9 @@ export const BrowserLoginForm: FC<{
         />
         <div className="flex flex-col gap-[2px] min-w-0">
           <div className="text-[17px] font-[600] leading-[1.35] text-newTextColor break-words">
-            {state.prompt || titles[field.kind]}
+            {formState.prompt || titles[field.kind]}
           </div>
-          {!!state.detail && <p className="text-[13px] leading-[1.5] text-textItemBlur break-words">{state.detail}</p>}
+          {!!formState.detail && <p className="text-[13px] leading-[1.5] text-textItemBlur break-words">{formState.detail}</p>}
         </div>
       </div>
       <div className="flex flex-col gap-[6px]">
@@ -226,16 +265,21 @@ export const BrowserLoginForm: FC<{
             name={`login-${field.kind}`}
             type={inputType}
             inputMode={(field.inputMode as React.HTMLAttributes<HTMLInputElement>['inputMode']) || undefined}
-            autoComplete={field.autocomplete}
+            // this input lives on oksocial.online: never let a password manager autofill the user's
+            // own oksocial credentials into the platform's account/password field
+            autoComplete={field.kind === 'password' ? 'new-password' : 'off'}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
+            data-1p-ignore=""
+            data-lpignore="true"
             maxLength={field.maxLength || VALUE_MAX}
             value={value}
-            onChange={(e) => setValue(e.target.value.replace(/[\r\n\t]/g, ''))}
+            onChange={(e) => put(e.target.value.replace(/[\r\n\t]/g, ''))}
+            onBlur={() => setShown(false)}
             disabled={busy}
-            aria-invalid={!!state.error}
-            aria-describedby={state.error ? errorId : undefined}
+            aria-invalid={!!formState.error}
+            aria-describedby={formState.error ? errorId : undefined}
             data-sentry-mask=""
             data-sentry-ignore=""
             className="w-full h-[46px] rounded-[10px] border border-newBorder bg-newBgColor ps-[14px] pe-[64px] text-[15px] text-newTextColor outline-none transition-[border-color,box-shadow] duration-150 focus:border-btnPrimary focus:ring-[3px] focus:ring-btnPrimary/20 aria-[invalid=true]:border-red-400 disabled:opacity-60"
@@ -251,9 +295,9 @@ export const BrowserLoginForm: FC<{
             </button>
           )}
         </div>
-        {!!state.error && (
+        {!!formState.error && (
           <p id={errorId} role="alert" className="text-[13px] leading-[1.5] text-red-500 break-words">
-            {state.error}
+            {formState.error}
           </p>
         )}
         {!!notice && (

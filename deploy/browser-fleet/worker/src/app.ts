@@ -58,10 +58,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (err instanceof QueueClosedError) return reply.code(503).send({ ok: false, code: 'SHUTTING_DOWN', error: err.message });
     if (err instanceof QueueAbortedError) return reply.code(499).send({ ok: false, code: 'CANCELLED', error: err.message });
     const status = 'statusCode' in err && typeof err.statusCode === 'number' ? err.statusCode : 500;
-    // a request that types into a login page: no third-party message (a body parser's) is echoed
-    const message = carriesTypedSecrets(req.url) ? 'bad request' : safeMessage(err.message);
-    if (status < 500) return reply.code(status).send({ ok: false, code: ('code' in err && err.code) || 'BAD_REQUEST', error: message });
-    req.log.error({ err: { message: carriesTypedSecrets(req.url) ? 'login form request failed' : safeMessage(err.message), name: err.name } }, 'request failed');
+    // A request that types into a login page, OR any body-parser error (FST_ERR_CTP_*, which can quote
+    // the body): no third-party message is echoed or logged, so a typed value can never ride out on one.
+    const code = 'code' in err && typeof err.code === 'string' ? err.code : '';
+    const sensitive = carriesTypedSecrets(req.url) || code.startsWith('FST_ERR_CTP');
+    const message = sensitive ? 'bad request' : safeMessage(err.message);
+    if (status < 500) return reply.code(status).send({ ok: false, code: code || 'BAD_REQUEST', error: message });
+    req.log.error({ err: { message: sensitive ? 'request failed' : safeMessage(err.message), name: err.name } }, 'request failed');
     return reply.code(500).send({ ok: false, code: 'INTERNAL', error: 'internal error' });
   });
   app.setNotFoundHandler((_req, reply) => reply.code(404).send({ ok: false, code: 'NOT_FOUND', error: 'route not found' }));

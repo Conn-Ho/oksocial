@@ -615,14 +615,29 @@ describe('BrowserSlotService', () => {
       }
     });
 
-    it('stops a session that submits too often (someone guessing passwords)', async () => {
-      const { service, fleet } = formSetup();
+    it('stops an org that submits too often (someone guessing passwords), and closing the dialog does not reset the brake', async () => {
+      const { service, fleet, repo } = formSetup();
       const now = 1_000_000;
       for (let i = 0; i < LOGIN_FORM_SUBMITS_MAX; i++) await service.formSubmit('org1', 'row1', 'password', SECRET, now + i);
-      await expect(service.formSubmit('org1', 'row1', 'password', SECRET, now + 100)).rejects.toMatchObject({ status: 429 });
+      // a brand-new login session of the same org is still over the limit (budget is per org, not per session)
+      repo.getById.mockResolvedValueOnce({ ...pending, id: 'row2' });
+      await expect(service.formSubmit('org1', 'row2', 'password', SECRET, now + 100)).rejects.toMatchObject({ status: 429 });
+      // cancelling does not clear it either
+      await service.cancelLogin('org1', 'row1');
+      await expect(service.formSubmit('org1', 'row1', 'password', SECRET, now + 200)).rejects.toMatchObject({ status: 429 });
       expect(fleet.loginFormSubmit).toHaveBeenCalledTimes(LOGIN_FORM_SUBMITS_MAX);
       // the window moves on
       await expect(service.formSubmit('org1', 'row1', 'password', SECRET, now + 11 * 60 * 1000)).resolves.toMatchObject({ step: 'password' });
+    });
+
+    it('a flood of distinct sessions cannot grow the limiter map without bound (expired keys are pruned)', async () => {
+      const { service } = formSetup();
+      const map = (service as any)._formSubmits as Map<string, number[]>;
+      for (let i = 0; i < 30; i++) await service.formSubmit(`org${i}`, 'row1', 'password', SECRET, 1_000_000 + i);
+      expect(map.size).toBe(30);
+      // long after the window, the next submit prunes every stale org
+      await service.formSubmit('orgZ', 'row1', 'password', SECRET, 1_000_000 + 11 * 60 * 1000);
+      expect([...map.keys()]).toEqual(['orgZ']);
     });
 
     it('switches between the QR page and the password page only for a platform whose form has a page of its own', async () => {

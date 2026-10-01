@@ -237,7 +237,12 @@ export const LOGIN_FORM_PAGE = `(opts) => {
     let step = 'unknown';
     let target = null;
     let next;
-    if (captchaShown()) {
+    // the tab left the platform's login pages (an off-site link, a redirect): type nothing into
+    // whatever page this is. Only "done" (it asks for nothing) is still read.
+    const offLogin = web && loginUrls.length && !inLogin;
+    if (offLogin) {
+      step = !fields.length ? 'done' : 'unknown';
+    } else if (captchaShown()) {
       step = 'captcha';
     } else if (password) {
       // a page with both fields (Instagram, LinkedIn, Reddit): the account first, without submitting
