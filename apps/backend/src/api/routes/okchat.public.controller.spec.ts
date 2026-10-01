@@ -25,7 +25,9 @@ const repo = {
   }),
   organization: jest.fn(async (id: string) => (id === 'o1' ? { id, name: '团队一' } : null)),
   memberIds: jest.fn(async () => new Set(['u1'])),
-  saveLink: jest.fn(async () => ({})),
+  link: jest.fn(async () => null as any),
+  bindingIdsOfOthers: jest.fn(async () => [] as string[]),
+  saveLink: jest.fn(async () => true),
   saveUser: jest.fn(async () => ({})),
   replaceBindings: jest.fn(async () => 1),
   accounts: jest.fn(async () => [channel]),
@@ -157,6 +159,12 @@ describe('POST /link', () => {
     expect(await call('/link', raw)).toEqual({ status: 200, body: { ok: true } });
     expect(repo.saveLink).toHaveBeenCalledWith('o1', 'w_abc', 'u1');
     expect(repo.saveUser).toHaveBeenCalledWith('o1', 'u1', '456');
+  });
+
+  it('409 while the team is linked to another okchat space', async () => {
+    repo.link.mockResolvedValueOnce({ organizationId: 'o1', okchatAccountId: 'w_other', status: 'LINKED' });
+    const raw = JSON.stringify({ oksocialOrgId: 'o1', okchatAccountId: 'w_abc', bindings: [] });
+    expect(await call('/link', raw)).toEqual({ status: 409, body: { error: expect.stringContaining('先在 oksocial 解除关联') } });
   });
 
   it('400 for a binding whose hook is not a web address', async () => {

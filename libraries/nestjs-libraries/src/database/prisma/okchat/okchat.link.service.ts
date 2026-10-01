@@ -36,6 +36,9 @@ const usableBinding = (b: any): b is OkchatBindingInput =>
   okchatHookAllowed(b.hookUrl, b.bindingId);
 
 const notConfigured = () => new HttpException({ error: 'okchat 还没有开通' }, 404);
+const linkedElsewhere = () =>
+  new HttpException({ error: '这个 oksocial 团队已经关联了另一个 okchat 空间，要换空间请先在 oksocial 解除关联' }, 409);
+const bindingTaken = () => new HttpException({ error: '有渠道编号已经属于另一个 oksocial 团队，这次关联没有保存' }, 409);
 
 /**
  * The organization ↔ okchat space link: okchat signs members in with oksocial (OAuth), reads the
@@ -107,7 +110,10 @@ export class OkchatLinkService {
       console.log(`okchat accounts sync ${orgId}: HTTP ${res.status}`);
       return 'failed';
     }
-    await this._repository.replaceBindings(orgId, res.body.bindings.filter(usableBinding), this.providers());
+    if ((await this._repository.replaceBindings(orgId, res.body.bindings.filter(usableBinding), this.providers())) === null) {
+      console.log(`okchat accounts sync ${orgId}: a binding id belongs to another organization`);
+      return 'failed';
+    }
     return 'synced';
   }
 
@@ -140,7 +146,10 @@ export class OkchatLinkService {
     }
   }
 
-  /** POST /public/okchat/link: okchat linked a space (again, or a member joined); overwrites. */
+  /**
+   * POST /public/okchat/link: okchat linked a space (again, or a member joined). A team linked to
+   * another space, or a binding id of another team, refuses the whole request (409).
+   */
   async link(body: OkchatLinkDto) {
     if (!(await this._repository.organization(body.oksocialOrgId))) {
       throw new HttpException({ error: '这个 oksocial 团队不存在' }, 404);
@@ -153,14 +162,27 @@ export class OkchatLinkService {
     if (unusable.length) {
       throw new HttpException({ error: 'hookUrl 必须是 okchat 自己的 /hook/platform/<bindingId> 地址' }, 400);
     }
+    const okchatAccountId = String(body.okchatAccountId);
+    const current = await this._repository.link(body.oksocialOrgId);
+    if (current?.status === 'LINKED' && current.okchatAccountId !== okchatAccountId) {
+      throw linkedElsewhere();
+    }
+    if ((await this._repository.bindingIdsOfOthers(body.oksocialOrgId, body.bindings.map((b) => b.bindingId))).length) {
+      throw bindingTaken();
+    }
     const users = body.users ?? [];
     const members = await this._repository.memberIds(body.oksocialOrgId, users.map((u) => u.oksocialUserId));
     const linked = users.filter((u) => members.has(u.oksocialUserId));
-    await this._repository.saveLink(body.oksocialOrgId, String(body.okchatAccountId), linked[0]?.oksocialUserId ?? null);
+    // linked to another space in the meantime
+    if (!(await this._repository.saveLink(body.oksocialOrgId, okchatAccountId, linked[0]?.oksocialUserId ?? null))) {
+      throw linkedElsewhere();
+    }
     for (const u of linked) {
       await this._repository.saveUser(body.oksocialOrgId, u.oksocialUserId, String(u.okchatUserId));
     }
-    await this._repository.replaceBindings(body.oksocialOrgId, body.bindings.filter(usableBinding), this.providers());
+    if ((await this._repository.replaceBindings(body.oksocialOrgId, body.bindings.filter(usableBinding), this.providers())) === null) {
+      throw bindingTaken();
+    }
     return { ok: true };
   }
 

@@ -22,13 +22,14 @@ const channel = (id: string, over: any = {}) => ({
   ...over,
 });
 
-const setup = (opts: { link?: any; accounts?: any[]; answer?: any; binding?: any; bindings?: any[]; org?: any; members?: string[]; token?: any; granted?: boolean; member?: boolean } = {}) => {
+const setup = (opts: { link?: any; accounts?: any[]; answer?: any; binding?: any; bindings?: any[]; org?: any; members?: string[]; token?: any; granted?: boolean; member?: boolean; taken?: string[] } = {}) => {
   const repo = {
     link: jest.fn(async () => ('link' in opts ? opts.link : { organizationId: 'o1', okchatAccountId: 'w_1', status: 'LINKED' })),
     organization: jest.fn(async () => ('org' in opts ? opts.org : { id: 'o1', name: '团队一' })),
     accounts: jest.fn(async () => opts.accounts ?? [channel('i1'), channel('i2', { picture: '/uploads/a.png' })]),
     replaceBindings: jest.fn(async (_o: string, b: any[]) => b.length),
-    saveLink: jest.fn(async () => ({})),
+    saveLink: jest.fn(async () => true),
+    bindingIdsOfOthers: jest.fn(async () => opts.taken ?? []),
     memberIds: jest.fn(async (_o: string, ids: string[]) => new Set(ids.filter((id) => (opts.members ?? ['u1']).includes(id)))),
     saveUser: jest.fn(async () => ({})),
     bindingById: jest.fn(async () => ('binding' in opts ? opts.binding : { bindingId: 'b_1', integrationId: 'i1', active: true, loggedOutReason: null, integration: channel('i1') })),
@@ -88,6 +89,13 @@ describe('accounts sync', () => {
     const unlinked = setup({ link: null });
     expect(await unlinked.service.syncAccounts('o1')).toBe('unlinked');
     expect(unlinked.client.accounts).not.toHaveBeenCalled();
+  });
+
+  it('a binding id okchat gives that another team holds: nothing changes, the sync failed', async () => {
+    const bindings = [{ integrationId: 'i1', bindingId: 'b_1', hookUrl: 'https://okchat.test/hook/platform/b_1' }];
+    const { service, repo } = setup({ answer: { status: 200, body: { bindings } } });
+    repo.replaceBindings.mockResolvedValueOnce(null as any);
+    expect(await service.syncAccounts('o1')).toBe('failed');
   });
 
   it('bindings that are not usable are left out', async () => {
@@ -162,13 +170,43 @@ describe('POST /public/okchat/link', () => {
   };
 
   it('stores the space, the members it names and the bindings; idempotent per organization', async () => {
-    const { service, repo } = setup();
+    const { service, repo } = setup({ link: null });
     expect(await service.link(body)).toEqual({ ok: true });
     expect(repo.saveLink).toHaveBeenCalledWith('o1', 'w_abc', 'u1');
     expect(repo.saveUser).toHaveBeenCalledTimes(1);
     expect(repo.saveUser).toHaveBeenCalledWith('o1', 'u1', '456');
+    expect(repo.bindingIdsOfOthers).toHaveBeenCalledWith('o1', ['b_1']);
     expect(repo.replaceBindings).toHaveBeenCalledWith('o1', body.bindings, ['xiaohongshu']);
-    expect(await service.link(body)).toEqual({ ok: true });
+    // again for the same space (a second member joined)
+    const again = setup({ link: { organizationId: 'o1', okchatAccountId: 'w_abc', status: 'LINKED' } });
+    expect(await again.service.link(body)).toEqual({ ok: true });
+    // a team that was unlinked may link to another space
+    const unlinked = setup({ link: { organizationId: 'o1', okchatAccountId: 'w_old', status: 'UNLINKED' } });
+    expect(await unlinked.service.link(body)).toEqual({ ok: true });
+  });
+
+  it('409 when the team is linked to another okchat space: nothing is moved', async () => {
+    const { service, repo } = setup({ link: { organizationId: 'o1', okchatAccountId: 'w_other', status: 'LINKED' } });
+    await expect(service.link(body)).rejects.toMatchObject({ status: 409, response: { error: expect.stringContaining('先在 oksocial 解除关联') } });
+    expect(repo.saveLink).not.toHaveBeenCalled();
+    expect(repo.saveUser).not.toHaveBeenCalled();
+    expect(repo.replaceBindings).not.toHaveBeenCalled();
+    // the same race at the write
+    const race = setup({ link: null });
+    race.repo.saveLink.mockResolvedValueOnce(false);
+    await expect(race.service.link(body)).rejects.toMatchObject({ status: 409 });
+    expect(race.repo.replaceBindings).not.toHaveBeenCalled();
+  });
+
+  it('409 for a binding id another team holds: the whole request is refused', async () => {
+    const { service, repo } = setup({ link: null, taken: ['b_1'] });
+    await expect(service.link(body)).rejects.toMatchObject({ status: 409 });
+    expect(repo.saveLink).not.toHaveBeenCalled();
+    expect(repo.replaceBindings).not.toHaveBeenCalled();
+    // taken in between (the write finds it)
+    const race = setup({ link: null });
+    race.repo.replaceBindings.mockResolvedValueOnce(null as any);
+    await expect(race.service.link(body)).rejects.toMatchObject({ status: 409 });
   });
 
   it('404 for an organization that does not exist', async () => {

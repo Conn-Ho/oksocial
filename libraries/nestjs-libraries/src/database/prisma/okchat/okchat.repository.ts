@@ -54,12 +54,28 @@ export class OkchatRepository {
     });
   }
 
-  saveLink(orgId: string, okchatAccountId: string, createdById: string | null) {
-    return this._links.model.okchatLink.upsert({
-      where: { organizationId: orgId },
-      create: { organizationId: orgId, okchatAccountId, createdById, status: 'LINKED' },
-      update: { okchatAccountId, status: 'LINKED' },
+  /**
+   * Links the organization to the space: again for the same space, or when it is not linked. A team
+   * linked to another space keeps it (false): it is unlinked in oksocial first.
+   */
+  async saveLink(orgId: string, okchatAccountId: string, createdById: string | null) {
+    const { count } = await this._links.model.okchatLink.updateMany({
+      where: { organizationId: orgId, OR: [{ okchatAccountId }, { status: { not: 'LINKED' } }] },
+      data: { okchatAccountId, status: 'LINKED' },
     });
+    if (count) {
+      return true;
+    }
+    try {
+      await this._links.model.okchatLink.create({ data: { organizationId: orgId, okchatAccountId, createdById, status: 'LINKED' } });
+      return true;
+    } catch (err) {
+      // the organization has a link (to another space)
+      if ((err as { code?: string })?.code === 'P2002') {
+        return false;
+      }
+      throw err;
+    }
   }
 
   /** Members of the organization among these user ids (a /link may name anyone). */
@@ -90,9 +106,23 @@ export class OkchatRepository {
     });
   }
 
+  /** Of these binding ids, the ones another organization's bindings hold. */
+  async bindingIdsOfOthers(orgId: string, bindingIds: string[]) {
+    if (!bindingIds.length) {
+      return [];
+    }
+    const rows = await this._bindings.model.okchatBinding.findMany({
+      where: { bindingId: { in: bindingIds }, organizationId: { not: orgId } },
+      select: { bindingId: true },
+    });
+    return rows.map((r) => r.bindingId);
+  }
+
   /**
    * okchat's bindings for the organization, as a whole: listed accounts of the organization get
-   * (or keep) theirs and are active, every other binding of the organization stops.
+   * (or keep) theirs and are active, every other binding of the organization stops. Nothing of
+   * another organization is touched: a binding id one of its bindings holds fails the whole write
+   * (null).
    */
   async replaceBindings(orgId: string, bindings: OkchatBindingInput[], providers: string[]) {
     const owned = await this._integrations.model.integration.findMany({
@@ -107,23 +137,32 @@ export class OkchatRepository {
     });
     const ours = new Set(owned.map((o) => o.id));
     const kept = bindings.filter((b) => ours.has(b.integrationId));
-    await this._transaction.model.$transaction([
-      this._bindings.model.okchatBinding.updateMany({
-        where: { organizationId: orgId, integrationId: { notIn: kept.map((b) => b.integrationId) } },
-        data: { active: false },
-      }),
-      // a binding id okchat moved to another account: the old row lets go of it first
-      this._bindings.model.okchatBinding.deleteMany({
-        where: { bindingId: { in: kept.map((b) => b.bindingId) }, integrationId: { notIn: kept.map((b) => b.integrationId) } },
-      }),
-      ...kept.map((b) =>
-        this._bindings.model.okchatBinding.upsert({
-          where: { integrationId: b.integrationId },
-          create: { integrationId: b.integrationId, organizationId: orgId, bindingId: b.bindingId, hookUrl: b.hookUrl },
-          update: { organizationId: orgId, bindingId: b.bindingId, hookUrl: b.hookUrl, active: true },
-        })
-      ),
-    ]);
+    try {
+      await this._transaction.model.$transaction([
+        this._bindings.model.okchatBinding.updateMany({
+          where: { organizationId: orgId, integrationId: { notIn: kept.map((b) => b.integrationId) } },
+          data: { active: false },
+        }),
+        // a binding id okchat moved to another account of the organization: the old row lets go of it first
+        this._bindings.model.okchatBinding.deleteMany({
+          where: { organizationId: orgId, bindingId: { in: kept.map((b) => b.bindingId) }, integrationId: { notIn: kept.map((b) => b.integrationId) } },
+        }),
+        // the accounts are the organization's (above), so are their bindings
+        ...kept.map((b) =>
+          this._bindings.model.okchatBinding.upsert({
+            where: { integrationId: b.integrationId },
+            create: { integrationId: b.integrationId, organizationId: orgId, bindingId: b.bindingId, hookUrl: b.hookUrl },
+            update: { organizationId: orgId, bindingId: b.bindingId, hookUrl: b.hookUrl, active: true },
+          })
+        ),
+      ]);
+    } catch (err) {
+      // a binding id another organization's binding holds (unique)
+      if ((err as { code?: string })?.code === 'P2002') {
+        return null;
+      }
+      throw err;
+    }
     return kept.length;
   }
 

@@ -25,9 +25,16 @@ export class OAuthRepository {
     }));
   }
 
+  /** A first-party app's (okchat's) live grant for the organization, by a member still in it. */
   async hasFirstPartyGrant(organizationId: string) {
     return !!(await this._oauthAuth.model.oAuthAuthorization.findFirst({
-      where: { organizationId, revokedAt: null, accessToken: { not: null }, oauthApp: { firstParty: true, deletedAt: null } },
+      where: {
+        organizationId,
+        revokedAt: null,
+        accessToken: { not: null },
+        oauthApp: { firstParty: true, deletedAt: null },
+        user: { deletedAt: null, organizations: { some: { organizationId, disabled: false } } },
+      },
       select: { id: true },
     }));
   }
