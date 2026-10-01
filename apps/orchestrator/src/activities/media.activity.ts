@@ -1,11 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { Activity, ActivityMethod } from 'nestjs-temporal-core';
 import { MediaService } from '@gitroom/nestjs-libraries/database/prisma/media/media.service';
+import { MediaDriveService } from '@gitroom/nestjs-libraries/database/prisma/media/media.drive.service';
 
 @Injectable()
 @Activity()
 export class MediaActivity {
-  constructor(private _mediaService: MediaService) {}
+  constructor(
+    private _mediaService: MediaService,
+    private _mediaDriveService: MediaDriveService
+  ) {}
+
+  // 网盘: files that spent 30 days in the 回收站, of every organization
+  @ActivityMethod()
+  async purgeExpiredMediaTrash() {
+    return this._mediaDriveService.purgeExpired();
+  }
 
   // Returns the processor job id, or null when there is nothing to process
   @ActivityMethod()

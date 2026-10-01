@@ -180,6 +180,14 @@ export type MonitorAccountRef = {
   url: string;
 };
 
+// An account a search found: what the result list shows before it is added as a competitor.
+export type MonitorAccountCandidate = MonitorAccountRef & {
+  name: string;
+  bio?: string;
+  avatar?: string;
+  followers?: number | null;
+};
+
 // oksocial 帖文操作助手 / 帖文拓客助手: acting on other people's posts and comments.
 export type InteractPost = { externalId: string; url?: string | null; authorName?: string | null };
 export type InteractAccount = { name: string; displayName?: string; bio?: string };
@@ -217,6 +225,8 @@ export type MonitorCapabilities = {
   ownPosts?(token: string, integration: Integration, limit: number): Promise<MonitorPost[]>;
   // Posts matching a keyword, newest first when the platform can sort.
   search?(token: string, keyword: string, limit: number): Promise<MonitorPost[]>;
+  // Accounts whose name or handle matches, to add as competitors (竞品 › 搜索).
+  searchAccounts?(token: string, query: string, limit: number): Promise<MonitorAccountCandidate[]>;
   // Random pause between two reads on this platform, in ms (risk control).
   readGapMs?: [number, number];
 };

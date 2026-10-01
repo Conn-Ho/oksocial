@@ -8,22 +8,23 @@ import dayjs from 'dayjs';
 import { useClickAway } from '@uidotdev/usehooks';
 import ReactLoading from '@gitroom/frontend/components/layout/loading';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-function replaceLinks(text: string) {
-  const urlRegex =
-    /(\bhttps?:\/\/[-A-Z0-9+&@#/%?=~_|!:,.;]*[-A-Z0-9+&@#/%=~_|])/gi;
-  return text.replace(
-    urlRegex,
-    '<a class="cursor-pointer underline font-bold" target="_blank" href="$1">$1</a>'
-  );
-}
+import Link from 'next/link';
+import {
+  CATEGORY_LABELS,
+  NotificationCategory,
+  NotificationText,
+} from '@gitroom/frontend/components/notifications/notification.center';
 export const ShowNotification: FC<{
   notification: {
     createdAt: string;
     content: string;
+    category?: NotificationCategory | null;
   };
   lastReadNotification: string;
 }> = (props) => {
   const { notification } = props;
+  const t = useT();
+  const category = notification.category || 'SYSTEM';
   const [newNotification] = useState(
     new Date(notification.createdAt) > new Date(props.lastReadNotification)
   );
@@ -37,22 +38,21 @@ export const ShowNotification: FC<{
         newNotification && 'font-bold bg-seventh animate-newMessages'
       )}
     >
-      <div
-        className="break-words"
-        dangerouslySetInnerHTML={{
-          __html: replaceLinks(notification.content),
-        }}
-      />
+      {/* text from other people (mentions, competitor posts) is shown as text, never as markup */}
+      <div className="break-words">
+        <NotificationText content={notification.content} />
+      </div>
       <div
         className="text-[11px] mt-[4px] opacity-60 font-normal"
         title={isWithin24h ? fullDate : undefined}
       >
+        {t(`notification_category_${category.toLowerCase()}`, CATEGORY_LABELS[category])} ·{' '}
         {isWithin24h ? createdAt.fromNow() : fullDate}
       </div>
     </div>
   );
 };
-export const NotificationOpenComponent = () => {
+export const NotificationOpenComponent: FC<{ onClose?: () => void }> = ({ onClose }) => {
   const fetch = useFetch();
   const loadNotifications = useCallback(async () => {
     return await (await fetch('/notifications/list')).json();
@@ -65,10 +65,11 @@ export const NotificationOpenComponent = () => {
       id="notification-popup"
       className="opacity-0 animate-normalFadeDown mt-[10px] absolute w-[420px] max-w-[calc(100vw-40px)] min-h-[200px] top-[100%] end-0 bg-third text-textColor rounded-[16px] flex flex-col border border-tableBorder z-[600]"
     >
-      <div
-        className={`p-[16px] border-b border-tableBorder font-bold`}
-      >
-        {t('notifications', 'Notifications')}
+      <div className="p-[16px] border-b border-tableBorder font-bold flex items-center gap-[12px]">
+        <span className="flex-1">{t('notification_popup_title', '通知')}</span>
+        <Link href="/notifications" onClick={onClose} className="text-[13px] font-[500] text-textItemBlur hover:text-textColor">
+          {t('notification_view_all', '查看全部')}
+        </Link>
       </div>
 
       <div className="flex flex-col max-h-[400px] overflow-y-auto scrollbar scrollbar-thumb-fifth scrollbar-track-newBgColor">
@@ -79,7 +80,7 @@ export const NotificationOpenComponent = () => {
         )}
         {!isLoading && !data.notifications.length && (
           <div className="text-center p-[16px] text-textColor flex-1 flex justify-center items-center mt-[20px]">
-            {t('no_notifications', 'No notifications')}
+            {t('notification_popup_empty', '暂无通知')}
           </div>
         )}
         {!isLoading &&
@@ -152,7 +153,7 @@ const NotificationComponent = () => {
           )}
         </svg>
       </div>
-      {show && <NotificationOpenComponent />}
+      {show && <NotificationOpenComponent onClose={() => setShow(false)} />}
     </div>
   );
 };

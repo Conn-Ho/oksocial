@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react';
 import dayjs from 'dayjs';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { Post, Integration, Tags } from '@prisma/client';
 import { useSearchParams } from 'next/navigation';
@@ -23,6 +23,7 @@ import useCookie from 'react-use-cookie';
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { expandPostsList, expandPosts } from '@gitroom/helpers/utils/posts.list.minify';
+import { ChannelTagRef } from '@gitroom/helpers/utils/channel.tags';
 extend(isoWeek);
 extend(weekOfYear);
 
@@ -107,6 +108,8 @@ export interface Integrations {
     name?: string;
     id?: string;
   };
+  // 账号标签
+  tags?: ChannelTagRef[];
 }
 
 // Helper function to get start and end dates based on display type
@@ -329,11 +332,13 @@ export const CalendarWeekProvider: FC<{
     }
   }, [posts]);
 
-  // Combined reload function that handles both calendar and list views
+  // Combined reload function that handles both calendar and list views, and the 帖子 list
+  const { mutate: mutateGlobal } = useSWRConfig();
   const reloadCalendarView = useCallback(() => {
     mutateCalendar();
     mutateList();
-  }, [mutateCalendar, mutateList]);
+    mutateGlobal((key) => typeof key === 'string' && key.startsWith('/posts/manage'));
+  }, [mutateCalendar, mutateList, mutateGlobal]);
 
   // Determine loading state based on current view
   const loading = filters.display === 'list' ? listIsLoading : calendarIsLoading;

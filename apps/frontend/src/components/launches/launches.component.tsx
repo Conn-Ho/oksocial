@@ -34,6 +34,42 @@ import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser
 import { BulkImportModal } from '@gitroom/frontend/components/launches/bulk.import.modal';
 import { useSWRConfig } from 'swr';
 import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
+import { PostsList } from '@gitroom/frontend/components/launches/posts.list';
+import { ChannelTagFilterBar } from '@gitroom/frontend/components/launches/channel.tag.filter';
+import { useChannelTags } from '@gitroom/frontend/components/launches/posts.list.hooks';
+import { ChannelTagFilter, filterByTag } from '@gitroom/helpers/utils/channel.tags';
+
+type PublishView = 'posts' | 'calendar';
+
+// 「帖子 | 日历」 above the right pane; the calendar stays the default
+const PublishViewTabs: FC<{ view: PublishView; onChange: (view: PublishView) => void }> = ({ view, onChange }) => {
+  const t = useT();
+  const tabs: Array<{ key: PublishView; label: string }> = [
+    { key: 'posts', label: t('publish_tab_posts', '帖子') },
+    { key: 'calendar', label: t('publish_tab_calendar', '日历') },
+  ];
+  return (
+    <nav className="flex gap-[4px]" role="tablist" aria-label={t('publish_views', '发布视图')}>
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          aria-selected={view === tab.key}
+          onClick={() => onChange(tab.key)}
+          className={clsx(
+            'px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-btnPrimary',
+            view === tab.key
+              ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder'
+              : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  );
+};
 
 export const SVGLine = () => {
   return (
@@ -373,6 +409,20 @@ export const LaunchesComponent = () => {
   const [collapseMenu, setCollapseMenu] = useCookie('collapseMenu', '0');
   const [mode] = useCookie('mode', 'dark');
   const { isLoading, data: integrations, mutate } = useIntegrationList();
+  const { data: channelTags } = useChannelTags();
+  const [tagFilter, setTagFilter] = useState<ChannelTagFilter>('all');
+  // 帖子 | 日历, kept in the URL (?view=posts) so a reload or a shared link opens the same view
+  const [view, setView] = useState<PublishView>(search.get('view') === 'posts' ? 'posts' : 'calendar');
+  const changeView = useCallback((next: PublishView) => {
+    setView(next);
+    const url = new URL(window.location.href);
+    if (next === 'posts') {
+      url.searchParams.set('view', 'posts');
+    } else {
+      url.searchParams.delete('view');
+    }
+    window.history.replaceState(null, '', url.pathname + url.search);
+  }, []);
 
   const totalNonDisabledChannels = useMemo(() => {
     return (
@@ -413,10 +463,19 @@ export const LaunchesComponent = () => {
       ['desc', 'asc', 'asc']
     );
   }, [integrations]);
+  // the channel list shows the channels of the chosen tag (a tag that was deleted shows them all)
+  const activeTagFilter =
+    tagFilter === 'all' || tagFilter === 'untagged' || channelTags?.some((tag) => tag.id === tagFilter)
+      ? tagFilter
+      : 'all';
+  const shownIntegrations = useMemo(
+    () => filterByTag(sortedIntegrations, activeTagFilter),
+    [sortedIntegrations, activeTagFilter]
+  );
   const menuIntegrations = useMemo(() => {
     return orderBy(
       Object.values(
-        groupBy(sortedIntegrations, (o) => o?.customer?.id || '')
+        groupBy(shownIntegrations, (o) => o?.customer?.id || '')
       ).map((p) => ({
         name: (p[0].customer?.name || '') as string,
         id: (p[0].customer?.id || '') as string,
@@ -430,7 +489,7 @@ export const LaunchesComponent = () => {
       ['isEmpty', 'name'],
       ['desc', 'asc']
     );
-  }, [sortedIntegrations]);
+  }, [shownIntegrations]);
   const update = useCallback(async (shouldReload: boolean) => {
     if (shouldReload) {
       setReload(true);
@@ -632,7 +691,22 @@ export const LaunchesComponent = () => {
                 </button>
               )}
             </div>
+            {!!channelTags?.length && sortedIntegrations.length > 0 && (
+              <div className="group-[.sidebar]:hidden">
+                <ChannelTagFilterBar
+                  tags={channelTags}
+                  channels={sortedIntegrations}
+                  value={activeTagFilter}
+                  onChange={setTagFilter}
+                />
+              </div>
+            )}
             <div className="gap-[32px] flex flex-col select-none flex-1">
+              {sortedIntegrations.length > 0 && shownIntegrations.length === 0 && collapseMenu === '0' && (
+                <div className="text-[13px] text-textItemBlur">
+                  {t('channel_tags_empty', '这个标签下还没有账号')}
+                </div>
+              )}
               {sortedIntegrations.length === 0 && collapseMenu === '0' && (
                 <div className="flex-1 max-h-[500px] justify-center items-center flex">
                   <div className="flex flex-col gap-[12px] text-center">
@@ -681,12 +755,24 @@ export const LaunchesComponent = () => {
             </div>
           </div>
         </div>
-        <div className="bg-newBgColorInner flex-1 flex-col flex p-[12px] md:p-[20px] gap-[12px]">
-          <Filters />
-          {/* the views fill this box and scroll inside it: on phones give it most of a screen */}
-          <div className="flex-1 flex min-h-[70vh] md:min-h-[auto]">
-            <Calendar />
-          </div>
+        <div
+          className={clsx(
+            'bg-newBgColorInner flex-1 flex-col flex p-[12px] md:p-[20px] gap-[12px]',
+            view === 'posts' && 'min-w-0'
+          )}
+        >
+          <PublishViewTabs view={view} onChange={changeView} />
+          {view === 'posts' ? (
+            <PostsList />
+          ) : (
+            <>
+              <Filters />
+              {/* the views fill this box and scroll inside it: on phones give it most of a screen */}
+              <div className="flex-1 flex min-h-[70vh] md:min-h-[auto]">
+                <Calendar />
+              </div>
+            </>
+          )}
         </div>
       </CalendarWeekProvider>
     </DNDProvider>

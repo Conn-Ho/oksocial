@@ -36,6 +36,7 @@ import {
   Sections,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { AllowViewer, RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
+import { ChecklistService } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.service';
 
 @ApiTags('User')
 @Controller('/user')
@@ -46,7 +47,8 @@ export class UsersController {
     private _authService: AuthService,
     private _orgService: OrganizationService,
     private _userService: UsersService,
-    private _trackService: TrackService
+    private _trackService: TrackService,
+    private _checklistService: ChecklistService
   ) {}
 
   @Get('/chatbase-token')
@@ -238,6 +240,25 @@ export class UsersController {
     @Body() body: UserDetailDto
   ) {
     return this._userService.changePersonal(user.id, body);
+  }
+
+  // 新手任务: the team's setup progress and whether this member closed the card
+  @Get('/checklist')
+  getChecklist(
+    @GetUserFromRequest() user: User,
+    @GetOrgFromRequest() organization: Organization
+  ) {
+    return this._checklistService.get(organization.id, user.id);
+  }
+
+  @Post('/checklist/hide')
+  @AllowViewer()
+  async hideChecklist(
+    @GetUserFromRequest() user: User,
+    @GetOrgFromRequest() organization: Organization
+  ) {
+    await this._checklistService.hide(organization.id, user.id);
+    return { ok: true };
   }
 
   @Get('/email-notifications')

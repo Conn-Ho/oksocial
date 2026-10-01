@@ -507,13 +507,15 @@ export class PostActivity {
     digest = false,
     type: NotificationType = 'success'
   ) {
+    // every notice of the post workflows is about publishing (the activity's parameters stay as they are)
     await this._notificationService.inAppNotification(
       orgId,
       subject,
       message,
       sendEmail,
       digest,
-      type
+      type,
+      'PUBLISH'
     );
   }
 

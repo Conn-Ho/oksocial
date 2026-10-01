@@ -556,6 +556,11 @@ export class IntegrationRepository {
       },
       include: {
         customer: true,
+        channelTags: {
+          where: { tag: { deletedAt: null } },
+          orderBy: { createdAt: 'asc' },
+          select: { tag: { select: { id: true, name: true, color: true } } },
+        },
       },
     });
   }

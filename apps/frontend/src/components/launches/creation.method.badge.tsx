@@ -1,7 +1,16 @@
 import { FC } from 'react';
 import clsx from 'clsx';
 
-type CreationMethod = 'UNKNOWN' | 'WEB' | 'API' | 'MCP' | 'AUTOPOST' | 'CLI' | 'AUTOMATION';
+type CreationMethod =
+  | 'UNKNOWN'
+  | 'WEB'
+  | 'API'
+  | 'MCP'
+  | 'AUTOPOST'
+  | 'CLI'
+  | 'AUTOMATION'
+  | 'BULK_IMPORT'
+  | 'AI';
 
 interface Props {
   creationMethod?: CreationMethod | string | null;
@@ -11,13 +20,23 @@ interface Props {
 }
 
 const tooltipFor = (m: string) =>
-  m === 'AUTOPOST' ? '由系统自动发布' : m === 'AUTOMATION' ? '由自动化生成' : `通过 ${m} 创建`;
+  m === 'AUTOPOST'
+    ? '由系统自动发布'
+    : m === 'AUTOMATION'
+    ? '由自动化生成'
+    : m === 'BULK_IMPORT'
+    ? '由 Excel 批量导入'
+    : m === 'AI'
+    ? '由 AI 创作'
+    : `通过 ${m} 创建`;
 
 // API / MCP / CLI stay as they are; the rest read better in Chinese.
 const LABELS: Record<string, string> = {
   WEB: '网页',
   AUTOPOST: '自动发布',
   AUTOMATION: '自动化',
+  BULK_IMPORT: 'Excel',
+  AI: 'AI',
 };
 
 export const CreationMethodBadge: FC<Props> = ({
@@ -46,6 +65,8 @@ export const CreationMethodBadge: FC<Props> = ({
         creationMethod === 'AUTOPOST' && 'bg-[#d97706]',
         creationMethod === 'CLI' && 'bg-[#0f766e]',
         creationMethod === 'AUTOMATION' && 'bg-[#612BD3]',
+        creationMethod === 'BULK_IMPORT' && 'bg-[#0891b2]',
+        creationMethod === 'AI' && 'bg-[#db2777]',
         className
       )}
       style={ringColor ? { boxShadow: `0 0 0 2px ${ringColor}` } : undefined}

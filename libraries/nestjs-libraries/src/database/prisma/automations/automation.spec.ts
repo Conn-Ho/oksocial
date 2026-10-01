@@ -50,7 +50,7 @@ const automation = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
-const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?: string[]; unproxied?: string[]; own?: any[]; templates?: string[]; channels?: any[]; posts?: any[] } = {}) => {
+const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?: string[]; unproxied?: string[]; own?: any[]; templates?: string[]; channels?: any[]; posts?: any[]; dmReplyPolicy?: 'ONCE' | 'CONTINUOUS' | null } = {}) => {
   const recorded: any[] = [];
   const repo = {
     countToday: jest.fn(async () => opts.today ?? 0),
@@ -81,10 +81,11 @@ const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?:
     generatePost: jest.fn(async (topic: string) => `关于${topic}的原创`),
   };
   const brands = { promptFor: jest.fn(async () => BRAND) };
-  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any, brands as any);
+  const syncSettings = { get: jest.fn(async () => ({ dmReplyPolicy: opts.dmReplyPolicy ?? null })) };
+  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any, brands as any, undefined as any, undefined as any, syncSettings as any);
   (runner as any).sleep = jest.fn(async () => undefined);
   (runner as any).random = () => 0.5;
-  return { runner, repo, inbox, posts, notifications, ai, recorded, brands };
+  return { runner, repo, inbox, posts, notifications, ai, recorded, brands, syncSettings };
 };
 
 describe('helpers', () => {
@@ -164,7 +165,7 @@ describe('comment assistant', () => {
     const result = await s.runner.run(automation() as any);
     expect(result).toEqual({ done: 0, held: 0, failed: 1, skipped: 1 });
     expect(s.repo.setBrake).toHaveBeenCalledWith('ch1', expect.any(Date), expect.stringContaining('风控'));
-    expect(s.notifications.inAppNotification).toHaveBeenCalled();
+    expect(s.notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.stringContaining('风控'), expect.any(String), true, false, 'success', 'AUTOMATION');
   });
 
   it('does not interact through a browser channel without its own exit proxy, and says why', async () => {
@@ -208,6 +209,19 @@ describe('DM assistant', () => {
     const s = setup({ items: [item({ id: 'd3', kind: 'DM', threadId: 'c1' })], acted: ['thread:ch1:c1'] });
     await s.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'continuous' } }) as any);
     expect(s.inbox.reply).toHaveBeenCalledTimes(1);
+  });
+
+  it('the team 私信自动回复策略, when set, overrides the automation', async () => {
+    const answered = [item({ id: 'd3', kind: 'DM', threadId: 'c1' })];
+    const once = setup({ items: answered, acted: ['thread:ch1:c1'], dmReplyPolicy: 'ONCE' });
+    await once.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'continuous' } }) as any);
+    expect(once.inbox.reply).not.toHaveBeenCalled();
+    expect(once.syncSettings.get).toHaveBeenCalledWith('o1');
+
+    const continuous = setup({ items: answered, acted: ['thread:ch1:c1'], dmReplyPolicy: 'CONTINUOUS' });
+    await continuous.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'once' } }) as any);
+    expect(continuous.inbox.reply).toHaveBeenCalledTimes(1);
+    expect(continuous.recorded.map((r) => r.targetKey)).toEqual(['d3']);
   });
 });
 

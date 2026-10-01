@@ -6,6 +6,7 @@ import {
   APPROVED_SUBMIT_FOR_ORDER,
   CreationMethod,
   Post,
+  Prisma,
   State,
 } from '@prisma/client';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
@@ -17,6 +18,13 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import utc from 'dayjs/plugin/utc';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateTagDto } from '@gitroom/nestjs-libraries/dtos/posts/create.tag.dto';
+import { ManagePostsQueryDto } from '@gitroom/nestjs-libraries/dtos/posts/manage.posts.dto';
+import {
+  POST_STATUSES,
+  PostStatus,
+  sourceOf,
+  statusWhere,
+} from '@gitroom/helpers/posts/posts.manage';
 
 dayjs.extend(isoWeek);
 dayjs.extend(weekOfYear);
@@ -389,6 +397,119 @@ export class PostsRepository {
       limit,
       hasMore: skip + posts.length < total,
     };
+  }
+
+  // 帖子 list: top-level posts of live channels, narrowed by source, account and scheduled date
+  private manageWhere(orgId: string, query: ManagePostsQueryDto, status: PostStatus): Prisma.PostWhereInput {
+    return {
+      AND: [
+        {
+          organizationId: orgId,
+          deletedAt: null,
+          parentPostId: null,
+          integration: { organizationId: orgId, deletedAt: null },
+        },
+        statusWhere(status),
+        ...(query.source
+          ? [
+              {
+                creationMethod: {
+                  in: Object.values(CreationMethod).filter((m) => sourceOf(m) === query.source),
+                },
+              },
+            ]
+          : []),
+        ...(query.integrationId ? [{ integrationId: query.integrationId }] : []),
+        ...(query.startDate || query.endDate
+          ? [
+              {
+                publishDate: {
+                  ...(query.startDate ? { gte: dayjs(query.startDate).toDate() } : {}),
+                  ...(query.endDate ? { lte: dayjs(query.endDate).toDate() } : {}),
+                },
+              },
+            ]
+          : []),
+      ],
+    };
+  }
+
+  async managePosts(orgId: string, query: ManagePostsQueryDto) {
+    const status = query.status || 'queue';
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const where = this.manageWhere(orgId, query, status);
+    const [posts, total, counts] = await Promise.all([
+      this._post.model.post.findMany({
+        where,
+        // what is still to come soonest first, what already happened newest first
+        orderBy: { publishDate: status === 'published' || status === 'error' ? 'desc' : 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          group: true,
+          content: true,
+          image: true,
+          publishDate: true,
+          state: true,
+          approval: true,
+          approvalNote: true,
+          error: true,
+          creationMethod: true,
+          intervalInDays: true,
+          releaseURL: true,
+          createdAt: true,
+          integration: {
+            select: {
+              id: true,
+              name: true,
+              picture: true,
+              providerIdentifier: true,
+              disabled: true,
+            },
+          },
+        },
+      }),
+      this._post.model.post.count({ where }),
+      Promise.all(
+        POST_STATUSES.map((s) => this._post.model.post.count({ where: this.manageWhere(orgId, query, s) }))
+      ),
+    ]);
+    return {
+      posts,
+      total,
+      counts: Object.fromEntries(POST_STATUSES.map((s, i) => [s, counts[i]])) as Record<PostStatus, number>,
+    };
+  }
+
+  /** The failed top-level posts of these groups (失败重试). */
+  failedTopLevel(orgId: string, groups: string[]) {
+    return this._post.model.post.findMany({
+      where: {
+        organizationId: orgId,
+        group: { in: groups },
+        parentPostId: null,
+        deletedAt: null,
+        state: 'ERROR',
+        // like the list: a post of a removed channel cannot go out again
+        integration: { organizationId: orgId, deletedAt: null },
+      },
+      select: {
+        id: true,
+        group: true,
+        publishDate: true,
+        integration: { select: { providerIdentifier: true } },
+      },
+    });
+  }
+
+  /** A failed group goes back to the queue at `date`; its thread parts move with it. */
+  retryGroup(orgId: string, group: string, date: Date) {
+    return this._post.model.post.updateMany({
+      where: { organizationId: orgId, group, deletedAt: null, state: { in: ['ERROR', 'QUEUE'] } },
+      data: { state: 'QUEUE', error: null, publishDate: date },
+    });
   }
 
   async deletePost(orgId: string, group: string) {

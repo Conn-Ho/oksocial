@@ -29,6 +29,8 @@ import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { capitalize } from 'lodash';
 import { SelectCustomer } from '@gitroom/frontend/components/launches/select.customer';
+import { SelectChannelTag } from '@gitroom/frontend/components/launches/select.channel.tag';
+import { channelsWithTag } from '@gitroom/helpers/utils/channel.tags';
 import { CopilotPopup } from '@copilotkit/react-ui';
 import { DummyCodeComponent } from '@gitroom/frontend/components/new-launch/dummy.code.component';
 import { CreationMethodBadge } from '@gitroom/frontend/components/launches/creation.method.badge';
@@ -139,6 +141,19 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
       );
       setSelectedIntegrations(
         neededIntegrations.map((p) => ({
+          settings: {},
+          selectedIntegrations: p,
+        }))
+      );
+    },
+    [integrations]
+  );
+
+  // 按标签选择: every usable channel carrying the tag
+  const changeTag = useCallback(
+    (tagId: string) => {
+      setSelectedIntegrations(
+        channelsWithTag(integrations, tagId).map((p) => ({
           settings: {},
           selectedIntegrations: p,
         }))
@@ -507,7 +522,13 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
                     <div className="flex flex-1">
                       <PicksSocialsComponent toolTip={true} />
                     </div>
-                    <div>
+                    <div className="flex gap-[8px]">
+                      {!dummy && !existingData.integration && (
+                        <SelectChannelTag
+                          onChange={changeTag}
+                          integrations={integrations}
+                        />
+                      )}
                       {!dummy && (
                         <SelectCustomer
                           onChange={changeCustomer}

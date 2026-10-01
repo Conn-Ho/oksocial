@@ -1,6 +1,7 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -13,7 +14,13 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { AUTOMATION_TYPES, AutomationType } from '@gitroom/helpers/automations/automation.config';
+import {
+  AUTOMATION_TYPES,
+  AutomationType,
+  LEAD_PERIODS,
+  LEAD_SOURCE_KEYS,
+  LeadSourceGroup,
+} from '@gitroom/helpers/automations/automation.config';
 
 export class CreateAutomationDto {
   @IsIn(AUTOMATION_TYPES) type: AutomationType;
@@ -50,4 +57,33 @@ export class ActionsQueryDto {
   @IsOptional() @IsString() automationId?: string;
   @IsOptional() @IsIn(['HELD', 'DONE', 'FAILED', 'SKIPPED', 'CANCELLED']) status?: 'HELD' | 'DONE' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+}
+
+export class StatsOverviewQueryDto {
+  // the viewer's offset east of UTC in minutes (UTC+8 = 480), so 当天 / 当月 start at their midnight
+  @IsOptional() @Type(() => Number) @IsInt() @Min(-720) @Max(840) tz?: number;
+}
+
+export class LeadsQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100) minScore?: number;
+  @IsOptional() @IsIn(['stored', 'unstored']) stored?: 'stored' | 'unstored';
+  @IsOptional() @Type(() => Number) @IsIn([...LEAD_PERIODS]) days?: number;
+  @IsOptional() @IsIn(LEAD_SOURCE_KEYS) source?: LeadSourceGroup;
+}
+
+export class LeadsExportQueryDto extends LeadsQueryDto {
+  @IsOptional() @IsIn(['csv', 'xlsx']) format?: 'csv' | 'xlsx';
+  // comma-separated ids of the selected leads; absent = every lead the filters match
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value))
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  ids?: string[];
+}
+
+export class StoreLeadsDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @IsString({ each: true }) ids: string[];
+  @IsBoolean() stored: boolean;
 }

@@ -33,6 +33,21 @@ export class CreateMonitorTargetDto {
   @IsOptional() @IsIn(MONITOR_INTERVALS) intervalMinutes?: (typeof MONITOR_INTERVALS)[number];
 }
 
+export class SearchMonitorAccountsDto {
+  @IsString() @IsNotEmpty() platform: string;
+  @IsString() @IsNotEmpty() @MaxLength(60) q: string;
+}
+
+// 竞品 › 批量导入: one profile link or handle per line, optionally "平台,账号"
+export class ImportMonitorAccountsDto {
+  @IsString() @IsNotEmpty() @MaxLength(20000) text: string;
+  // platform of the bare handles; links bring their own
+  @IsOptional() @IsString() platform?: string;
+  // reader for the accounts of that platform
+  @IsOptional() @IsString() integrationId?: string;
+  @IsOptional() @IsIn(MONITOR_INTERVALS) intervalMinutes?: (typeof MONITOR_INTERVALS)[number];
+}
+
 export class UpdateMonitorTargetDto {
   @IsOptional() @IsString() @MaxLength(60) title?: string;
   @IsOptional() @IsString() @MaxLength(200) note?: string;

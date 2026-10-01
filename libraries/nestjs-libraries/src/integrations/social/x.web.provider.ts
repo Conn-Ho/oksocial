@@ -2,6 +2,7 @@ import { Integration } from '@prisma/client';
 import {
   CreationCapabilities,
   InboxCapabilities,
+  MonitorAccountCandidate,
   MonitorAccountRef,
   InteractCapabilities,
   InteractPost,
@@ -197,6 +198,37 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
           120_000
         )
       ).map(fromTweet),
+    // 竞品 › 搜索: X has no people search in opencli, so a handle-like query is looked up as a
+    // profile, then the authors of the tweets that match the query follow (ranked by the caller).
+    searchAccounts: async (slot, query, limit) => {
+      const found: MonitorAccountCandidate[] = [];
+      const handle = query.trim().match(HANDLE)?.[1];
+      if (handle && !NOT_HANDLES.includes(handle.toLowerCase())) {
+        // an unknown handle is not a failed search
+        const me = await this.exec(slot, ['twitter', 'profile', handle], 90_000).then(
+          (rows) => firstRow<Record<string, any>>(rows),
+          () => null
+        );
+        if (me?.screen_name) {
+          found.push({
+            handle: String(me.screen_name),
+            url: `https://x.com/${me.screen_name}`,
+            name: String(me.name || me.screen_name),
+            bio: me.bio || undefined,
+            followers: countFrom(me.followers),
+          });
+        }
+      }
+      const rows = await this.list<TweetRow & { bio?: string }>(
+        slot,
+        ['twitter', 'search', query, '--limit', String(Math.max(limit, 20))],
+        120_000
+      );
+      for (const r of rows.filter((r) => r.author)) {
+        found.push({ handle: r.author, url: `https://x.com/${r.author}`, name: r.author, bio: r.bio || undefined });
+      }
+      return found;
+    },
   };
 
   // 帖文操作助手 / 帖文拓客助手. Likes, bookmarks and follows use opencli's twitter adapters,

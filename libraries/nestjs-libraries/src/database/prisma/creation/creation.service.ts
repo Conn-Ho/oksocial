@@ -356,7 +356,7 @@ export class AiCreationService {
       const attach = creation.format === 'video' ? [] : images.slice(0, creation.imagesMax ?? images.length);
       try {
         const draft = await this._postsService.mapTypeToPost(editorPostBody(integration, texts, date, { images: attach }), orgId);
-        const [created] = await this._postsService.createPost(orgId, draft, 'WEB');
+        const [created] = await this._postsService.createPost(orgId, draft, 'AI');
         posts.push({ integrationId: integration.id, postId: created?.postId ?? null, error: null as string | null });
       } catch (err) {
         console.log(`creation draft ${integration.id}`, (err as Error)?.message);

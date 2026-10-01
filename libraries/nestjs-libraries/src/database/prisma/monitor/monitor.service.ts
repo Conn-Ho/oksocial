@@ -14,6 +14,7 @@ import {
   socialIntegrationList,
 } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import {
+  MonitorAccountCandidate,
   MonitorMetrics,
   MonitorPost,
   MonitorPostRef,
@@ -31,6 +32,10 @@ import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billin
 import { LimitKey } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
 import { BrandPrompt } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import {
+  SyncSettingsService,
+  SyncSettingsValues,
+} from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 
 dayjs.extend(utc);
 
@@ -56,12 +61,70 @@ const DAY_MS = 86_400_000;
 // A post published well before the previous reading is an old one scrolling into view, not news.
 const NEW_POST_SLACK_MS = DAY_MS;
 const KIND_LABEL: Record<MonitorKind, string> = { POST: '帖文', ACCOUNT: '竞品账号', KEYWORD: '关键词' };
+// 竞品 评论同步: comments of a competitor's newest posts of the last week, a few posts per read
+const COMPETITOR_COMMENT_POSTS = 3;
+const COMPETITOR_COMMENT_DAYS = 7;
+// 竞品 › 搜索: candidates asked of the platform and shown
+const SEARCH_ACCOUNTS_LIMIT = 20;
+// 竞品 › 批量导入: lines per batch
+const MAX_IMPORT_LINES = 100;
 
 type Channel = Pick<Integration, 'id' | 'token'> & Partial<Integration>;
 
 /** The first link in pasted text (share texts wrap the link in a title and an app prompt). Pure. */
 export const extractUrl = (text: string) =>
   text.match(/https?:\/\/[^\s，。！、；）)】」”"'<>]+/)?.[0] ?? '';
+
+const isLink = (text: string) => /^https?:\/\//i.test(text.trim());
+
+/**
+ * 批量导入: one account per line — a profile link, or a handle / id with its platform (identifier
+ * or name) before a comma (`<平台>,<账号>`). A line whose part before the comma is not one of our
+ * platforms (a link with a comma in it) is kept whole. Empty lines are skipped. Pure.
+ */
+export const parseAccountLines = (
+  text: string,
+  platforms: Array<{ identifier: string; name: string }>
+): Array<{ line: number; input: string; platform?: string }> => {
+  const names = new Map<string, string>();
+  for (const p of platforms) {
+    names.set(p.identifier.toLowerCase(), p.identifier);
+    names.set(p.name.toLowerCase(), p.identifier);
+    // a name with a bracketed note ("<平台>（浏览器）") is also known without it
+    names.set(p.name.replace(/[（(].*[)）]\s*$/, '').trim().toLowerCase(), p.identifier);
+  }
+  return (text || '').split(/\r?\n/).flatMap((raw, i) => {
+    const line = raw.trim();
+    if (!line) {
+      return [];
+    }
+    const [head, ...rest] = line.split(/[,，\t]/);
+    const platform = rest.length ? names.get(head.trim().toLowerCase()) : undefined;
+    return platform
+      ? [{ line: i + 1, input: rest.join(',').trim(), platform }]
+      : [{ line: i + 1, input: line }];
+  });
+};
+
+/**
+ * Search results as one list: each account once (handles compared case-insensitively), exact
+ * matches first, then handles / names starting with the query, then the ones containing it. Pure.
+ */
+export const rankCandidates = <T extends { handle: string; name: string }>(rows: T[], query: string) => {
+  const q = query.trim().replace(/^@/, '').toLowerCase();
+  const score = (r: T) => {
+    const values = [r.handle, r.name].map((v) => (v || '').toLowerCase());
+    return values.includes(q) ? 0 : values.some((v) => v.startsWith(q)) ? 1 : values.some((v) => v.includes(q)) ? 2 : 3;
+  };
+  const unique = rows.filter((r, i) => rows.findIndex((x) => x.handle.toLowerCase() === r.handle.toLowerCase()) === i);
+  return unique
+    .map((row, index) => ({ row, index, score: score(row) }))
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((x) => x.row);
+};
+
+const statusOf = (err: unknown) =>
+  (err as HttpException)?.getStatus?.() ?? (err as { status?: number })?.status;
 
 /** Metrics as stored: exactly the five columns, unknown ones null. Pure. */
 export const metricsOf = (m: MonitorMetrics) => ({
@@ -135,7 +198,8 @@ export class MonitorService implements OnModuleInit {
     private _postsService: PostsService,
     private _planService: PlanService,
     private _credits: CreditsService,
-    private _brands: BrandService
+    private _brands: BrandService,
+    private _syncSettings: SyncSettingsService
   ) {}
 
   onModuleInit() {
@@ -160,6 +224,7 @@ export class MonitorService implements OnModuleInit {
       name: p.name,
       search: !!p.monitor?.search,
       vs: !!p.monitor?.ownPosts,
+      searchAccounts: !!p.monitor?.searchAccounts,
     }));
   }
 
@@ -243,6 +308,101 @@ export class MonitorService implements OnModuleInit {
     });
   }
 
+  // 竞品 › 搜索 runs per organization: a second search waits for the first one
+  private _searching = new Set<string>();
+
+  /**
+   * 竞品 › 搜索: accounts of a platform whose name or handle matches, read through one of our
+   * channels of that platform, each marked when it is already a competitor.
+   */
+  async searchAccounts(orgId: string, platform: string, query: string): Promise<Array<MonitorAccountCandidate & { monitored: boolean }>> {
+    const provider = this.provider(platform);
+    if (!provider.monitor?.searchAccounts) {
+      throw new HttpException('这个平台暂不支持搜索，请粘贴主页链接', 400);
+    }
+    const q = (query || '').trim();
+    if (!q) {
+      throw new HttpException('请输入要搜索的名称或账号', 400);
+    }
+    const channel = await this.readerOrFail(orgId, provider);
+    if (this._searching.has(orgId)) {
+      throw new HttpException('上一次搜索还没结束，请稍候再试', 429);
+    }
+    this._searching.add(orgId);
+    let found: MonitorAccountCandidate[];
+    try {
+      found = await provider.monitor.searchAccounts(channel.token, q, SEARCH_ACCOUNTS_LIMIT);
+    } catch (err) {
+      const message = ((err as Error)?.message || '读取失败').slice(0, 300);
+      if (CHALLENGE_RE.test(message)) {
+        await this.brake(orgId, channel, message).catch((e) => console.log(`monitor brake ${channel.id}`, (e as Error)?.message));
+      }
+      throw new HttpException(`搜索失败：${message}`, 502);
+    } finally {
+      this._searching.delete(orgId);
+    }
+    const monitored = new Set(
+      (await this._repository.listTargets(orgId, 'ACCOUNT'))
+        .filter((t) => t.platform === platform)
+        .map((t) => (t.externalId || t.query).toLowerCase())
+    );
+    return rankCandidates(found, q)
+      .slice(0, SEARCH_ACCOUNTS_LIMIT)
+      .map((c) => ({ ...c, monitored: monitored.has(c.handle.toLowerCase()) }));
+  }
+
+  /**
+   * 竞品 › 批量导入: one competitor per line, each through the same checks as adding one (plan
+   * limit, duplicates, recognisable link). Says per line what was added and why a line was not.
+   * Bare handles take the line's platform, else the chosen one; links bring their own. The first
+   * readings happen in the hourly loop.
+   */
+  async importAccounts(
+    orgId: string,
+    body: { text: string; platform?: string; integrationId?: string; intervalMinutes?: number }
+  ) {
+    const lines = parseAccountLines(body.text, this.platforms());
+    if (!lines.length) {
+      throw new HttpException('请粘贴至少一个主页链接或账号，每行一个', 400);
+    }
+    if (lines.length > MAX_IMPORT_LINES) {
+      throw new HttpException(`一次最多导入 ${MAX_IMPORT_LINES} 个账号`, 400);
+    }
+    const hasReader = new Map<string, boolean>();
+    const results = [];
+    for (const { line, input, platform } of lines) {
+      try {
+        const chosen = platform ?? (isLink(input) ? undefined : body.platform);
+        const resolved = this.resolveAccount(input, chosen).platform;
+        const target = await this.createTarget(orgId, {
+          kind: 'ACCOUNT',
+          input,
+          platform: chosen,
+          integrationId: resolved === body.platform ? body.integrationId : undefined,
+          intervalMinutes: body.intervalMinutes,
+        });
+        if (!hasReader.has(resolved)) {
+          hasReader.set(resolved, (await this._repository.channels(orgId, resolved)).length > 0);
+        }
+        results.push({
+          line,
+          input,
+          ok: true as const,
+          targetId: target.id,
+          platform: resolved,
+          name: target.title || target.query,
+          ...(hasReader.get(resolved)
+            ? {}
+            : { warning: `还没有连接${this.provider(resolved).name}账号，连接后才能读取` }),
+        });
+      } catch (err) {
+        results.push({ line, input, ok: false as const, error: (err as Error)?.message || '添加失败' });
+      }
+    }
+    const created = results.filter((r) => r.ok).length;
+    return { total: results.length, created, failed: results.length - created, results };
+  }
+
   private describeTarget(kind: MonitorKind, input: string, platform?: string) {
     if (kind === 'POST') {
       const { platform: detected, ref } = this.detectPost(input);
@@ -324,8 +484,10 @@ export class MonitorService implements OnModuleInit {
       const provider = this.provider(target.platform);
       channel = await this.readerOrFail(target.organizationId, provider, target.integrationId);
       const reader = channel;
+      // 同步与 AI: comment reads and AI tags of monitored posts and competitors follow the team's switches
+      const settings = await this._syncSettings.get(target.organizationId);
       const added = await this._credits.withCredits(target.organizationId, 'monitor_sync', target.id, () =>
-        this.read(target, provider, reader)
+        this.read(target, provider, reader, settings)
       );
       await this._repository.finishRun(target.id, { lastError: null, nextRunAt, succeeded: true });
       return { ok: true, added };
@@ -350,7 +512,10 @@ export class MonitorService implements OnModuleInit {
       orgId,
       '账号触发平台风控，监控已暂停',
       `监控用「${channel.name}」读取时被平台拦截（${reason.slice(0, 80)}），该账号的监控和自动化暂停 ${BRAKE_HOURS} 小时。请先在浏览器里确认账号状态。`,
-      true
+      true,
+      false,
+      'success',
+      'MONITOR'
     );
   }
 
@@ -377,21 +542,29 @@ export class MonitorService implements OnModuleInit {
   /** In-app notice; a failed notice must not turn a good read into a failed one. */
   private async notify(orgId: string, subject: string, message: string) {
     await this._notificationService
-      .inAppNotification(orgId, subject, message)
+      .inAppNotification(orgId, subject, message, false, false, 'success', 'MONITOR')
       .catch((err) => console.log('monitor notification', (err as Error)?.message));
   }
 
-  private async read(target: MonitorTarget, provider: SocialProvider & { name: string }, channel: Channel) {
+  private async read(
+    target: MonitorTarget,
+    provider: SocialProvider & { name: string },
+    channel: Channel,
+    settings: SyncSettingsValues
+  ) {
     const monitor = provider.monitor!;
     if (target.kind === 'POST') {
       const { post, comments } = await monitor.readPost(
         channel.token,
         { externalId: target.externalId, url: target.url },
-        COMMENTS_PER_READ
+        settings.monitorCommentSync ? COMMENTS_PER_READ : 0
       );
       await this._repository.savePostReading(target.id, post);
       if (comments.length) {
-        await this._repository.addComments(target.id, comments);
+        const added = await this._repository.addComments(target.id, comments);
+        if (settings.monitorAiTag) {
+          await this.tagItems(target.organizationId, added).catch((err) => console.log('monitor tagging', (err as Error)?.message));
+        }
       }
       return comments.length;
     }
@@ -405,6 +578,12 @@ export class MonitorService implements OnModuleInit {
         await this._repository.setTitleIfEmpty(target.id, name);
       }
       const added = await this.store(target, 'POST', posts);
+      const comments = settings.competitorCommentSync ? await this.competitorComments(target, monitor, channel, posts) : [];
+      if (settings.competitorAiTag) {
+        await this.tagItems(target.organizationId, [...added, ...comments]).catch((err) =>
+          console.log('monitor tagging', (err as Error)?.message)
+        );
+      }
       const fresh = freshPosts(added, target.lastRunAt);
       if (fresh.length) {
         const who = target.title || name || target.query;
@@ -437,6 +616,56 @@ export class MonitorService implements OnModuleInit {
       );
     }
     return added.length;
+  }
+
+  /**
+   * 竞品 评论同步: comments of the competitor's newest posts of the last week (a few per read, paced
+   * like every read of the platform, each charged as a read). A post that cannot be read is
+   * skipped; running out of credits ends it; a risk-control block fails the whole reading.
+   */
+  private async competitorComments(
+    target: MonitorTarget,
+    monitor: NonNullable<SocialProvider['monitor']>,
+    channel: Channel,
+    posts: MonitorPost[]
+  ) {
+    const since = Date.now() - COMPETITOR_COMMENT_DAYS * DAY_MS;
+    const recent = posts
+      .filter((p, i) => posts.findIndex((q) => q.externalId === p.externalId) === i)
+      .filter((p) => !p.publishedAt || p.publishedAt.getTime() >= since)
+      .slice(0, COMPETITOR_COMMENT_POSTS);
+    const added: Array<{ id: string; content: string | null }> = [];
+    for (const [i, post] of recent.entries()) {
+      if (i > 0 && monitor.readGapMs) {
+        const [min, max] = monitor.readGapMs;
+        await this.sleep(min + Math.random() * (max - min));
+      }
+      let comments;
+      try {
+        comments = await this._credits.withCredits(target.organizationId, 'monitor_sync', target.id, async () =>
+          (await monitor.readPost(channel.token, { externalId: post.externalId, url: post.url }, COMMENTS_PER_READ)).comments
+        );
+      } catch (err) {
+        const message = (err as Error)?.message || '';
+        if (CHALLENGE_RE.test(message)) {
+          throw err;
+        }
+        if (statusOf(err) === 402) {
+          break;
+        }
+        console.log(`monitor competitor comments ${target.id} ${post.externalId}`, message);
+        continue;
+      }
+      if (comments.length) {
+        added.push(
+          ...(await this._repository.addComments(target.id, comments, {
+            url: post.url,
+            title: post.title || post.content?.slice(0, 60) || null,
+          }))
+        );
+      }
+    }
+    return added;
   }
 
   private async store(target: MonitorTarget, kind: MonitorItemKind, posts: MonitorPost[]) {
@@ -657,7 +886,7 @@ export class MonitorService implements OnModuleInit {
       editorPostBody(integration, [content], date),
       orgId
     );
-    const [created] = await this._postsService.createPost(orgId, body, 'WEB');
+    const [created] = await this._postsService.createPost(orgId, body, 'AI');
     return { postId: created?.postId ?? null, date };
   }
 }

@@ -105,6 +105,8 @@ export const useReplyHistory = (page: number) => {
     Array<{
       id: string;
       content: string;
+      // what the operator wrote when the reply went out translated
+      original?: string | null;
       source: string;
       error?: string | null;
       createdAt: string;

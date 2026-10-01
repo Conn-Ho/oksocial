@@ -1,6 +1,7 @@
 import {
   InboxAiService,
   bannedIn,
+  looksChinese,
   stringsOf,
   stripBanned,
 } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
@@ -40,6 +41,39 @@ describe('banned words', () => {
 
   it('stringsOf lists every string leaf', () => {
     expect(stringsOf({ a: 'x', b: [{ c: 'y' }, 2], d: null })).toEqual(['x', 'y']);
+  });
+});
+
+describe('looksChinese', () => {
+  it('is Chinese when Han characters carry most of the words, brand names and links aside', () => {
+    expect(looksChinese('请问多少钱')).toBe(true);
+    expect(looksChinese('这个 iPhone 壳还有货吗')).toBe(true);
+    expect(looksChinese('看这里 https://example.com/some/long/english/path @someone #tag')).toBe(true);
+  });
+
+  it('is not Chinese for other languages, Japanese with kana included', () => {
+    expect(looksChinese('How much is it?')).toBe(false);
+    expect(looksChinese('¿Cuánto cuesta?')).toBe(false);
+    expect(looksChinese('これはいくらですか')).toBe(false);
+    expect(looksChinese('この商品はいつ届きますか？')).toBe(false);
+    expect(looksChinese('얼마예요?')).toBe(false);
+    expect(looksChinese('great product, 好')).toBe(false);
+  });
+
+  it('text without words needs no translation', () => {
+    expect(looksChinese('👍👍 123 !!!')).toBe(true);
+    expect(looksChinese('')).toBe(true);
+  });
+});
+
+describe('InboxAiService.translateLike', () => {
+  it('asks for the reply in the language of the customer message, plain text only', async () => {
+    const { ai, chat } = scripted('How about tomorrow?');
+    expect(await ai.translateLike('明天可以吗？', 'Can I pick it up?')).toBe('How about tomorrow?');
+    const [system, user] = chat.mock.calls[0] as unknown as [string, string];
+    expect(system).toContain('同一种语言');
+    expect(user).toContain('Can I pick it up?');
+    expect(user).toContain('明天可以吗？');
   });
 });
 

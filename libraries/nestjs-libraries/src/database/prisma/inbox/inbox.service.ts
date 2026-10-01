@@ -9,18 +9,39 @@ import {
   IntegrationManager,
   socialIntegrationList,
 } from '@gitroom/nestjs-libraries/integrations/integration.manager';
-import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
+import { InboxAiService, looksChinese } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
+import {
+  SyncSettingsService,
+  inboxKindSynced,
+  inboxKindTagged,
+  inboxKindTranslatedIn,
+  inboxKindTranslatedOut,
+} from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
+import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 
 const TAG_BATCH = 20;
+// incoming translations per channel and sync run: a backlog is translated over a few runs
+const TRANSLATE_PER_SYNC = 30;
+const INBOX_KINDS: InboxKind[] = ['COMMENT', 'DM', 'MENTION'];
 const KIND_LABEL: Record<InboxKind, string> = { COMMENT: '评论', DM: '私信', MENTION: '@提及' };
+type AddedItem = { id: string; kind: InboxKind; content: string; authorName: string };
+type Charge = Awaited<ReturnType<CreditsService['spend']>>;
 
-/** RFC 4180 CSV (quotes doubled, every field quoted) with a BOM so Excel opens it as UTF-8. Pure. */
+// text a spreadsheet would run as a formula (people's comments end up in these files)
+const FORMULA_START = /^[=+\-@\t\r]/;
+const csvCell = (v: string | number | null | undefined) =>
+  typeof v === 'string' && FORMULA_START.test(v) ? `'${v}` : String(v ?? '');
+
+/**
+ * RFC 4180 CSV (quotes doubled, every field quoted) with a BOM so Excel opens it as UTF-8; text
+ * that starts like a formula gets a leading apostrophe so it stays text. Pure.
+ */
 export const toCsv = (header: string[], rows: Array<Array<string | number | null | undefined>>) =>
   '﻿' +
   [header, ...rows]
-    .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .map((row) => row.map((v) => `"${csvCell(v).replace(/"/g, '""')}"`).join(','))
     .join('\r\n');
 
 @Injectable()
@@ -31,7 +52,9 @@ export class InboxService {
     private _integrationManager: IntegrationManager,
     private _ai: InboxAiService,
     private _credits: CreditsService,
-    private _brands: BrandService
+    private _brands: BrandService,
+    private _syncSettings: SyncSettingsService,
+    private _notificationService: NotificationService
   ) {}
 
   /** Providers that implement an inbox (identifiers). */
@@ -57,15 +80,72 @@ export class InboxService {
     if (!provider?.inbox) {
       return { fetched: 0, added: 0 };
     }
+    // 同步与 AI: the team chooses which kinds the inbox keeps and what AI work runs on them
+    const settings = await this._syncSettings.get(orgId);
+    if (!INBOX_KINDS.some((kind) => inboxKindSynced(settings, kind))) {
+      return { fetched: 0, added: 0 };
+    }
     const fetched = await provider.inbox.fetch(integration.token, integration);
     const { items, warnings = [] } = Array.isArray(fetched) ? { items: fetched } : fetched;
     // what the account could not read (e.g. a second site not logged in) stays visible until it reads again
     await this._repository.setNotice(integration.id, warnings[0] ?? null);
-    const added = items.length
-      ? await this._repository.addItems(orgId, integration.id, items)
+    const kept = items.filter((item) => inboxKindSynced(settings, item.kind));
+    const added: AddedItem[] = kept.length
+      ? await this._repository.addItems(orgId, integration.id, kept)
       : [];
-    await this.tagItems(orgId, added).catch((err) => console.log('inbox tagging', err?.message));
+    await this.tagItems(orgId, added.filter((r) => inboxKindTagged(settings, r.kind))).catch((err) =>
+      console.log('inbox tagging', err?.message)
+    );
+    await this.translateIncoming(orgId, added.filter((r) => inboxKindTranslatedIn(settings, r.kind))).catch((err) =>
+      console.log('inbox translation', err?.message)
+    );
+    await this.notifyMentions(orgId, integration.name, added.filter((r) => r.kind === 'MENTION')).catch((err) =>
+      console.log('inbox mention notification', err?.message)
+    );
     return { fetched: items.length, added: added.length, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  /** 接收翻译: what is not already Chinese gets a Chinese translation, charged per item. */
+  private async translateIncoming(orgId: string, rows: AddedItem[]) {
+    if (!this._ai.enabled) {
+      return;
+    }
+    for (const row of rows.filter((r) => !looksChinese(r.content)).slice(0, TRANSLATE_PER_SYNC)) {
+      if ((await this._credits.affordable(orgId, 'ai_translate')) < 1) {
+        return;
+      }
+      try {
+        // an empty answer throws, so withCredits gives the charge back
+        const translated = await this._credits.withCredits(orgId, 'ai_translate', row.id, async () => {
+          const text = (await this._ai.translate(row.content, 'zh'))?.trim();
+          if (!text) {
+            throw new Error('empty translation');
+          }
+          return text;
+        });
+        await this._repository.setTranslation(orgId, row.id, translated);
+      } catch (err) {
+        console.log(`inbox translation ${row.id}`, (err as Error)?.message);
+      }
+    }
+  }
+
+  /** One 互动 notification per sync of an account that was @mentioned. */
+  private async notifyMentions(orgId: string, account: string, rows: AddedItem[]) {
+    if (!rows.length) {
+      return;
+    }
+    const latest = rows[rows.length - 1];
+    const subject = `「${account}」被提及 ${rows.length} 次`;
+    await this._notificationService.inAppNotification(
+      orgId,
+      subject,
+      `${subject}，最新一条来自 ${latest.authorName}：${latest.content.slice(0, 60)}`,
+      false,
+      false,
+      'success',
+      'ENGAGEMENT'
+    );
   }
 
   /** Accounts with something the team has to fix before the inbox is complete. */
@@ -186,27 +266,69 @@ export class InboxService {
     if (!send) {
       throw new HttpException(`这个平台暂不支持在 oksocial 里回复${KIND_LABEL[item.kind]}`, 400);
     }
-    const charge = provider.writeCreditAction
-      ? await this._credits.spend(orgId, provider.writeCreditAction, item.id)
-      : null;
+    // 发送翻译 first: a translation that cannot be paid for (or fails) sends nothing and charges no write
+    const outgoing = await this.outgoingText(orgId, item, text);
+    const sent = outgoing.text;
+    const original = sent !== text ? text : undefined;
+    const giveBack = (...charges: Charge[]) =>
+      Promise.all(
+        charges.map((c) => this._credits.refund(c).catch((e) => console.log('inbox reply refund', (e as Error)?.message)))
+      );
+    let charge: Charge = null;
+    try {
+      charge = provider.writeCreditAction
+        ? await this._credits.spend(orgId, provider.writeCreditAction, item.id)
+        : null;
+    } catch (err) {
+      await giveBack(outgoing.charge);
+      throw err;
+    }
     try {
       await send(
         item.integration.token,
         item.integration,
         { replyTarget: item.replyTarget, threadId: item.threadId },
-        text
+        sent
       );
     } catch (err) {
-      await this._credits
-        .refund(charge)
-        .catch((e) => console.log('inbox reply refund', (e as Error)?.message));
+      await giveBack(charge, outgoing.charge);
       const message = (err as Error)?.message || 'reply failed';
-      await this._repository.logReply(item.id, userId, text, source, message);
+      await this._repository.logReply(item.id, userId, sent, source, { error: message, original });
       throw new HttpException(`发送失败：${message}`, 502);
     }
-    await this._repository.logReply(item.id, userId, text, source);
+    await this._repository.logReply(item.id, userId, sent, source, { original });
     await this._repository.setStatus(orgId, [item.id], 'REPLIED');
     return { ok: true };
+  }
+
+  /**
+   * The reply as it goes out: put into the language the customer wrote in when the team turned on
+   * 发送翻译 for this kind, with that translation's charge (given back by the caller when the send
+   * fails); else as written. A translation that fails or comes back empty is refunded and stops
+   * the reply rather than sending text the customer may not read.
+   */
+  private async outgoingText(
+    orgId: string,
+    item: { id: string; kind: InboxKind; content: string },
+    text: string
+  ): Promise<{ text: string; charge: Charge }> {
+    if (!this._ai.enabled || !inboxKindTranslatedOut(await this._syncSettings.get(orgId), item.kind)) {
+      return { text, charge: null };
+    }
+    if (looksChinese(item.content) && looksChinese(text)) {
+      return { text, charge: null };
+    }
+    const charge = await this._credits.spend(orgId, 'ai_translate', item.id);
+    try {
+      const translated = (await this._ai.translateLike(text, item.content))?.trim();
+      if (!translated) {
+        throw new HttpException('AI 没有给出译文，回复没有发送，请重试', 502);
+      }
+      return { text: translated, charge };
+    } catch (err) {
+      await this._credits.refund(charge).catch((e) => console.log('inbox translation refund', (e as Error)?.message));
+      throw err instanceof HttpException ? err : new HttpException(`翻译失败，回复没有发送：${(err as Error)?.message}`, 502);
+    }
   }
 
   async suggestReply(orgId: string, id: string) {

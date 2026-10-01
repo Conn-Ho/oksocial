@@ -14,6 +14,7 @@ import { PostsRepository } from '@gitroom/nestjs-libraries/database/prisma/posts
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { MediaService } from '@gitroom/nestjs-libraries/database/prisma/media/media.service';
 import { MediaRepository } from '@gitroom/nestjs-libraries/database/prisma/media/media.repository';
+import { MediaDriveService } from '@gitroom/nestjs-libraries/database/prisma/media/media.drive.service';
 import { NotificationsRepository } from '@gitroom/nestjs-libraries/database/prisma/notifications/notifications.repository';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
 import { StripeService } from '@gitroom/nestjs-libraries/services/stripe.service';
@@ -79,6 +80,12 @@ import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/b
 import { CreationRepository } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.repository';
 import { AiCreationService } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.service';
 import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.ai.service';
+import { ChecklistRepository } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.repository';
+import { ChecklistService } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.service';
+import { ChannelTagsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.repository';
+import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
+import { SyncSettingsRepository } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository';
+import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 
 @Global()
 @Module({
@@ -120,6 +127,7 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     SignatureService,
     MediaService,
     MediaRepository,
+    MediaDriveService,
     AgenciesService,
     AgenciesRepository,
     IntegrationManager,
@@ -129,6 +137,8 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     InboxRepository,
     InboxService,
     InboxAiService,
+    SyncSettingsRepository,
+    SyncSettingsService,
     ChannelStatsRepository,
     ChannelStatsService,
     ReportService,
@@ -144,6 +154,8 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     CreationRepository,
     CreationAiService,
     AiCreationService,
+    ChannelTagsRepository,
+    ChannelTagsService,
     ExtractContentService,
     OpenaiService,
     RelayImageService,
@@ -167,6 +179,8 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     ErrorsService,
     AdminStatsRepository,
     AdminStatsService,
+    ChecklistRepository,
+    ChecklistService,
   ],
   get exports() {
     return this.providers;

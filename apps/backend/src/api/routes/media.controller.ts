@@ -25,6 +25,9 @@ import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { SaveMediaInformationDto } from '@gitroom/nestjs-libraries/dtos/media/save.media.information.dto';
 import { VideoDto } from '@gitroom/nestjs-libraries/dtos/videos/video.dto';
 import { VideoFunctionDto } from '@gitroom/nestjs-libraries/dtos/videos/video.function.dto';
+import { MediaIdsDto } from '@gitroom/nestjs-libraries/dtos/media/media.drive.dto';
+import { MediaDriveService } from '@gitroom/nestjs-libraries/database/prisma/media/media.drive.service';
+import { MEDIA_KINDS, MediaKind } from '@gitroom/helpers/utils/media.kind';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
 import {
   AuthorizationActions,
@@ -37,12 +40,40 @@ export class MediaController {
   private storage = UploadFactory.createStorage();
   constructor(
     private _mediaService: MediaService,
-    private _subscriptionService: SubscriptionService
+    private _subscriptionService: SubscriptionService,
+    private _mediaDriveService: MediaDriveService
   ) {}
 
+  // moves the file to the 回收站; it is purged after 30 days
   @Delete('/:id')
   deleteMedia(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
     return this._mediaService.deleteMedia(org.id, id);
+  }
+
+  // 网盘 (declared before POST /:endpoint, which would take any single-segment path)
+  @Get('/drive/summary')
+  driveSummary(@GetOrgFromRequest() org: Organization) {
+    return this._mediaDriveService.summary(org.id);
+  }
+
+  @Get('/trash/list')
+  trashList(@GetOrgFromRequest() org: Organization, @Query('page') page?: string) {
+    return this._mediaDriveService.trashList(org.id, Math.max(1, Number(page) || 1));
+  }
+
+  @Post('/trash/restore')
+  restoreFromTrash(@GetOrgFromRequest() org: Organization, @Body() body: MediaIdsDto) {
+    return this._mediaDriveService.restore(org.id, body.ids);
+  }
+
+  @Post('/trash/purge')
+  purgeFromTrash(@GetOrgFromRequest() org: Organization, @Body() body: MediaIdsDto) {
+    return this._mediaDriveService.purge(org.id, body.ids);
+  }
+
+  @Post('/trash/empty')
+  emptyTrash(@GetOrgFromRequest() org: Organization) {
+    return this._mediaDriveService.emptyTrash(org.id);
   }
 
   @Post('/generate-video')
@@ -174,13 +205,17 @@ export class MediaController {
     // @ts-ignore
     const name = upload.Location.split('/').pop();
     const originalName = req.body?.file?.name;
+    // the uploader's own count of the bytes, for the 网盘 storage meter (the normalizer, when it
+    // runs, replaces it with the real size of its output)
+    const declaredSize = Math.max(0, Math.floor(Number(req.body?.file?.size) || 0));
 
     const saveFile = await this._mediaService.saveUploadedFile(
       org.id,
       name,
       // @ts-ignore
       upload.Location,
-      originalName || undefined
+      originalName || undefined,
+      declaredSize || undefined
     );
 
     res.status(200).json({ ...upload, saved: saveFile });
@@ -198,9 +233,15 @@ export class MediaController {
   getMedia(
     @GetOrgFromRequest() org: Organization,
     @Query('page') page: number,
-    @Query('search') search?: string
+    @Query('search') search?: string,
+    @Query('kind') kind?: string
   ) {
-    return this._mediaService.getMedia(org.id, page, search);
+    return this._mediaService.getMedia(
+      org.id,
+      page,
+      search,
+      MEDIA_KINDS.includes(kind as MediaKind) ? (kind as MediaKind) : undefined
+    );
   }
 
   @Get('/video-options')

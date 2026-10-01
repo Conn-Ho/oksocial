@@ -21,6 +21,7 @@ import {
   MonitorTarget,
   formatCount,
   useMonitorCall,
+  useMonitorItems,
   useMonitorTarget,
 } from '@gitroom/frontend/components/monitor/monitor.hooks';
 
@@ -65,6 +66,21 @@ const PostMetrics: FC<{ snapshots: MonitorSnapshot[] }> = ({ snapshots }) => {
           <MonitorChart type="line" labels={labels} series={series} ariaLabel={t('monitor_trend', '数据趋势')} />
         </div>
       )}
+    </>
+  );
+};
+
+/** 竞品 评论同步: comments under a competitor's recent posts, shown once there are any. */
+const CompetitorComments: FC<{ targetId: string }> = ({ targetId }) => {
+  const t = useT();
+  const { data } = useMonitorItems(targetId, 'COMMENT', 1);
+  if (!data?.total) {
+    return null;
+  }
+  return (
+    <>
+      <h4 className="text-[15px] font-semibold pt-[4px]">{t('monitor_competitor_comments', '最近帖子的评论')}</h4>
+      <MonitorItems targetId={targetId} kind="COMMENT" />
     </>
   );
 };
@@ -278,6 +294,7 @@ export const MonitorDetail: FC<{
         <>
           <h4 className="text-[15px] font-semibold">{t('monitor_account_posts', '最近的帖子')}</h4>
           <MonitorItems targetId={target.id} kind="POST" onRemake={onRemakeItem} />
+          <CompetitorComments targetId={target.id} />
         </>
       )}
       {target.kind === 'KEYWORD' && (

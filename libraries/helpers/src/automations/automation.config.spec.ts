@@ -1,4 +1,10 @@
-import { describeAutomation, matchesTriggers, parseAutomationConfig } from '@gitroom/helpers/automations/automation.config';
+import {
+  LEAD_SOURCE_GROUPS,
+  describeAutomation,
+  leadSourceGroup,
+  matchesTriggers,
+  parseAutomationConfig,
+} from '@gitroom/helpers/automations/automation.config';
 
 describe('automation config', () => {
   it('fills defaults and validates', () => {
@@ -26,5 +32,21 @@ describe('automation config', () => {
     expect(describeAutomation('LEAD_COLLECTOR', { prompt: '想买的人', minScore: 70 }, 500)).toContain('70 分及以上进入线索库');
     expect(describeAutomation('REWRITE_SYNC', { sourceIntegrationIds: ['a'], tone: 'casual', length: 'shorter', publish: 'now' }, 10)).toContain('改写成更口语的语气并缩短后，立即发到目标账号');
     expect(describeAutomation('AUTO_POST', { topics: ['AI 工具'], postsPerDay: 2, publish: 'schedule', hours: [10, 20] }, 10)).toContain('定时在 10:00–20:00 之间发布');
+  });
+});
+
+describe('lead sources', () => {
+  it('groups where a lead came from the way the 线索库 filters it', () => {
+    expect(LEAD_SOURCE_GROUPS.own_comment.sources).toEqual(['inbox:COMMENT', 'inbox:MENTION']);
+    expect(LEAD_SOURCE_GROUPS.own_dm.sources).toEqual(['inbox:DM']);
+    expect(LEAD_SOURCE_GROUPS.other_comment.sources).toEqual(['monitor:COMMENT']);
+    expect(leadSourceGroup('inbox:MENTION')).toBe('own_comment');
+    expect(leadSourceGroup('inbox:DM')).toBe('own_dm');
+    expect(leadSourceGroup('monitor:COMMENT')).toBe('other_comment');
+    expect(leadSourceGroup('somewhere')).toBeNull();
+  });
+
+  it('labels every group in Chinese', () => {
+    expect(Object.values(LEAD_SOURCE_GROUPS).map((g) => g.label)).toEqual(['授权账户的评论', '授权账户的私信', '其它账户的评论']);
   });
 });

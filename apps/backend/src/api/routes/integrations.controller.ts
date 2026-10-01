@@ -40,6 +40,12 @@ import {
   RequireRoles,
 } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
+import {
+  CreateChannelTagDto,
+  SetChannelTagsDto,
+  UpdateChannelTagDto,
+} from '@gitroom/nestjs-libraries/dtos/integrations/channel.tag.dto';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -50,7 +56,8 @@ export class IntegrationsController {
     private _postService: PostsService,
     private _refreshIntegrationService: RefreshIntegrationService,
     private _planService: PlanService,
-    private _browserSlotService: BrowserSlotService
+    private _browserSlotService: BrowserSlotService,
+    private _channelTagsService: ChannelTagsService
   ) {}
 
   @Post('/provider/:id/connect')
@@ -72,6 +79,50 @@ export class IntegrationsController {
   @Get('/customers')
   getCustomers(@GetOrgFromRequest() org: Organization) {
     return this._integrationService.customers(org.id);
+  }
+
+  // 账号标签, declared before the "/:id" routes
+  @Get('/tags')
+  getChannelTags(@GetOrgFromRequest() org: Organization) {
+    return this._channelTagsService.list(org.id);
+  }
+
+  @Post('/tags')
+  @RequireRoles('ADMIN', 'MANAGER')
+  createChannelTag(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: CreateChannelTagDto
+  ) {
+    return this._channelTagsService.create(org.id, body);
+  }
+
+  @Put('/tags/:tagId')
+  @RequireRoles('ADMIN', 'MANAGER')
+  updateChannelTag(
+    @GetOrgFromRequest() org: Organization,
+    @Param('tagId') tagId: string,
+    @Body() body: UpdateChannelTagDto
+  ) {
+    return this._channelTagsService.update(org.id, tagId, body);
+  }
+
+  @Delete('/tags/:tagId')
+  @RequireRoles('ADMIN', 'MANAGER')
+  deleteChannelTag(
+    @GetOrgFromRequest() org: Organization,
+    @Param('tagId') tagId: string
+  ) {
+    return this._channelTagsService.remove(org.id, tagId);
+  }
+
+  @Put('/:id/tags')
+  @RequireRoles('ADMIN', 'MANAGER')
+  setChannelTags(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: SetChannelTagsDto
+  ) {
+    return this._channelTagsService.setChannelTags(org.id, id, body.tagIds);
   }
 
   @Put('/:id/group')
@@ -132,6 +183,8 @@ export class IntegrationsController {
             changeProfilePicture: !!findIntegration?.changeProfilePicture,
             changeNickName: !!findIntegration?.changeNickname,
             customer: p.customer,
+            // 账号标签 (several per channel)
+            tags: (p.channelTags || []).map((l) => l.tag),
             additionalSettings: p.additionalSettings || '[]',
           };
         })

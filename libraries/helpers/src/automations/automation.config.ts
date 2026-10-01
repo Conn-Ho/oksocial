@@ -237,3 +237,19 @@ export const describeAutomation = (type: AutomationType, raw: unknown, dailyCap:
     }
   }
 };
+
+// 线索库 来源: where a lead was found (Lead.source), grouped the way the library filters it.
+export const LEAD_SOURCE_GROUPS = {
+  own_comment: { label: '授权账户的评论', sources: ['inbox:COMMENT', 'inbox:MENTION'] },
+  own_dm: { label: '授权账户的私信', sources: ['inbox:DM'] },
+  other_comment: { label: '其它账户的评论', sources: ['monitor:COMMENT'] },
+} as const;
+export type LeadSourceGroup = keyof typeof LEAD_SOURCE_GROUPS;
+export const LEAD_SOURCE_KEYS = Object.keys(LEAD_SOURCE_GROUPS) as LeadSourceGroup[];
+
+/** The 来源 group of a Lead.source, or null for a source the library does not know. Pure. */
+export const leadSourceGroup = (source: string): LeadSourceGroup | null =>
+  LEAD_SOURCE_KEYS.find((key) => (LEAD_SOURCE_GROUPS[key].sources as readonly string[]).includes(source)) ?? null;
+
+// 时间 filter of the 线索库 (days back; absent = 全部时间)
+export const LEAD_PERIODS = [7, 30, 90, 180] as const;

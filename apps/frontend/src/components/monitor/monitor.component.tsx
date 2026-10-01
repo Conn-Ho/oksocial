@@ -23,6 +23,8 @@ import {
 import { AddTargetModal } from '@gitroom/frontend/components/monitor/add.target.modal';
 import { MonitorDetail } from '@gitroom/frontend/components/monitor/monitor.detail';
 import { RemakeModal } from '@gitroom/frontend/components/monitor/remake.modal';
+import { CompetitorSearchModal } from '@gitroom/frontend/components/monitor/competitor.search.modal';
+import { CompetitorImportModal } from '@gitroom/frontend/components/monitor/competitor.import.modal';
 import { MobileBack, scrollToTopOnPhone } from '@gitroom/frontend/components/new-layout/mobile.back';
 
 const ADD_LABEL: Record<MonitorKind, string> = { POST: '监控帖子', ACCOUNT: '添加竞品', KEYWORD: '添加关键词' };
@@ -135,6 +137,40 @@ export const MonitorComponent: FC = () => {
     [kind, platforms, channels, firstRead]
   );
 
+  // 竞品 › 搜索: platforms that cannot search lead to the paste-a-link form
+  const openSearch = useCallback(
+    () =>
+      modal.openModal({
+        title: t('competitor_search', '搜索竞品账号'),
+        withCloseButton: true,
+        classNames: { modal: 'bg-transparent text-textColor w-[640px] max-w-[95vw]' },
+        children: (close: () => void) => (
+          <CompetitorSearchModal
+            platforms={platforms || []}
+            onAdded={firstRead}
+            onPasteLink={() => {
+              close();
+              openAdd();
+            }}
+          />
+        ),
+      }),
+    [platforms, firstRead, openAdd]
+  );
+
+  const openImport = useCallback(
+    () =>
+      modal.openModal({
+        title: t('competitor_import', '批量导入竞品'),
+        withCloseButton: true,
+        classNames: { modal: 'bg-transparent text-textColor w-[720px] max-w-[95vw]' },
+        children: (close: () => void) => (
+          <CompetitorImportModal platforms={platforms || []} channels={channels} close={close} onImported={() => mutate()} />
+        ),
+      }),
+    [platforms, channels, mutate]
+  );
+
   const openRemake = useCallback(
     () =>
       modal.openModal({
@@ -176,6 +212,16 @@ export const MonitorComponent: FC = () => {
             <Button secondary={true} onClick={openRemake}>
               {t('monitor_remake_link', '复刻一条链接')}
             </Button>
+          )}
+          {canManage && kind === 'ACCOUNT' && (
+            <>
+              <Button secondary={true} onClick={openSearch}>
+                {t('competitor_search_short', '搜索竞品')}
+              </Button>
+              <Button secondary={true} onClick={openImport}>
+                {t('competitor_import_short', '批量导入')}
+              </Button>
+            </>
           )}
           {canManage && <Button onClick={openAdd}>{t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind])}</Button>}
         </div>

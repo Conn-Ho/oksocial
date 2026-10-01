@@ -279,6 +279,9 @@ export const InboxComponent: FC = () => {
                   </span>
                 </span>
                 <span className="text-[13px] text-textColor/80 line-clamp-2">{item.content}</span>
+                {item.translated && (
+                  <span className="text-[12px] text-textColor/60 line-clamp-1 border-s-2 border-newTableBorder ps-[6px]">{item.translated}</span>
+                )}
                 <span className="flex gap-[6px]">
                   <ItemTags item={item} />
                 </span>

@@ -53,6 +53,7 @@ import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
 import { useShallow } from 'zustand/react/shallow';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
 import { useDebounce } from 'use-debounce';
+import { MediaKind } from '@gitroom/helpers/utils/media.kind';
 const Polonto = dynamic(
   () => import('@gitroom/frontend/components/launches/polonto')
 );
@@ -206,8 +207,12 @@ export const MediaBox: FC<{
   setMedia: (params: { id: string; path: string }[]) => void;
   standalone?: boolean;
   type?: 'image' | 'video';
+  // 网盘 tab: only media of this kind
+  kind?: MediaKind;
+  // the library changed (upload, moved to the 回收站): the drive refreshes its counts
+  onChanged?: () => void;
   closeModal: () => void;
-}> = ({ type, standalone, setMedia }) => {
+}> = ({ type, standalone, setMedia, kind, onChanged }) => {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [debouncedSearch] = useDebounce(search, 300);
@@ -216,16 +221,19 @@ export const MediaBox: FC<{
   const toaster = useToaster();
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, kind]);
   const loadMedia = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page + 1) });
     if (debouncedSearch.trim()) {
       params.set('search', debouncedSearch.trim());
     }
+    if (kind) {
+      params.set('kind', kind);
+    }
     return (await fetch(`/media?${params.toString()}`)).json();
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, kind]);
   const { data, mutate, isLoading } = useSWR(
-    `get-media-${page}-${debouncedSearch}`,
+    `get-media-${page}-${debouncedSearch}-${kind || 'all'}`,
     loadMedia
   );
   const [selected, setSelected] = useState([]);
@@ -243,6 +251,7 @@ export const MediaBox: FC<{
         : 'image/*,video/mp4',
     onUploadSuccess: async (arr) => {
       await mutate();
+      onChanged?.();
       if (standalone) {
         return;
       }
@@ -381,9 +390,10 @@ export const MediaBox: FC<{
       if (
         !(await deleteDialog(
           t(
-            'are_you_sure_you_want_to_delete_the_image',
-            'Are you sure you want to delete the image?'
-          )
+            'media_move_to_trash_confirm',
+            '移到回收站？30 天内可以在「网盘 › 回收站」恢复，之后自动彻底删除。'
+          ),
+          t('media_move_to_trash', '移到回收站')
         ))
       ) {
         return;
@@ -392,8 +402,9 @@ export const MediaBox: FC<{
         method: 'DELETE',
       });
       mutate();
+      onChanged?.();
     },
-    [mutate]
+    [mutate, onChanged]
   );
 
   const btn = useMemo(() => {
