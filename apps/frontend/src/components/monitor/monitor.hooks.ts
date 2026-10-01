@@ -175,6 +175,31 @@ export const useMonitorItems = (id: string, kind: MonitorItemKind, page: number,
   return useSWR<{ total: number; page: number; pages: number; items: MonitorItem[] }>(key, load);
 };
 
+// 竞品帖文: competitor posts (and keyword hits) across every target, sortable by their numbers
+export type MonitorPostSort = keyof MonitorMetrics | 'publishedAt';
+export type MonitorPostsQuery = {
+  source: 'COMPETITORS' | 'ALL';
+  platform?: string;
+  targetId?: string;
+  from?: string;
+  sort: MonitorPostSort;
+  order: 'asc' | 'desc';
+  page: number;
+};
+export type MonitorPostRow = MonitorItem & {
+  target: { id: string; kind: MonitorKind; platform: string; query: string; title?: string | null };
+};
+
+export const useMonitorPosts = (query: MonitorPostsQuery) => {
+  const fetch = useFetch();
+  const params = new URLSearchParams(
+    Object.entries(query).flatMap(([k, v]) => (v === undefined || v === '' ? [] : [[k, String(v)]]))
+  );
+  const key = `/monitoring/items?${params.toString()}`;
+  const load = useCallback(async () => (await fetch(key)).json(), [key]);
+  return useSWR<{ total: number; page: number; pages: number; items: MonitorPostRow[] }>(key, load);
+};
+
 /** POST/PUT/DELETE with the API's error message as the thrown message. */
 export const useMonitorCall = () => {
   const fetch = useFetch();
