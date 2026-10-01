@@ -89,6 +89,23 @@ describe('InboxService', () => {
     expect(service.replyCapabilities()).toEqual({ xweb: ['COMMENT', 'MENTION'], weibo: [], zhihu: ['COMMENT'] });
   });
 
+  it('item details show the account by name only, never its tokens or settings', async () => {
+    const integration = {
+      id: 'i1', name: '小号', picture: 'p.png', providerIdentifier: 'xiaohongshu',
+      token: 'secret-token', refreshToken: 'secret-refresh', additionalSettings: '[]', customInstructions: 'x',
+    };
+    const { service } = setup({ item: { id: 'n1', content: 'hi', integration, replies: [] } });
+    const view = await service.itemView('o1', 'n1');
+    expect(view.integration).toEqual({ id: 'i1', name: '小号', picture: 'p.png', providerIdentifier: 'xiaohongshu' });
+    expect(JSON.stringify(view)).not.toMatch(/secret/);
+    expect(view).toEqual(expect.objectContaining({ id: 'n1', content: 'hi', replies: [] }));
+  });
+
+  it('item details of a missing item are a 404', async () => {
+    const { service } = setup();
+    await expect(service.itemView('o1', 'nope')).rejects.toMatchObject({ status: 404 });
+  });
+
   it('reply history passes the page, the source and the kind of item on', async () => {
     const { service, repo } = setup();
     await service.replyHistory('o1', 3, 'AI', 'COMMENT');

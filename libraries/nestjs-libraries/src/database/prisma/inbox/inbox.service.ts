@@ -256,6 +256,14 @@ export class InboxService {
     return item;
   }
 
+  // What the API shows of an item: the account by name only. getItem keeps the whole integration
+  // (tokens, browser slot) for replying, and that must not reach the browser.
+  async itemView(orgId: string, id: string) {
+    const { integration, ...item } = await this.getItem(orgId, id);
+    const { id: integrationId, name, picture, providerIdentifier } = integration;
+    return { ...item, integration: { id: integrationId, name, picture, providerIdentifier } };
+  }
+
   setStatus(orgId: string, ids: string[], status: InboxStatus) {
     return this._repository.setStatus(orgId, ids, status);
   }

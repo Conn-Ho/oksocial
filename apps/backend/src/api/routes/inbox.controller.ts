@@ -127,7 +127,7 @@ export class InboxController {
   @Get('/:id')
   @ApiOperation({ summary: '收件箱条目详情' })
   getItem(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
-    return this._inboxService.getItem(org.id, id);
+    return this._inboxService.itemView(org.id, id);
   }
 
   @Post('/:id/reply')
