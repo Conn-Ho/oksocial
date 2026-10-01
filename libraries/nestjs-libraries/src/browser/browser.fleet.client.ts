@@ -201,14 +201,24 @@ export class BrowserFleetClient {
     );
   }
 
-  run<T = unknown>(slot: string, args: string[], timeoutMs = 120_000) {
-    return this.call<BrowserRunResult<T>>(
+  async run<T = unknown>(slot: string, args: string[], timeoutMs = 120_000) {
+    const res = await this.call<BrowserRunResult<T>>(
       'POST',
       `/slots/${slot}/run`,
       { args, timeoutMs },
       timeoutMs + RUN_GRACE_MS
     );
+    return isRunFailure(res) ? okcliBranded(res) : res;
   }
 }
+
+// a failure's message and help can reach the user (monitor and automation errors): the browser tool
+// is okcli in oksocial
+const brand = (text: unknown) => (typeof text === 'string' ? text.replace(/open[- ]?cli/gi, 'okcli') : text);
+const okcliBranded = <F extends BrowserRunFailure>(res: F): F => ({
+  ...res,
+  message: brand(res.message) as F['message'],
+  ...('help' in res ? { help: brand((res as { help?: unknown }).help) } : {}),
+});
 
 export const browserFleet = new BrowserFleetClient();

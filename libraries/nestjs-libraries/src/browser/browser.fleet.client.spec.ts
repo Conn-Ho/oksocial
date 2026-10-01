@@ -22,6 +22,12 @@ describe('BrowserFleetClient', () => {
     expect(JSON.parse(init.body)).toEqual({ args: ['xhs2', 'me'], timeoutMs: 60_000 });
   });
 
+  it('says okcli, never opencli, in what a failed run tells the user', async () => {
+    const failure = { ok: false, code: 'FAILED', message: 'Run "opencli browser bind" again (OpenCLI bridge)', help: 'see opencli doctor', durationMs: 1 };
+    const client = new BrowserFleetClient('http://w', 't', (() => reply(200, failure)) as any);
+    expect(await client.run('s1', ['x', 'y'])).toEqual({ ...failure, message: 'Run "okcli browser bind" again (okcli bridge)', help: 'see okcli doctor' });
+  });
+
   it('throws BrowserFleetError with the worker message on a non-2xx reply', async () => {
     const client = new BrowserFleetClient(
       'http://worker:7788',
