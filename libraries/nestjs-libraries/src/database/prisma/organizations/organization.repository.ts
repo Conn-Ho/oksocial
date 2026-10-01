@@ -582,7 +582,11 @@ export class OrganizationRepository {
         createdAt: true,
         _count: {
           select: {
-            users: true,
+            users: {
+              where: {
+                disabled: false,
+              },
+            },
           },
         },
       },

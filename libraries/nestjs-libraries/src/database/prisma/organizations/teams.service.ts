@@ -153,10 +153,11 @@ export class TeamsService {
   }
 
   /**
-   * 删除团队 (admins, the team's name typed again, never the user's last team): first everything the
-   * team runs stops, its channels go and its browsers are removed from the fleet, then its
-   * subscription is cancelled and the team is soft-deleted. A step that fails leaves the team in
-   * place, so deleting it again finishes the job. Returns the team the user moves to.
+   * 删除团队 (admins, the team's name typed again, never the user's last team): its subscription is
+   * cancelled first (a failure there changes nothing), then everything the team runs stops, its
+   * channels go and its browsers are removed from the fleet, and the team is soft-deleted. A later
+   * step that fails leaves the team in place, so deleting it again finishes the job. Returns the
+   * team the user moves to.
    */
   async delete(userId: string, orgId: string, role: string | undefined, confirmName: string) {
     assertAdmin(role);
@@ -172,14 +173,14 @@ export class TeamsService {
       throw badRequest('这是你唯一的团队，不能删除');
     }
 
-    await this.stop(orgId);
-    await this.removeChannels(orgId);
     try {
       await this._paymentService.cancelAllSubscriptions(orgId);
     } catch (err) {
       this._logger.error(`team ${orgId}: subscription not cancelled: ${(err as Error)?.message}`);
       throw badRequest('没能取消这个团队的订阅，团队没有删除，请重试或联系客服');
     }
+    await this.stop(orgId);
+    await this.removeChannels(orgId);
     await this._organizationRepository.deleteOrganization(orgId);
     this._logger.log(`team ${orgId} deleted by ${userId}`);
     return { id: next.id, membershipId: next.users[0].id };
@@ -201,7 +202,7 @@ export class TeamsService {
     const { failed } = await this._browserSlotService.releaseForOrganization(orgId);
     if (failed) {
       throw new HttpException(
-        `有 ${failed} 个账号的浏览器暂时删不掉，团队没有删除，请稍后重试`,
+        `有 ${failed} 个账号的浏览器暂时删不掉，团队还没删完，请稍后再删除一次`,
         503
       );
     }

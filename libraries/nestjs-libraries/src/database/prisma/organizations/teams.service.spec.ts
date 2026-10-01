@@ -265,10 +265,11 @@ describe('TeamsService', () => {
       expect(calls).toEqual([]);
     });
 
-    it('stops what the team runs, deletes its channels, releases its browsers, cancels billing, then soft-deletes it', async () => {
+    it('cancels billing, stops what the team runs, deletes its channels, releases its browsers, then soft-deletes it', async () => {
       const { service, calls, automations, monitor, autopost, posts, integrations, slots, payment, repo } = setup();
       await service.delete('u1', 't1', 'ADMIN', ' 客户 A ');
       expect(calls).toEqual([
+        'cancelAllSubscriptions',
         'disableAll',
         'pauseAll',
         'stopAll',
@@ -276,7 +277,6 @@ describe('TeamsService', () => {
         'deleteChannel',
         'deleteChannel',
         'releaseForOrganization',
-        'cancelAllSubscriptions',
         'deleteOrganization',
       ]);
       for (const mock of [automations.disableAll, monitor.pauseAll, autopost.stopAll, posts.cancelScheduled, slots.releaseForOrganization, payment.cancelAllSubscriptions, repo.deleteOrganization]) {
@@ -291,18 +291,17 @@ describe('TeamsService', () => {
       expect(await service.delete('u1', 't1', 'SUPERADMIN', '客户 A')).toEqual({ id: 't3', membershipId: 'm-t3' });
     });
 
-    it('keeps the team (and its billing) when a browser could not be removed, so deleting again retries', async () => {
-      const { service, calls, payment, repo } = setup({ slotsFailed: 1 });
+    it('keeps the team when a browser could not be removed, so deleting again retries', async () => {
+      const { service, calls, repo } = setup({ slotsFailed: 1 });
       expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户 A'))).getStatus()).toBe(503);
       expect(calls).toContain('releaseForOrganization');
-      expect(payment.cancelAllSubscriptions).not.toHaveBeenCalled();
       expect(repo.deleteOrganization).not.toHaveBeenCalled();
     });
 
-    it('keeps the team when its subscription could not be cancelled', async () => {
-      const { service, repo } = setup({ billingFails: true });
+    it('changes nothing when the subscription could not be cancelled', async () => {
+      const { service, calls } = setup({ billingFails: true });
       expect((await failure(service.delete('u1', 't1', 'ADMIN', '客户 A'))).getStatus()).toBe(400);
-      expect(repo.deleteOrganization).not.toHaveBeenCalled();
+      expect(calls).toEqual(['cancelAllSubscriptions']);
     });
 
     it('404 for a team that is already gone', async () => {
