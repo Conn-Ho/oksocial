@@ -96,7 +96,9 @@ export const audienceFromNoteDetails = (
       }
       if (row.section === '趋势数据' && row.metric === '按小时/观看数') {
         for (const [, hour, views] of String(row.extra || '').matchAll(HOUR_POINT)) {
-          hours[Number(hour)] += Number(views) || 0;
+          if (Number(hour) < 24) {
+            hours[Number(hour)] += Number(views) || 0;
+          }
         }
       }
     }
@@ -105,8 +107,9 @@ export const audienceFromNoteDetails = (
     }
     sample += 1;
     for (const [key, labels] of Object.entries(shares) as Array<[keyof typeof groups, Map<string, number>]>) {
-      // some readings give fractions (0.42) instead of percent
-      const scale = [...labels.values()].reduce((a, b) => a + b, 0) <= 1.5 ? 100 : 1;
+      // some readings give a whole distribution as fractions (0.42 + 0.58) instead of percent
+      const sum = [...labels.values()].reduce((a, b) => a + b, 0);
+      const scale = [...labels.values()].every((v) => v <= 1) && sum > 0.9 && sum < 1.1 ? 100 : 1;
       const total = (groups[key] ??= new Map());
       for (const [label, share] of labels) {
         total.set(label, (total.get(label) ?? 0) + share * scale * weight);

@@ -103,9 +103,9 @@ export class ReportsController {
   }
 
   @Put('/weekly-email')
-  @ApiOperation({ summary: '开关邮件周报', description: '每周一把上周（周一至周日）的报告和 AI 周报发给管理员和运营主管；开启需要套餐包含「每周邮件周报」，AI 周报按次扣积分。' })
+  @ApiOperation({ summary: '开关邮件周报', description: '每周一把上周（周一至周日）的报告发给管理员和运营主管，开启需要套餐包含「每周邮件周报」；ai 为 true 时附上 AI 周报（当周没有时自动生成，按次扣积分）。' })
   @RequireRoles('ADMIN', 'MANAGER')
   setWeeklyEmail(@GetOrgFromRequest() org: Organization, @Body() body: WeeklyEmailDto) {
-    return this._reportService.setWeeklyEmail(org.id, body.enabled);
+    return this._reportService.setWeeklyEmail(org.id, body.enabled, body.ai);
   }
 }

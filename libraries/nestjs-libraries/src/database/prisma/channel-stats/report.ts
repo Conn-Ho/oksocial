@@ -120,7 +120,7 @@ const POST_ENGAGEMENT_KEYS = ['likes', 'comments', 'shares', 'collects'] as cons
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 /** China calendar date of a moment, YYYY-MM-DD. */
-const chinaDate = (ms: number) => new Date(ms + CHINA_OFFSET_MS).toISOString().slice(0, 10);
+export const chinaDate = (ms: number) => new Date(ms + CHINA_OFFSET_MS).toISOString().slice(0, 10);
 /** The moment a China calendar date (YYYY-MM-DD) starts; NaN when it is not one. */
 const chinaDayStart = (date: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -202,6 +202,12 @@ const baselineOf = (sorted: Snapshot[], from: Date, to: Date) =>
   sorted.find((s) => s.capturedAt.getTime() > from.getTime() && s.capturedAt.getTime() <= to.getTime());
 
 const delta = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
+// Posts, views and engagement only add up; some platforms sum them over their latest posts only, so
+// the sum can shrink when an old post leaves that window: that is no growth, not a loss.
+const growth = (a: number | null, b: number | null) => {
+  const d = delta(a, b);
+  return d === null ? null : Math.max(0, d);
+};
 
 /** Relative change in percent with one decimal; null when there is nothing to compare. */
 export const percentChange = (value: number | null, previous: number | null) =>
@@ -225,9 +231,9 @@ const periodOf = (sorted: Snapshot[], from: Date, to: Date) => {
     numbers: {
       followers: metric(end, 'followers'),
       netFollowers: delta(metric(end, 'followers'), metric(start, 'followers')),
-      posts: delta(metric(end, 'posts'), metric(start, 'posts')),
-      views: delta(metric(end, 'views'), metric(start, 'views')),
-      engagement: delta(engagementOf(end), engagementOf(start)),
+      posts: growth(metric(end, 'posts'), metric(start, 'posts')),
+      views: growth(metric(end, 'views'), metric(start, 'views')),
+      engagement: growth(engagementOf(end), engagementOf(start)),
     } as PeriodNumbers,
     startFollowers: metric(start, 'followers'),
     end,

@@ -137,6 +137,22 @@ describe('buildPlatformReport', () => {
     expect(late.totals.views.value).toBe(40);
   });
 
+  it('totals summed over a sliding window of posts never count down: views and engagement stay at 0', () => {
+    const shrinking = buildPlatformReport(
+      [channels[2]],
+      [
+        { integrationId: 'c', capturedAt: d('2026-10-09T00:00:00Z'), metrics: { followers: 50, posts: 20, views: 9000, likes: 400 } },
+        { integrationId: 'c', capturedAt: d('2026-10-14T00:00:00Z'), metrics: { followers: 48, posts: 21, views: 7000, likes: 380 } },
+      ],
+      range
+    );
+    expect(shrinking.totals.views.value).toBe(0);
+    expect(shrinking.totals.engagement.value).toBe(0);
+    expect(shrinking.totals.netFollowers.value).toBe(-2);
+    expect(shrinking.totals.engagementRate.value).toBeNull();
+    expect(shrinking.channels[0].engagementRate).toBeNull();
+  });
+
   it('one series point per bucket: followers at its end, changes within it', () => {
     expect(report.series).toHaveLength(8);
     const last = report.series[report.series.length - 1];

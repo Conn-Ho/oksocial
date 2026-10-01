@@ -6,7 +6,7 @@ import {
 } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/weekly.report.repository';
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
 import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
-import { KpiValue, PlatformReport } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report';
+import { chinaDate as chinaDay, KpiValue, PlatformReport } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report';
 import {
   WeeklyContent,
   WeeklyData,
@@ -20,9 +20,15 @@ import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integ
 
 type Week = { start: Date; end: Date };
 
-const CHINA_OFFSET_MS = 8 * 3_600_000;
 const DAY_MS = 86_400_000;
 const TOP_POSTS_FOR_AI = 5;
+// The Monday activity times out after 30 minutes: AI reports are written for the email only within
+// this budget, later teams get the numbers (and can write the report on the page).
+export const WEEKLY_AI_BUDGET_MS = 20 * 60_000;
+// one AI report is waited for this long; a slower one is stored when done, the email goes without it
+const EMAIL_AI_WAIT_MS = 3 * 60_000;
+const NOT_WRITTEN = 'AI 周报这次没有生成，可以在报告页的「AI 周报」里重新生成。';
+const NOT_ASKED = '想在邮件里看到 AI 写的周报（亮点、风险和下一步建议）？在报告页的「AI 周报」里生成，或开启「邮件附 AI 周报」。';
 // how operations read in the report (generic labels of our own enums and action kinds)
 const REPLY_SOURCES: Record<string, string> = { MANUAL: '手动回复', AI: 'AI回复', TEMPLATE: '话术回复', AUTOMATION: '自动化回复' };
 const INBOX_KINDS: Record<string, string> = { COMMENT: '评论', DM: '私信', MENTION: '@提及' };
@@ -39,7 +45,16 @@ const ACTION_KINDS: Record<string, string> = {
 };
 
 /** China calendar date of a moment, YYYY-MM-DD. */
-const chinaDate = (date: Date) => new Date(date.getTime() + CHINA_OFFSET_MS).toISOString().slice(0, 10);
+const chinaDate = (date: Date) => chinaDay(date.getTime());
+
+/** The work, or a rejection once `ms` have passed (the work itself goes on). */
+const within = <T>(work: Promise<T>, ms: number) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+};
 /** The week as people say it: 09.21 — 09.27. */
 export const weekLabel = (week: Week) =>
   `${chinaDate(week.start).slice(5).replace('-', '.')} — ${chinaDate(new Date(week.end.getTime() - DAY_MS)).slice(5).replace('-', '.')}`;
@@ -161,9 +176,7 @@ ${aiHtml}
 /** Why the AI part of an email is missing, in words a reader can act on. */
 const missingAiNote = (err: unknown) => {
   const status = (err as { status?: number; getStatus?: () => number })?.getStatus?.() ?? (err as { status?: number })?.status;
-  return status === 402
-    ? `AI 周报没有生成：${(err as Error).message}`
-    : 'AI 周报这次没有生成，可以在报告页的「AI 周报」里重新生成。';
+  return status === 402 ? `AI 周报没有生成：${(err as Error).message}` : NOT_WRITTEN;
 };
 
 /**
@@ -213,10 +226,11 @@ export class WeeklyReportService {
     this._writing.add(key);
     try {
       const data = await this.weekData(orgId, week);
-      const content = await this._credits.withCredits(orgId, 'ai_weekly_report', `weekly:${data.week.start}`, async () =>
-        this._ai.weeklyReport(data, await this._brands.promptFor(orgId))
-      );
-      return await this._repository.save(orgId, week.start, data, content, userId);
+      // stored inside the charge: a report that cannot be kept is refunded
+      return await this._credits.withCredits(orgId, 'ai_weekly_report', `weekly:${data.week.start}`, async () => {
+        const content = await this._ai.weeklyReport(data, await this._brands.promptFor(orgId));
+        return this._repository.save(orgId, week.start, data, content, userId);
+      });
     } finally {
       this._writing.delete(key);
     }
@@ -240,14 +254,26 @@ export class WeeklyReportService {
     return report;
   }
 
-  /** The week's AI report for the email: the stored one, else written now; or why there is none. */
-  private async aiFor(orgId: string, week: Week, now: Date) {
+  // how long the email waits for one AI report (tests shorten it)
+  protected emailAiWaitMs = EMAIL_AI_WAIT_MS;
+
+  /**
+   * The week's AI report for the email: the stored one; else, for a team that asked for it and
+   * while the run has time, one written now; or a line saying why there is none.
+   */
+  private async aiFor(orgId: string, week: Week, now: Date, asked: boolean, inTime: boolean) {
     const stored = await this._repository.byWeek(orgId, week.start);
     if (stored || !this._ai.enabled) {
       return { content: (stored?.content as WeeklyContent | undefined) ?? null, note: null };
     }
+    if (!asked) {
+      return { content: null, note: NOT_ASKED };
+    }
+    if (!inTime) {
+      return { content: null, note: NOT_WRITTEN };
+    }
     try {
-      return { content: (await this.generate(orgId, null, now)).content as WeeklyContent, note: null };
+      return { content: (await within(this.generate(orgId, null, now), this.emailAiWaitMs)).content as WeeklyContent, note: null };
     } catch (err) {
       console.log(`weekly report ${orgId}`, (err as Error)?.message);
       return { content: null, note: missingAiNote(err) };
@@ -255,33 +281,46 @@ export class WeeklyReportService {
   }
 
   /** Mondays: the last full week, with its AI report, to admins and managers of opted-in teams. */
-  async sendWeeklyReports(now = new Date()) {
+  async sendWeeklyReports(now = new Date(), aiBudgetMs = WEEKLY_AI_BUDGET_MS) {
+    const started = Date.now();
     const week = lastFullWeek(now.getTime());
     const orgs = await this._stats.orgsWithSnapshots(week.start);
     let sent = 0;
-    for (const { organizationId } of orgs) {
-      // opted in, then moved to a plan without the weekly email
-      if (!(await this._planService.hasFeature(organizationId, 'weekly_email'))) {
-        continue;
-      }
-      const recipients = await this._stats.reviewersOf(organizationId);
-      if (!recipients.length) {
-        continue;
-      }
-      const orgName = recipients[0].organization.name;
-      const ai = await this.aiFor(organizationId, week, now);
-      const html = renderWeeklyEmail(
-        orgName,
-        await this._reports.report(organizationId, { from: week.start, to: week.end, granularity: 'day' }),
-        `${process.env.FRONTEND_URL || ''}/reports?tab=weekly`,
-        ai.content,
-        ai.note
-      );
-      for (const r of recipients) {
-        await this._notificationService.sendEmail(r.user.email, `【oksocial 周报】${orgName} · ${weekLabel(week)}`, html);
-        sent += 1;
+    for (const { organizationId, organization } of orgs) {
+      // one team failing must not fail the run: a retried activity would mail the others again
+      try {
+        sent += await this.sendWeeklyReport(organizationId, week, now, {
+          asked: !!organization?.weeklyAiReport,
+          inTime: Date.now() - started < aiBudgetMs,
+        });
+      } catch (err) {
+        console.log(`weekly report email ${organizationId}`, (err as Error)?.message);
       }
     }
     return { organizations: orgs.length, sent };
+  }
+
+  private async sendWeeklyReport(orgId: string, week: Week, now: Date, ai: { asked: boolean; inTime: boolean }) {
+    // opted in, then moved to a plan without the weekly email
+    if (!(await this._planService.hasFeature(orgId, 'weekly_email'))) {
+      return 0;
+    }
+    const recipients = await this._stats.reviewersOf(orgId);
+    if (!recipients.length) {
+      return 0;
+    }
+    const orgName = recipients[0].organization.name;
+    const written = await this.aiFor(orgId, week, now, ai.asked, ai.inTime);
+    const html = renderWeeklyEmail(
+      orgName,
+      await this._reports.report(orgId, { from: week.start, to: week.end, granularity: 'day' }),
+      `${process.env.FRONTEND_URL || ''}/reports?tab=weekly`,
+      written.content,
+      written.note
+    );
+    for (const r of recipients) {
+      await this._notificationService.sendEmail(r.user.email, `【oksocial 周报】${orgName} · ${weekLabel(week)}`, html);
+    }
+    return recipients.length;
   }
 }

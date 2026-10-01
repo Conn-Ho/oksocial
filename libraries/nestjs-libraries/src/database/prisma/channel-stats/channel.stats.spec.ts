@@ -97,12 +97,23 @@ describe('ChannelStatsService', () => {
     expect(repo.savePostMetrics).toHaveBeenCalledWith('o1', 'i1', posts);
   });
 
-  it('a failed post read fails the channel (no second read of a pushed-back account)', async () => {
+  it('a post read the platform pushed back on (or a logout) fails the channel: no second read', async () => {
     const stats = jest.fn(async () => ({ followers: 1 }));
-    const { service, repo } = setup(stats, { postStats: jest.fn(async () => Promise.reject(new Error('风控'))) });
+    const { service, repo } = setup(stats, {
+      postStats: jest.fn(async () => Promise.reject(new Error('平台风控拦截了这次操作：请完成滑块验证'))),
+    });
     await expect(service.collect(xhs)).rejects.toThrow('风控');
     expect(stats).not.toHaveBeenCalled();
     expect(repo.addSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('any other failed post read still records the totals', async () => {
+    const stats = jest.fn(async () => ({ followers: 7 }));
+    const { service, repo } = setup(stats, { postStats: jest.fn(async () => Promise.reject(new Error('xweb TIMEOUT: page load'))) });
+    expect(await service.collect(xhs)).toEqual({ followers: 7 });
+    expect(stats).toHaveBeenCalledWith('s1', xhs, undefined);
+    expect(repo.addSnapshot).toHaveBeenCalledWith('o1', 'i1', { followers: 7 });
+    expect(repo.savePostMetrics).not.toHaveBeenCalled();
   });
 
   it('the audience is read at most daily, on the scheduled collection, and never fails it', async () => {
@@ -120,7 +131,20 @@ describe('ChannelStatsService', () => {
     expect(audience).toHaveBeenCalledTimes(1);
     repo.audienceCapturedAt.mockResolvedValueOnce(new Date(Date.now() - 25 * 3600_000));
     audience.mockRejectedValueOnce(new Error('page timeout'));
-    await expect(service.collect(xhs, true)).resolves.toEqual({ followers: 1 });
+    await expect(service.collect({ ...xhs, id: 'i9' }, true)).resolves.toEqual({ followers: 1 });
+  });
+
+  it('an audience that came back empty or failed is not tried again the same day', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const audience = jest.fn(async () => null);
+    const { service } = setup(stats, { audience });
+    await service.collect(xhs, true);
+    await service.collect(xhs, true);
+    expect(audience).toHaveBeenCalledTimes(1);
+    audience.mockRejectedValueOnce(new Error('boom'));
+    await service.collect({ ...xhs, id: 'i2' }, true);
+    await service.collect({ ...xhs, id: 'i2' }, true);
+    expect(audience).toHaveBeenCalledTimes(2);
   });
 
   it('受众分析 lists every channel with what its platform can show', async () => {

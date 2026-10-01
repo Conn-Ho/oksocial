@@ -85,7 +85,7 @@ export class ChannelStatsRepository {
     return this._snapshots.model.channelSnapshot.findMany({
       where: { capturedAt: { gte: since }, organization: { weeklyReportEmail: true, deletedAt: null } },
       distinct: ['organizationId'],
-      select: { organizationId: true },
+      select: { organizationId: true, organization: { select: { weeklyAiReport: true } } },
     });
   }
 
@@ -121,15 +121,15 @@ export class ChannelStatsRepository {
   getWeeklyEmail(orgId: string) {
     return this._orgs.model.organization.findUnique({
       where: { id: orgId },
-      select: { weeklyReportEmail: true },
+      select: { weeklyReportEmail: true, weeklyAiReport: true },
     });
   }
 
-  setWeeklyEmail(orgId: string, enabled: boolean) {
+  setWeeklyEmail(orgId: string, enabled: boolean, ai?: boolean) {
     return this._orgs.model.organization.update({
       where: { id: orgId },
-      data: { weeklyReportEmail: enabled },
-      select: { weeklyReportEmail: true },
+      data: { weeklyReportEmail: enabled, ...(ai === undefined ? {} : { weeklyAiReport: ai }) },
+      select: { weeklyReportEmail: true, weeklyAiReport: true },
     });
   }
 
@@ -186,7 +186,13 @@ export class ChannelStatsRepository {
       if (!row) {
         continue;
       }
-      const next = { url: p.url || row.url, title: p.title ?? row.title, ...metricColumns(p) };
+      // a reading that shows no title or number keeps the one stored
+      const read = metricColumns(p);
+      const next = {
+        url: p.url || row.url,
+        title: p.title ?? row.title,
+        ...(Object.fromEntries(METRIC_KEYS.map((k) => [k, read[k] ?? row[k]])) as typeof read),
+      };
       if ((Object.keys(next) as Array<keyof typeof next>).every((k) => next[k] === row[k])) {
         unchanged.push(row.id);
         continue;

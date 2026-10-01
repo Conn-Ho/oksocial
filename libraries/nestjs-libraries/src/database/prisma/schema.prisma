@@ -23,6 +23,8 @@ model Organization {
   requirePostApproval Boolean              @default(false)
   // opt-in weekly channel report email to admins and managers
   weeklyReportEmail   Boolean              @default(false)
+  // the weekly email also carries an AI 周报, written (and charged) when the week has none
+  weeklyAiReport      Boolean              @default(false)
   isTrailing          Boolean              @default(false)
   shortlink           ShortLinkPreference  @default(ASK)
   autoPost            AutoPost[]

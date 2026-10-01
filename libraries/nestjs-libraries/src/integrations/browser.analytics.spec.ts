@@ -110,6 +110,21 @@ describe('audienceFromNoteDetails', () => {
     expect(out).toEqual({ basis: 'VIEWERS', sample: 1, gender: [{ label: '女', share: 60 }, { label: '男', share: 40 }] });
     expect(audienceFromNoteDetails([{ rows: [], weight: 1 }])).toBeNull();
   });
+
+  it('small shares of a partial list stay percent; hours outside the day are ignored', () => {
+    const out = audienceFromNoteDetails([
+      {
+        rows: [
+          { section: '观众画像', metric: '城市/上海', value: '0.8%' },
+          { section: '观众画像', metric: '城市/杭州', value: '0.5%' },
+          { section: '趋势数据', metric: '按小时/观看数', value: '', extra: '09-21 25:00=99 | 09-21 08:00=10' },
+        ],
+        weight: 1,
+      },
+    ]);
+    expect(out?.regions).toEqual([{ label: '上海', share: 0.8 }, { label: '杭州', share: 0.5 }]);
+    expect(out?.activeHours?.[8]).toBe(100);
+  });
 });
 
 describe('douyin, weibo and x post numbers', () => {

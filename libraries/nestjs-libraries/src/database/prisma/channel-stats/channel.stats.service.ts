@@ -1,6 +1,8 @@
 import { HttpException, Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
 import { Integration } from '@prisma/client';
+import { CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/risk.control';
+import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
 import {
   IntegrationManager,
@@ -19,6 +21,9 @@ import {
 export const REFRESH_EVERY_MS = 10 * 60_000;
 // 受众分析: audiences change slowly and take several page reads, so at most daily per channel
 export const AUDIENCE_EVERY_MS = 24 * 3_600_000;
+// a scheduled run reads audiences only this long, so it ends well within its activity timeout;
+// the channels left over get theirs on the next run
+export const AUDIENCE_RUN_BUDGET_MS = 45 * 60_000;
 // 竞品 VS reads our posts from the last collection when it is at most this old (it runs every 3 hours)
 export const STORED_POSTS_FRESH_MS = 24 * 3_600_000;
 
@@ -90,11 +95,13 @@ export class ChannelStatsService {
     if (!provider?.stats) {
       return null;
     }
-    const posts = provider.postStats ? await provider.postStats(integration.token, integration) : undefined;
+    const posts = await this.readPosts(provider, integration);
     const metrics = await provider.stats(integration.token, integration, posts);
     await this._repository.addSnapshot(integration.organizationId, integration.id, metrics);
     if (posts?.length) {
-      await this._repository.savePostMetrics(integration.organizationId, integration.id, posts);
+      await this._repository
+        .savePostMetrics(integration.organizationId, integration.id, posts)
+        .catch((err) => console.log(`channel posts ${integration.id}`, (err as Error)?.message));
     }
     if (withAudience && provider.audience) {
       await this.collectAudience(provider, integration, posts);
@@ -102,12 +109,39 @@ export class ChannelStatsService {
     return metrics;
   }
 
-  /** The audience when the last one is a day old; a failure is logged, the totals still count. */
+  /**
+   * The account's posts with their numbers. A logout or the platform pushing back fails the
+   * channel (reading it again right away would make it worse); any other failure only loses the
+   * posts, and the totals are read on their own.
+   */
+  private async readPosts(provider: SocialProvider, integration: Integration) {
+    if (!provider.postStats) {
+      return undefined;
+    }
+    try {
+      return await provider.postStats(integration.token, integration);
+    } catch (err) {
+      if (err instanceof RefreshToken || CHALLENGE_RE.test((err as Error)?.message || '')) {
+        throw err;
+      }
+      console.log(`channel posts ${integration.id}`, (err as Error)?.message);
+      return undefined;
+    }
+  }
+
+  // when this process last tried each channel's audience, so an empty or failed read waits a day too
+  private _audienceTried = new Map<string, number>();
+
+  /** The audience when the last one (or the last try) is a day old; a failure is logged, the totals still count. */
   private async collectAudience(provider: SocialProvider, integration: Integration, posts?: MonitorPost[]) {
-    const last = await this._repository.audienceCapturedAt(integration.id);
-    if (last && Date.now() - last.getTime() < AUDIENCE_EVERY_MS) {
+    const last = Math.max(
+      (await this._repository.audienceCapturedAt(integration.id))?.getTime() ?? 0,
+      this._audienceTried.get(integration.id) ?? 0
+    );
+    if (Date.now() - last < AUDIENCE_EVERY_MS) {
       return;
     }
+    this._audienceTried.set(integration.id, Date.now());
     try {
       const audience = await provider.audience!(integration.token, integration, posts);
       if (audience) {
@@ -141,10 +175,11 @@ export class ChannelStatsService {
   }
 
   private async collectChannels(channels: Integration[], withAudience = false) {
+    const started = Date.now();
     let collected = 0;
     for (const channel of channels) {
       try {
-        if (await this.collect(channel, withAudience)) {
+        if (await this.collect(channel, withAudience && Date.now() - started < AUDIENCE_RUN_BUDGET_MS)) {
           collected += 1;
         }
       } catch (err) {

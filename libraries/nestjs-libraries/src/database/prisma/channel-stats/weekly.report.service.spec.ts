@@ -88,7 +88,7 @@ describe('weeklyDataOf', () => {
   });
 });
 
-const setup = (opts: { aiEnabled?: boolean; existing?: any; features?: string[] } = {}) => {
+const setup = (opts: { aiEnabled?: boolean; existing?: any; features?: string[]; optedIn?: boolean } = {}) => {
   const repository = {
     operations: jest.fn(async () => OPERATIONS),
     save: jest.fn(async (orgId: string, weekStart: Date, data: any, content: any, userId: string | null) => ({ id: 'w1', organizationId: orgId, weekStart, data, content, userId })),
@@ -97,7 +97,9 @@ const setup = (opts: { aiEnabled?: boolean; existing?: any; features?: string[] 
     get: jest.fn(async (_o: string, id: string) => (id === 'w1' ? { id: 'w1' } : null)),
   };
   const stats = {
-    orgsWithSnapshots: jest.fn(async () => [{ organizationId: 'o1' }, { organizationId: 'o2' }]),
+    orgsWithSnapshots: jest.fn(async () =>
+      ['o1', 'o2'].map((organizationId) => ({ organizationId, organization: { weeklyAiReport: opts.optedIn ?? true } }))
+    ),
     reviewersOf: jest.fn(async (org: string) => (org === 'o1' ? [{ user: { email: 'a@x.cn' }, organization: { name: '团队<1>' } }] : [])),
   };
   const reports = { report: jest.fn(async () => REPORT) };
@@ -190,6 +192,60 @@ describe('WeeklyReportService', () => {
     const html = (failing.notifications.sendEmail.mock.calls[0] as unknown as string[])[2];
     expect(html).toContain('积分不足');
     expect(html).toContain('1,200');
+  });
+
+  it('past the time budget of the run, emails go out with the numbers only', async () => {
+    const { service, ai, notifications } = setup();
+    expect(await service.sendWeeklyReports(NOW, 0)).toEqual({ organizations: 2, sent: 1 });
+    expect(ai.weeklyReport).not.toHaveBeenCalled();
+    expect((notifications.sendEmail.mock.calls[0] as unknown as string[])[2]).toContain('可以在报告页的「AI 周报」里重新生成');
+  });
+
+  it('teams that did not ask for the AI report in the email are not charged for one', async () => {
+    const { service, ai, notifications } = setup({ optedIn: false });
+    expect(await service.sendWeeklyReports(NOW)).toEqual({ organizations: 2, sent: 1 });
+    expect(ai.weeklyReport).not.toHaveBeenCalled();
+    expect((notifications.sendEmail.mock.calls[0] as unknown as string[])[2]).toContain('AI 周报');
+  });
+
+  it('a team that fails does not stop the others (a retry would mail them twice)', async () => {
+    const { service, reports, stats, notifications } = setup();
+    stats.reviewersOf.mockImplementation(async (org: string) => [{ user: { email: `${org}@x.cn` }, organization: { name: org } }]);
+    reports.report.mockImplementation(async (orgId: string) => {
+      if (orgId === 'o1') {
+        throw new Error('db down');
+      }
+      return REPORT;
+    });
+    await expect(service.sendWeeklyReports(NOW)).resolves.toEqual({ organizations: 2, sent: 1 });
+    expect((notifications.sendEmail.mock.calls[0] as unknown as string[])[0]).toBe('o2@x.cn');
+  });
+
+  it('an AI report that takes too long is left out of the email', async () => {
+    const { service, ai, notifications } = setup();
+    (service as any).emailAiWaitMs = 5;
+    ai.weeklyReport.mockImplementation(() => new Promise(() => undefined));
+    expect(await service.sendWeeklyReports(NOW)).toEqual({ organizations: 2, sent: 1 });
+    expect((notifications.sendEmail.mock.calls[0] as unknown as string[])[2]).toContain('重新生成');
+  });
+
+  it('a report that cannot be stored fails inside the charge (so it is refunded)', async () => {
+    const { service, repository, credits } = setup();
+    repository.save.mockRejectedValueOnce(new Error('db'));
+    let insideCharge = false;
+    credits.withCredits.mockImplementationOnce(async (_o: string, _a: string, _r: string | undefined, work: () => Promise<any>) => {
+      insideCharge = true;
+      try {
+        return await work();
+      } finally {
+        insideCharge = false;
+      }
+    });
+    repository.save.mockImplementationOnce(async () => {
+      expect(insideCharge).toBe(true);
+      throw new Error('db');
+    });
+    await expect(service.generate('o1', 'u1', NOW)).rejects.toThrow('db');
   });
 
   it('without AI or the plan feature', async () => {

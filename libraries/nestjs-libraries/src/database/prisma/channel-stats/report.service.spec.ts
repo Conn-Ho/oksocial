@@ -67,6 +67,20 @@ describe('ReportService', () => {
     expect(ok.report.channels[0].name).toBe('WenWen');
   });
 
+  it('share links show the top posts without our internal ids', async () => {
+    const share = { organizationId: 'o1', days: 7, expiresAt: null, passwordHash: null, organization: { name: '团队' } };
+    const { service, repo } = setup(share);
+    repo.postMetrics.mockResolvedValueOnce([
+      { integrationId: 'a', externalId: 'n1', url: 'https://x/n1', title: '爆款', publishedAt: new Date(), firstSeenAt: new Date(), capturedAt: new Date(), views: 10, likes: 5, comments: 0, shares: 0, collects: 0 },
+    ]);
+    const { report } = await service.publicReport('t');
+    expect(report.topPosts[0]).toEqual(expect.objectContaining({ title: '爆款', url: 'https://x/n1', engagement: 5, channelName: 'WenWen' }));
+    for (const key of ['integrationId', 'externalId', 'postId', 'capturedAt', 'status', 'viaOksocial']) {
+      expect(report.topPosts[0]).not.toHaveProperty(key);
+    }
+    expect(report.topPosts[0].key).toBe('1');
+  });
+
   it('plans without the feature cannot share', async () => {
     const { service, repo } = setup(undefined, []);
     await expect(service.createShare('o1', 7)).rejects.toMatchObject({ status: 402 });
@@ -75,8 +89,10 @@ describe('ReportService', () => {
 
   it('turning the weekly email off is always allowed, on needs the feature', async () => {
     const { service } = setup(undefined, []);
-    (service as any)._repository.setWeeklyEmail = jest.fn(async () => ({ weeklyReportEmail: false }));
-    await expect(service.setWeeklyEmail('o1', false)).resolves.toEqual({ weeklyReportEmail: false });
+    const set = jest.fn(async () => ({ weeklyReportEmail: false, weeklyAiReport: false }));
+    (service as any)._repository.setWeeklyEmail = set;
+    await expect(service.setWeeklyEmail('o1', false, false)).resolves.toEqual({ weeklyReportEmail: false, weeklyAiReport: false });
+    expect(set).toHaveBeenCalledWith('o1', false, false);
     await expect(service.setWeeklyEmail('o1', true)).rejects.toMatchObject({ status: 402 });
   });
 });
@@ -87,7 +103,8 @@ describe('平台报告', () => {
     const report = await service.overview('o1', { from: '2026-09-01', to: '2026-09-30', granularity: 'week' });
     expect(report.granularity).toBe('week');
     expect(report.from).toEqual(d('2026-08-31T16:00:00Z'));
-    expect(repo.snapshotsSince).toHaveBeenCalledWith('o1', d('2026-08-01T16:00:00Z'), d('2026-09-30T16:00:00Z'));
+    // a day before the previous period, so its start has a reading
+    expect(repo.snapshotsSince).toHaveBeenCalledWith('o1', d('2026-07-31T16:00:00Z'), d('2026-09-30T16:00:00Z'));
     expect(repo.postMetrics).toHaveBeenCalledWith('o1', d('2026-08-31T16:00:00Z'), d('2026-09-30T16:00:00Z'), ['a', 'b']);
   });
 

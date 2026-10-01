@@ -36,4 +36,6 @@ export class CreateReportShareDto {
 
 export class WeeklyEmailDto {
   @IsBoolean() enabled: boolean;
+  // the email also carries an AI 周报 (written and charged when the week has none)
+  @IsOptional() @IsBoolean() ai?: boolean;
 }

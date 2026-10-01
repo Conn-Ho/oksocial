@@ -8,6 +8,7 @@ import {
   buildPlatformReport,
   buildPostRows,
   Granularity,
+  PlatformReport,
   PostSortKey,
   ReportChannel,
   ReportRange,
@@ -21,6 +22,8 @@ export const REPORT_DAYS = [7, 30, 90] as const;
 const POST_REPORT_DAYS = 30;
 const POST_PAGE_SIZE = 20;
 const BAD_RANGE = '时间范围不对：开始日期要早于结束日期，不能晚于今天，最长一年';
+// readings are loaded from this long before the previous period, so its start has one
+const BASELINE_MARGIN_MS = 86_400_000;
 
 export type ReportFilter = { integrationId?: string; platform?: string };
 export type ReportQuery = ReportFilter & {
@@ -35,6 +38,27 @@ export type PostReportQuery = ReportQuery & {
   page?: number;
   pageSize?: number;
 };
+
+/** What a share link shows of the top posts: what anyone can see on the platform, none of our ids. */
+const withPublicPosts = (report: PlatformReport) => ({
+  ...report,
+  topPosts: report.topPosts.map((p, i) => ({
+    key: String(i + 1),
+    title: p.title,
+    url: p.url,
+    channelName: p.channelName,
+    channelPicture: p.channelPicture,
+    providerIdentifier: p.providerIdentifier,
+    publishedAt: p.publishedAt,
+    views: p.views,
+    likes: p.likes,
+    comments: p.comments,
+    shares: p.shares,
+    collects: p.collects,
+    engagement: p.engagement,
+    engagementRate: p.engagementRate,
+  })),
+});
 
 const filterChannels = <T extends ReportChannel>(channels: T[], filter: ReportFilter) =>
   channels.filter(
@@ -69,7 +93,7 @@ export class ReportService {
     const channels = filterChannels(await this._repository.orgChannels(orgId), filter);
     const previousFrom = new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime()));
     const [snapshots, posts] = await Promise.all([
-      this._repository.snapshotsSince(orgId, previousFrom, range.to),
+      this._repository.snapshotsSince(orgId, new Date(previousFrom.getTime() - BASELINE_MARGIN_MS), range.to),
       this._repository.postMetrics(orgId, range.from, range.to, channels.map((c) => c.id)),
     ]);
     return buildPlatformReport(channels, snapshots, range, posts);
@@ -148,7 +172,7 @@ export class ReportService {
     }
     return {
       organization: share.organization.name,
-      report: await this.overview(share.organizationId, { days: share.days }),
+      report: withPublicPosts(await this.overview(share.organizationId, { days: share.days })),
     };
   }
 
@@ -156,10 +180,11 @@ export class ReportService {
     return this._repository.getWeeklyEmail(orgId);
   }
 
-  async setWeeklyEmail(orgId: string, enabled: boolean) {
+  /** The weekly email on or off, and whether it carries an AI 周报 (charged per week written). */
+  async setWeeklyEmail(orgId: string, enabled: boolean, ai?: boolean) {
     if (enabled) {
       await this._planService.assertFeature(orgId, 'weekly_email');
     }
-    return this._repository.setWeeklyEmail(orgId, enabled);
+    return this._repository.setWeeklyEmail(orgId, enabled, ai);
   }
 }

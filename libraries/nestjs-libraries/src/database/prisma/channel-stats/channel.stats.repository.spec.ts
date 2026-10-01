@@ -37,7 +37,7 @@ describe('ChannelStatsRepository', () => {
       'i1',
       [
         { externalId: 'same', url: 'u1', title: 'A', views: 10, likes: 1, comments: 0, shares: 0, collects: 0 },
-        { externalId: 'grew', url: 'u2', views: 99, likes: 5, comments: 0, shares: 0, collects: 0 },
+        { externalId: 'grew', url: 'u2', views: 99, likes: 5, comments: 0, shares: null, collects: 0 },
         { externalId: 'new', url: 'u3', title: 'C', likes: 2, publishedAt: published },
         { externalId: 'new', url: 'u3', title: 'C (pinned twice)', likes: 2 },
       ],
@@ -67,7 +67,7 @@ describe('ChannelStatsRepository', () => {
       ],
       skipDuplicates: true,
     });
-    // a reading without a title keeps the one stored
+    // a reading without a title (or without a number) keeps the one stored
     expect(postMetricSnapshot.update).toHaveBeenCalledWith({
       where: { id: 'r2' },
       data: { url: 'u2', title: 'B', views: 99, likes: 5, comments: 0, shares: 0, collects: 0, capturedAt: now },
