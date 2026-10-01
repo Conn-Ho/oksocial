@@ -16,6 +16,7 @@ import {
   TEMPLATES,
   TRANSLATE_TARGETS,
   TemplateKey,
+  translateTargetLabel,
   useCreationCall,
 } from '@gitroom/frontend/components/creation/creation.hooks';
 
@@ -376,8 +377,8 @@ export const CreationDesk: FC<{
             </Label>
           </div>
           <div className="flex flex-wrap gap-x-[20px] gap-y-[12px]">
-            <Segmented label={t('remake_tone', '语气')} value={tone} onChange={setTone} options={TONES} />
-            <Segmented label={t('remake_length', '篇幅')} value={length} onChange={setLength} options={LENGTHS} />
+            <Segmented label={t('remake_tone', '语气')} value={tone} onChange={setTone} options={TONES.map((o) => ({ ...o, label: t(`remake_tone_${o.value}`, o.label) }))} />
+            <Segmented label={t('remake_length', '篇幅')} value={length} onChange={setLength} options={LENGTHS.map((o) => ({ ...o, label: t(`remake_length_${o.value}`, o.label) }))} />
           </div>
         </>
       )}
@@ -388,7 +389,7 @@ export const CreationDesk: FC<{
             <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} placeholder={t('creation_script_placeholder', '例如：新品冷萃咖啡上市，突出 0 糖、12 小时冷萃，面向上班族')} className={clsx(areaClass, 'min-h-[120px]')} />
           </Label>
           <div className="flex flex-wrap gap-[16px] items-end">
-            <Segmented label={t('creation_seconds', '时长')} value={seconds} onChange={setSeconds} options={SECONDS} />
+            <Segmented label={t('creation_seconds', '时长')} value={seconds} onChange={setSeconds} options={SECONDS.map((o) => ({ ...o, label: t(`creation_seconds_${o.value}`, o.label) }))} />
             <div className="min-w-[180px] flex-1">
               <Label text={t('creation_platform', '平台')}>
                 <PlatformSelect platforms={platforms} value={platform} onChange={setPlatform} anyLabel={t('creation_any_platform', '不限平台')} />
@@ -409,9 +410,9 @@ export const CreationDesk: FC<{
           <div className="flex flex-col gap-[6px] text-[13px]">
             <span className="text-textColor/70">{t('creation_cover_style', '风格')}</span>
             <div className="flex flex-wrap gap-[6px]">
-              {STYLES.map((s) => (
+              {STYLES.map((s, i) => (
                 <button key={s} type="button" aria-pressed={style === s} onClick={() => setStyle(style === s ? '' : s)} className={clsx('h-[30px] px-[10px] rounded-full border text-[13px]', style === s ? 'border-btnPrimary bg-newTableHeader' : 'border-newTableBorder text-textColor/60')}>
-                  {s}
+                  {t(`creation_style_${i}`, s)}
                 </button>
               ))}
             </div>
@@ -452,7 +453,7 @@ export const CreationDesk: FC<{
             <select value={target} onChange={(e) => setTarget(e.target.value)} className={fieldClass}>
               {TRANSLATE_TARGETS.map((x) => (
                 <option key={x.value} value={x.value}>
-                  {x.label}
+                  {translateTargetLabel(t, x.value)}
                 </option>
               ))}
             </select>

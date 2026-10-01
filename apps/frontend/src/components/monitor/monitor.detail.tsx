@@ -35,8 +35,8 @@ const PostMetrics: FC<{ snapshots: MonitorSnapshot[] }> = ({ snapshots }) => {
   const known = METRICS.filter((m) => snapshots.some((s) => s[m.key] !== null));
   const labels = useMemo(() => snapshots.map((s) => dayjs(s.createdAt).format('MM-DD HH:mm')), [snapshots]);
   const series = useMemo(
-    () => known.map((m) => ({ label: m.label, color: m.color, data: snapshots.map((s) => s[m.key]) })),
-    [snapshots]
+    () => known.map((m) => ({ label: t(`metric_${m.key}`, m.label), color: m.color, data: snapshots.map((s) => s[m.key]) })),
+    [snapshots, t]
   );
   if (!last) {
     return <p className="text-[13px] text-textColor/50">{t('monitor_no_reading', '还没有读到数据，第一次读取完成后这里会出现数字和趋势。')}</p>;
@@ -249,7 +249,7 @@ export const MonitorDetail: FC<{
               >
                 {INTERVALS.map((i) => (
                   <option key={i.minutes} value={i.minutes}>
-                    {i.label}
+                    {t(`monitor_interval_${i.minutes}`, i.label)}
                   </option>
                 ))}
               </select>

@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import utc from 'dayjs/plugin/utc';
+import { Translate, zhDefault } from '@gitroom/helpers/utils/translate';
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 
@@ -60,23 +61,39 @@ const norm = (v: string) => v.trim().replace(/^@/, '').toLowerCase();
 /** Finds the channel a row refers to by name, handle or platform id; must be unambiguous. */
 export const matchIntegration = (
   account: string,
-  integrations: BulkIntegration[]
+  integrations: BulkIntegration[],
+  t: Translate = zhDefault
 ): { integration?: BulkIntegration; error?: string } => {
   const key = norm(account);
   if (!key) {
-    return { error: '缺少账号' };
+    return { error: t('bulk_error_no_account', '缺少账号') };
   }
   const hits = integrations.filter((i) =>
     [i.name, i.display, i.internalId].some((v) => v && norm(String(v)) === key)
   );
   if (!hits.length) {
-    return { error: `找不到账号「${account}」` };
+    return {
+      error: t('bulk_error_account_not_found', '找不到账号「{{account}}」', {
+        account,
+        interpolation: { escapeValue: false },
+      }),
+    };
   }
   if (hits.length > 1) {
-    return { error: `有多个账号叫「${account}」，请改写成账号 ID` };
+    return {
+      error: t('bulk_error_account_ambiguous', '有多个账号叫「{{account}}」，请改写成账号 ID', {
+        account,
+        interpolation: { escapeValue: false },
+      }),
+    };
   }
   if (hits[0].disabled) {
-    return { error: `账号「${account}」已停用` };
+    return {
+      error: t('bulk_error_account_disabled', '账号「{{account}}」已停用', {
+        account,
+        interpolation: { escapeValue: false },
+      }),
+    };
   }
   return { integration: hits[0] };
 };
@@ -102,25 +119,31 @@ export const splitMediaRefs = (value: unknown) =>
 export const planBulkPosts = (
   rows: BulkRowInput[],
   integrations: BulkIntegration[],
-  options: BulkOptions
+  options: BulkOptions,
+  t: Translate = zhDefault
 ): BulkPlanRow[] => {
   const now = options.now ?? new Date();
   let untimed = 0;
   return rows.map((input, index) => {
     const errors: string[] = [];
-    const { integration, error } = matchIntegration(text(input.account), integrations);
+    const { integration, error } = matchIntegration(text(input.account), integrations, t);
     if (error) {
       errors.push(error);
     }
     const content = text(input.content);
     if (!content) {
-      errors.push('正文为空');
+      errors.push(t('bulk_error_empty_content', '正文为空'));
     }
     const draft = /草稿|draft/i.test(text(input.mode));
     const parsed = parseBulkTime(input.time);
     let date: Date | undefined;
     if (parsed === null) {
-      errors.push(`发布时间「${text(input.time)}」看不懂，请用 2026-10-01 20:30 这种格式`);
+      errors.push(
+        t('bulk_error_bad_time', '发布时间「{{time}}」看不懂，请用 2026-10-01 20:30 这种格式', {
+          time: text(input.time),
+          interpolation: { escapeValue: false },
+        })
+      );
     } else if (parsed) {
       date = parsed;
     } else {
@@ -128,7 +151,7 @@ export const planBulkPosts = (
       untimed += 1;
     }
     if (date && !draft && date.getTime() <= now.getTime()) {
-      errors.push('发布时间已过去');
+      errors.push(t('bulk_error_time_passed', '发布时间已过去'));
     }
     return {
       row: index + 2, // row 1 is the header in the sheet

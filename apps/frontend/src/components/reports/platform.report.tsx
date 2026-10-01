@@ -31,11 +31,15 @@ export const PlatformReportTab: FC<{ canManage: boolean; platformName: (identifi
     }
     setExporting(true);
     try {
-      const sheets = platformReportSheets(report, {
-        platformName,
-        date: (iso) => (iso ? dayjs(iso).format('YYYY-MM-DD HH:mm') : ''),
-      });
-      await downloadSheets(`oksocial-平台报告-${report.fromDate}-${report.toDate}.xlsx`, sheets);
+      const sheets = platformReportSheets(
+        report,
+        {
+          platformName,
+          date: (iso) => (iso ? dayjs(iso).format('YYYY-MM-DD HH:mm') : ''),
+        },
+        t
+      );
+      await downloadSheets(t('report_platform_file', 'oksocial-平台报告-{{from}}-{{to}}.xlsx', { from: report.fromDate, to: report.toDate }), sheets);
     } catch {
       toaster.show(t('export_failed', '导出失败，请重试'), 'warning');
     } finally {

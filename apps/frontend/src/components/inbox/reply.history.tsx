@@ -46,7 +46,7 @@ export const ReplyHistoryModal: FC = () => {
                   )}
                   {log.error && <div className="text-red-400 text-[12px]">{t('send_failed', '发送失败')}：{log.error}</div>}
                 </td>
-                <td className="p-[8px]">{SOURCE_LABEL[log.source] ?? log.source}</td>
+                <td className="p-[8px]">{SOURCE_LABEL[log.source] ? t(`reply_source_${log.source.toLowerCase()}`, SOURCE_LABEL[log.source]) : log.source}</td>
               </tr>
             ))}
             {!data?.length && (

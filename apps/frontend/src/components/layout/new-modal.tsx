@@ -222,7 +222,7 @@ export const Component: FC<{
                     <button
                       className="absolute end-[16px] top-[16px] w-[32px] h-[32px] rounded-full flex items-center justify-center text-textItemBlur hover:text-textColor hover:bg-boxHover transition-colors cursor-pointer"
                       type="button"
-                      aria-label="关闭"
+                      aria-label={i18next.t('close', '关闭')}
                       onClick={closeModalFunction}
                     >
                       <svg

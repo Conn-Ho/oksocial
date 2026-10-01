@@ -11,7 +11,7 @@ import { Button } from '@gitroom/react/form/button';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
-import { AUTOMATION_META, AUTOMATION_TYPES, AutomationType } from '@gitroom/helpers/automations/automation.config';
+import { AUTOMATION_META, AUTOMATION_TYPES, AutomationType, describeAutomation } from '@gitroom/helpers/automations/automation.config';
 import {
   Automation,
   useAutomationActions,
@@ -36,16 +36,22 @@ const TABS = [
 
 const STATUS_TEXT: Record<string, string> = { HELD: '待确认', DONE: '已执行', FAILED: '失败', SKIPPED: '跳过', CANCELLED: '已取消' };
 
-const TypeShelf: FC<{ onPick: (type: AutomationType) => void }> = ({ onPick }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
-    {AUTOMATION_TYPES.map((type) => (
-      <button key={type} type="button" onClick={() => onPick(type)} className="text-start rounded-[10px] border border-newTableBorder hover:border-btnPrimary p-[14px] flex flex-col gap-[6px]">
-        <span className="font-semibold">{AUTOMATION_META[type].label}</span>
-        <span className="text-[13px] text-textColor/60">{AUTOMATION_META[type].description}</span>
-      </button>
-    ))}
-  </div>
-);
+// KIND_TEXT in the current language; undefined for kinds it does not know
+const kindText = (t: ReturnType<typeof useT>, kind: string) => KIND_TEXT[kind] && t(`automation_action_kind_${kind}`, KIND_TEXT[kind]);
+
+const TypeShelf: FC<{ onPick: (type: AutomationType) => void }> = ({ onPick }) => {
+  const t = useT();
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
+      {AUTOMATION_TYPES.map((type) => (
+        <button key={type} type="button" onClick={() => onPick(type)} className="text-start rounded-[10px] border border-newTableBorder hover:border-btnPrimary p-[14px] flex flex-col gap-[6px]">
+          <span className="font-semibold">{t(`automation_type_${type.toLowerCase()}`, AUTOMATION_META[type].label)}</span>
+          <span className="text-[13px] text-textColor/60">{t(`automation_desc_${type.toLowerCase()}`, AUTOMATION_META[type].description)}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
 
 const Manage: FC = () => {
   const fetch = useFetch();
@@ -60,7 +66,7 @@ const Manage: FC = () => {
   const openForm = useCallback(
     (type: AutomationType, existing?: Automation) =>
       modal.openModal({
-        title: existing ? t('edit_automation', '编辑自动化') : AUTOMATION_META[type].label,
+        title: existing ? t('edit_automation', '编辑自动化') : t(`automation_type_${type.toLowerCase()}`, AUTOMATION_META[type].label),
         withCloseButton: true,
         classNames: { modal: 'bg-transparent text-textColor w-[760px] max-w-[95vw]' },
         children: <AutomationForm type={type} existing={existing} onSaved={() => mutate()} />,
@@ -109,6 +115,15 @@ const Manage: FC = () => {
     setTimeout(() => mutate(), 5000);
   }, []);
 
+  // the server sends the rule in Chinese; describe it again in the current language
+  const ruleText = (a: Automation) => {
+    try {
+      return describeAutomation(a.type, a.config, a.dailyCap, a.reviewMode, t) || a.rule;
+    } catch {
+      return a.rule;
+    }
+  };
+
   const remove = useCallback(async (a: Automation) => {
     if (await deleteDialog(t('delete_automation_confirm', '删除「{{name}}」？', { name: a.name, interpolation: { escapeValue: false } }))) {
       await fetch(`/automations/${a.id}`, { method: 'DELETE' });
@@ -130,18 +145,18 @@ const Manage: FC = () => {
           <section key={a.id} className="rounded-[10px] border border-newTableBorder p-[16px] flex flex-col gap-[8px]">
             <div className="flex items-center gap-[10px] flex-wrap">
               <span className="font-semibold text-[16px]">{a.name}</span>
-              <span className="text-[12px] rounded-full bg-newTableHeader px-[8px] py-[2px] text-textColor/70">{a.label}</span>
+              <span className="text-[12px] rounded-full bg-newTableHeader px-[8px] py-[2px] text-textColor/70">{t(`automation_type_${a.type.toLowerCase()}`, a.label)}</span>
               {a.reviewMode && <span className="text-[12px] text-amber-400">{t('review_mode_short', '待确认模式')}</span>}
               <label className="ms-auto flex items-center gap-[6px] text-[13px] cursor-pointer">
                 <input type="checkbox" disabled={!canManage} checked={a.enabled} onChange={() => patch(a, { enabled: !a.enabled })} />
                 {a.enabled ? t('enabled', '已启用') : t('disabled', '已停用')}
               </label>
             </div>
-            <p className="text-[13px] text-textColor/70 leading-[1.6]">{a.rule}</p>
+            <p className="text-[13px] text-textColor/70 leading-[1.6]">{ruleText(a)}</p>
             <div className="flex items-center gap-[14px] text-[12px] text-textColor/50 flex-wrap">
-              <span>近 30 天：执行 {s.DONE || 0} · 待确认 {s.HELD || 0} · 失败 {s.FAILED || 0}</span>
-              <span>{a.lastRunAt ? `上次运行 ${dayjs(a.lastRunAt).format('MM-DD HH:mm')}` : '还没运行过'}</span>
-              {a.lastError && <span className="text-red-400 truncate max-w-full md:max-w-[360px]">错误：{a.lastError}</span>}
+              <span>{t('automation_last_30_days', '近 30 天：执行 {{done}} · 待确认 {{held}} · 失败 {{failed}}', { done: s.DONE || 0, held: s.HELD || 0, failed: s.FAILED || 0 })}</span>
+              <span>{a.lastRunAt ? t('automation_last_run', '上次运行 {{time}}', { time: dayjs(a.lastRunAt).format('MM-DD HH:mm') }) : t('automation_never_run', '还没运行过')}</span>
+              {a.lastError && <span className="text-red-400 truncate max-w-full md:max-w-[360px]">{t('automation_last_error', '错误：{{error}}', { error: a.lastError, interpolation: { escapeValue: false } })}</span>}
               {canManage && (
                 <span className="ms-auto flex gap-[12px] text-[13px] text-textColor/80">
                   <button type="button" className="hover:underline" onClick={() => runNow(a)}>{t('run_now', '立即运行')}</button>
@@ -167,7 +182,7 @@ const HeldQueue: FC = () => {
   const review = useCallback(async (id: string, decision: 'confirm' | 'cancel') => {
     const res = await fetch(`/automations/actions/${id}/review`, { method: 'POST', body: JSON.stringify({ decision, content: edits[id] }) });
     if (!res.ok) {
-      toaster.show((await res.json().catch(() => ({})))?.message || '操作失败', 'warning');
+      toaster.show((await res.json().catch(() => ({})))?.message || t('action_failed', '操作失败'), 'warning');
     }
     mutate();
   }, [edits]);
@@ -180,7 +195,7 @@ const HeldQueue: FC = () => {
       {data.map((a) => (
         <li key={a.id} className="rounded-[10px] border border-newTableBorder p-[14px] flex flex-col gap-[8px]">
           <span className="text-[12px] text-textColor/50">
-            {a.automation.name} · {KIND_TEXT[a.kind] || a.kind} · {a.targetLabel} · {dayjs(a.createdAt).format('MM-DD HH:mm')}
+            {a.automation.name} · {kindText(t, a.kind) || a.kind} · {a.targetLabel} · {dayjs(a.createdAt).format('MM-DD HH:mm')}
           </span>
           {HAS_TEXT.includes(a.kind) ? (
             <textarea
@@ -190,7 +205,7 @@ const HeldQueue: FC = () => {
               aria-label={t('action_content', '要发送的内容')}
             />
           ) : (
-            <p className="text-[14px]">{`${KIND_TEXT[a.kind] || a.kind}：${a.targetLabel || ''}`}</p>
+            <p className="text-[14px]">{t('automation_held_target', '{{kind}}：{{target}}', { kind: kindText(t, a.kind) || a.kind, target: a.targetLabel || '', interpolation: { escapeValue: false } })}</p>
           )}
           <div className="flex gap-[8px]">
             <Button onClick={() => review(a.id, 'confirm')}>{t('confirm_send', '确认执行')}</Button>
@@ -203,6 +218,7 @@ const HeldQueue: FC = () => {
 };
 
 const RunLog: FC = () => {
+  const t = useT();
   const [page, setPage] = useState(1);
   const { data } = useAutomationActions(undefined, page);
   return (
@@ -211,11 +227,11 @@ const RunLog: FC = () => {
         <table className="w-full text-[13px] min-w-[640px]">
           <thead className="bg-newTableHeader text-textColor/70">
             <tr>
-              <th className="p-[8px] text-start font-normal">时间</th>
-              <th className="p-[8px] text-start font-normal">自动化</th>
-              <th className="p-[8px] text-start font-normal">对象</th>
-              <th className="p-[8px] text-start font-normal">内容</th>
-              <th className="p-[8px] text-start font-normal">状态</th>
+              <th className="p-[8px] text-start font-normal">{t('time', '时间')}</th>
+              <th className="p-[8px] text-start font-normal">{t('automation_log_automation', '自动化')}</th>
+              <th className="p-[8px] text-start font-normal">{t('automation_log_target', '对象')}</th>
+              <th className="p-[8px] text-start font-normal">{t('automation_log_content', '内容')}</th>
+              <th className="p-[8px] text-start font-normal">{t('automation_log_status', '状态')}</th>
             </tr>
           </thead>
           <tbody>
@@ -224,16 +240,16 @@ const RunLog: FC = () => {
                 <td className="p-[8px] whitespace-nowrap">{dayjs(a.createdAt).format('MM-DD HH:mm')}</td>
                 <td className="p-[8px]">{a.automation.name}</td>
                 <td className="p-[8px]">{a.targetLabel}</td>
-                <td className="p-[8px] max-w-[320px] whitespace-pre-wrap">{a.content || KIND_TEXT[a.kind]}{a.error && <div className="text-red-400">{a.error}</div>}</td>
-                <td className={clsx('p-[8px]', a.status === 'FAILED' && 'text-red-400', a.status === 'DONE' && 'text-green-400')}>{STATUS_TEXT[a.status]}</td>
+                <td className="p-[8px] max-w-[320px] whitespace-pre-wrap">{a.content || kindText(t, a.kind)}{a.error && <div className="text-red-400">{a.error}</div>}</td>
+                <td className={clsx('p-[8px]', a.status === 'FAILED' && 'text-red-400', a.status === 'DONE' && 'text-green-400')}>{STATUS_TEXT[a.status] && t(`automation_status_${a.status.toLowerCase()}`, STATUS_TEXT[a.status])}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <div className="flex justify-between text-[13px]">
-        <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="disabled:opacity-40">上一页</button>
-        <button type="button" disabled={(data?.length || 0) < 30} onClick={() => setPage(page + 1)} className="disabled:opacity-40">下一页</button>
+        <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="disabled:opacity-40">{t('previous_page', '上一页')}</button>
+        <button type="button" disabled={(data?.length || 0) < 30} onClick={() => setPage(page + 1)} className="disabled:opacity-40">{t('next_page', '下一页')}</button>
       </div>
     </div>
   );

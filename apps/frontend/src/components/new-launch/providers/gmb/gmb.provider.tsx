@@ -78,7 +78,7 @@ const GmbSettings: FC = () => {
       >
         {topicTypes.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`gmb_topic_${item.value.toLowerCase()}`, item.label)}
           </option>
         ))}
       </Select>
@@ -91,7 +91,7 @@ const GmbSettings: FC = () => {
       >
         {callToActionTypes.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`gmb_cta_${item.value.toLowerCase()}`, item.label)}
           </option>
         ))}
       </Select>

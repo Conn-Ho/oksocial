@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { countLength, weightedLength } from '@gitroom/helpers/utils/count.length';
+import type { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export type Brand = {
   id: string;
@@ -82,6 +83,10 @@ export const TEMPLATES: Array<{ key: TemplateKey; label: string; hint: string; i
 
 export const TEMPLATE_LABEL: Record<string, string> = Object.fromEntries(TEMPLATES.map((t) => [t.key, t.label]));
 
+/** A template's name in the UI language (the desk tabs use the same creation_tpl_* keys). */
+export const templateLabel = (t: ReturnType<typeof useT>, key: string) =>
+  TEMPLATE_LABEL[key] ? t(`creation_tpl_${key}`, TEMPLATE_LABEL[key]) : key;
+
 export const TRANSLATE_TARGETS = [
   { value: 'en', label: '英文' },
   { value: 'zh', label: '简体中文' },
@@ -92,6 +97,12 @@ export const TRANSLATE_TARGETS = [
   { value: 'de', label: '德文' },
   { value: 'es', label: '西班牙文' },
 ];
+
+/** A TRANSLATE_TARGETS language in the UI language; unknown values as they are. */
+export const translateTargetLabel = (t: ReturnType<typeof useT>, value: string) => {
+  const label = TRANSLATE_TARGETS.find((x) => x.value === value)?.label;
+  return label ? t(`creation_translate_target_${value}`, label) : value;
+};
 
 /** Length as the platform counts it (X weighs CJK characters double). */
 export const lengthFor = (platform: CreationPlatform | undefined, text: string) =>

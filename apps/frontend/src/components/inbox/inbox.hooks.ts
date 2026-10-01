@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
+import type { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';
 export type InboxStatus = 'UNREPLIED' | 'REPLIED' | 'RESOLVED';
@@ -61,6 +62,13 @@ export const INTENT_LABELS: Record<string, string> = {
   suggestion: '建议',
   other: '无关',
 };
+
+/** A SENTIMENT_LABELS / INTENT_LABELS value in the UI language; values without a label stay as they are. */
+export const sentimentLabel = (t: ReturnType<typeof useT>, value: string) =>
+  SENTIMENT_LABELS[value] ? t(`inbox_sentiment_${value}`, SENTIMENT_LABELS[value]) : value;
+
+export const intentLabel = (t: ReturnType<typeof useT>, value: string) =>
+  INTENT_LABELS[value] ? t(`inbox_intent_${value}`, INTENT_LABELS[value]) : value;
 
 export const inboxQuery = (f: InboxFilters) => {
   const params = new URLSearchParams();

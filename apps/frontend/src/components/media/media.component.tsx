@@ -374,7 +374,7 @@ export const MediaBox: FC<{
                 height="100%"
                 className="w-full h-full max-h-[100%] max-w-[100%] object-cover"
                 src={mediaDirectory.set(media.path)}
-                alt="媒体"
+                alt={t('media', '媒体')}
               />
             )}
           </div>
@@ -601,7 +601,7 @@ export const MediaBox: FC<{
                           height="100%"
                           className="w-full h-full object-cover"
                           src={mediaDirectory.set(media.path)}
-                          alt="媒体"
+                          alt={t('media', '媒体')}
                         />
                       )}
                     </div>

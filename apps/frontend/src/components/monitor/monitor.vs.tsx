@@ -51,38 +51,41 @@ const OURS = 'rgb(97, 43, 211)';
 const THEIRS = 'rgb(245, 166, 35)';
 
 /** 互动帖文 Top 5 of one side. */
-const TopList: FC<{ title: string; color: string; posts: TopPost[] }> = ({ title, color, posts }) => (
-  <div className="flex flex-col gap-[6px] min-w-0">
-    <h4 className="text-[13px] font-[600] flex items-center gap-[6px]">
-      <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />
-      <span className="truncate">{title}</span>
-    </h4>
-    {!posts.length && <p className="text-[13px] text-textItemBlur">这段时间没有帖子</p>}
-    <ol className="flex flex-col">
-      {posts.map((p, i) => (
-        <li key={p.externalId || i} className="flex items-center gap-[8px] py-[6px] border-t border-newBorder first:border-t-0 text-[13px]">
-          <span className="w-[16px] shrink-0 text-textItemBlur tabular-nums">{i + 1}</span>
-          {p.url ? (
-            <a href={p.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 truncate hover:underline">
-              {p.title || '（无标题）'}
-            </a>
-          ) : (
-            <span className="flex-1 min-w-0 truncate">{p.title || '（无标题）'}</span>
-          )}
-          <span className="shrink-0 tabular-nums text-textItemBlur" title="曝光">
-            {formatCount(p.views)}
-          </span>
-          <span className="shrink-0 tabular-nums font-[600] w-[52px] text-end" title="互动">
-            {formatCount(p.engagement)}
-          </span>
-          <span className="shrink-0 tabular-nums text-textItemBlur w-[44px] text-end" title="互动率">
-            {p.engagementRate === null ? '—' : `${p.engagementRate}%`}
-          </span>
-        </li>
-      ))}
-    </ol>
-  </div>
-);
+const TopList: FC<{ title: string; color: string; posts: TopPost[] }> = ({ title, color, posts }) => {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[6px] min-w-0">
+      <h4 className="text-[13px] font-[600] flex items-center gap-[6px]">
+        <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />
+        <span className="truncate">{title}</span>
+      </h4>
+      {!posts.length && <p className="text-[13px] text-textItemBlur">{t('vs_no_posts', '这段时间没有帖子')}</p>}
+      <ol className="flex flex-col">
+        {posts.map((p, i) => (
+          <li key={p.externalId || i} className="flex items-center gap-[8px] py-[6px] border-t border-newBorder first:border-t-0 text-[13px]">
+            <span className="w-[16px] shrink-0 text-textItemBlur tabular-nums">{i + 1}</span>
+            {p.url ? (
+              <a href={p.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 truncate hover:underline">
+                {p.title || t('untitled_post', '（无标题）')}
+              </a>
+            ) : (
+              <span className="flex-1 min-w-0 truncate">{p.title || t('untitled_post', '（无标题）')}</span>
+            )}
+            <span className="shrink-0 tabular-nums text-textItemBlur" title={t('metric_views', '曝光')}>
+              {formatCount(p.views)}
+            </span>
+            <span className="shrink-0 tabular-nums font-[600] w-[52px] text-end" title={t('vs_engagement', '互动')}>
+              {formatCount(p.engagement)}
+            </span>
+            <span className="shrink-0 tabular-nums text-textItemBlur w-[44px] text-end" title={t('vs_engagement_rate', '互动率')}>
+              {p.engagementRate === null ? '—' : `${p.engagementRate}%`}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+};
 
 /** 竞品 VS: posting rhythm and engagement of a competitor against one of our channels. */
 export const MonitorVs: FC<{ target: MonitorTarget; platforms: MonitorPlatform[]; channels: Channel[] }> = ({
@@ -220,11 +223,11 @@ export const MonitorVs: FC<{ target: MonitorTarget; platforms: MonitorPlatform[]
                     </th>
                     <td className={clsx('py-[7px] text-end tabular-nums', lead === 'theirs' && 'font-semibold')}>
                       {formatCount(theirs)}
-                      {lead === 'theirs' && <span className="sr-only">（领先）</span>}
+                      {lead === 'theirs' && <span className="sr-only">{t('vs_leading', '（领先）')}</span>}
                     </td>
                     <td className={clsx('py-[7px] text-end tabular-nums', lead === 'ours' && 'font-semibold')}>
                       {formatCount(ours)}
-                      {lead === 'ours' && <span className="sr-only">（领先）</span>}
+                      {lead === 'ours' && <span className="sr-only">{t('vs_leading', '（领先）')}</span>}
                     </td>
                   </tr>
                 );

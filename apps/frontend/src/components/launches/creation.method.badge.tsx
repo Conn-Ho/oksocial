@@ -1,5 +1,6 @@
 import { FC } from 'react';
 import clsx from 'clsx';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 type CreationMethod =
   | 'UNKNOWN'
@@ -19,16 +20,19 @@ interface Props {
   ringColor?: string;
 }
 
-const tooltipFor = (m: string) =>
+const tooltipFor = (m: string, t: ReturnType<typeof useT>) =>
   m === 'AUTOPOST'
-    ? '由系统自动发布'
+    ? t('creation_method_tip_autopost', '由系统自动发布')
     : m === 'AUTOMATION'
-    ? '由自动化生成'
+    ? t('creation_method_tip_automation', '由自动化生成')
     : m === 'BULK_IMPORT'
-    ? '由 Excel 批量导入'
+    ? t('creation_method_tip_bulk_import', '由 Excel 批量导入')
     : m === 'AI'
-    ? '由 AI 创作'
-    : `通过 ${m} 创建`;
+    ? t('creation_method_tip_ai', '由 AI 创作')
+    : t('creation_method_tip_other', '通过 {{method}} 创建', {
+        method: m,
+        interpolation: { escapeValue: false },
+      });
 
 // API / MCP / CLI stay as they are; the rest read better in Chinese.
 const LABELS: Record<string, string> = {
@@ -45,6 +49,7 @@ export const CreationMethodBadge: FC<Props> = ({
   className,
   ringColor,
 }) => {
+  const t = useT();
   if (!creationMethod || creationMethod === 'UNKNOWN') return null;
 
   const sizeClasses =
@@ -71,9 +76,14 @@ export const CreationMethodBadge: FC<Props> = ({
       )}
       style={ringColor ? { boxShadow: `0 0 0 2px ${ringColor}` } : undefined}
       data-tooltip-id="tooltip"
-      data-tooltip-content={tooltipFor(creationMethod)}
+      data-tooltip-content={tooltipFor(creationMethod, t)}
     >
-      {LABELS[creationMethod] || creationMethod}
+      {LABELS[creationMethod]
+        ? t(
+            `creation_method_${creationMethod.toLowerCase()}`,
+            LABELS[creationMethod]
+          )
+        : creationMethod}
     </div>
   );
 };

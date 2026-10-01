@@ -180,7 +180,7 @@ const Plug: FC<{
             >
               {delayOptions.map((p) => (
                 <option key={p.name} value={p.value}>
-                  {p.name}
+                  {t(`plug_delay_${p.value / 3600000}h`, p.name)}
                 </option>
               ))}
             </Select>

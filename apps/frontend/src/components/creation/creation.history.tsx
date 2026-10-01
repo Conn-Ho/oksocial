@@ -8,7 +8,8 @@ import {
   CreationResult,
   Generation,
   TEMPLATE_LABEL,
-  TRANSLATE_TARGETS,
+  templateLabel,
+  translateTargetLabel,
   useCreationHistory,
 } from '@gitroom/frontend/components/creation/creation.hooks';
 
@@ -18,21 +19,21 @@ const clip = (text: unknown, n = 60) => {
 };
 
 /** One line about what went in. */
-const summary = (g: Generation, platforms: CreationPlatform[]) => {
+const summary = (t: ReturnType<typeof useT>, g: Generation, platforms: CreationPlatform[]) => {
   const name = (id?: string) => platforms.find((p) => p.identifier === id)?.name || id || '';
   switch (g.template) {
     case 'adapt':
-      return `${clip(g.input.text, 40)} → ${(g.input.platforms || []).map(name).join('、')}`;
+      return `${clip(g.input.text, 40)} → ${(g.input.platforms || []).map(name).join(t('list_sep', '、'))}`;
     case 'titles':
       return clip(g.input.text);
     case 'remake':
-      return `${clip(g.input.text || g.input.url, 40) || '监控里的帖子'} → ${name(g.input.platform)}`;
+      return `${clip(g.input.text || g.input.url, 40) || t('creation_remake_monitor', '监控里的帖子')} → ${name(g.input.platform)}`;
     case 'script':
-      return `${clip(g.input.brief, 40)}（${g.input.seconds} 秒）`;
+      return t('creation_history_script', '{{brief}}（{{s}} 秒）', { brief: clip(g.input.brief, 40), s: g.input.seconds, interpolation: { escapeValue: false } });
     case 'cover':
       return clip(g.input.title || g.input.brief);
     case 'translate':
-      return `${g.input.file || ''} → ${TRANSLATE_TARGETS.find((x) => x.value === g.input.target)?.label || g.input.target}`;
+      return `${g.input.file || ''} → ${translateTargetLabel(t, g.input.target)}`;
     default:
       return '';
   }
@@ -61,13 +62,13 @@ export const CreationHistory: FC<{ platforms: CreationPlatform[]; onOpen: (resul
                 <img src={image} alt="" className="w-[44px] h-[44px] object-cover rounded-[6px] shrink-0" />
               ) : (
                 <span className="w-[44px] h-[44px] rounded-[6px] bg-newTableHeader shrink-0 flex items-center justify-center text-[11px] text-textColor/60">
-                  {TEMPLATE_LABEL[g.template]?.slice(0, 2)}
+                  {TEMPLATE_LABEL[g.template] && templateLabel(t, g.template).slice(0, 2)}
                 </span>
               )}
               <span className="flex flex-col gap-[2px] min-w-0 flex-1">
                 <span className="text-[14px] truncate">
-                  <span className="font-semibold me-[8px]">{TEMPLATE_LABEL[g.template] || g.template}</span>
-                  <span className="text-textColor/70">{summary(g, platforms)}</span>
+                  <span className="font-semibold me-[8px]">{templateLabel(t, g.template)}</span>
+                  <span className="text-textColor/70">{summary(t, g, platforms)}</span>
                 </span>
                 <span className="text-[12px] text-textColor/45">
                   {dayjs(g.createdAt).format('MM-DD HH:mm')}

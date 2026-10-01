@@ -7,6 +7,8 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { useToaster } from '@gitroom/react/toaster/toaster';
+import i18next from '@gitroom/react/translation/i18next';
+import { fallbackLng } from '@gitroom/react/translation/i18n.config';
 const list = [
   'Realistic',
   'Cartoon',
@@ -24,7 +26,7 @@ const list = [
   'Fantasy Realism',
 ];
 
-// The English value goes into the prompt; users see the Chinese name.
+// The English value goes into the prompt; Chinese users see the Chinese name, others the English one.
 const STYLE_LABELS: Record<string, string> = {
   Realistic: '写实',
   Cartoon: '卡通',
@@ -54,6 +56,9 @@ const AiImageModal: FC<{
   const setLocked = useLaunchStore((p) => p.setLocked);
   const [prompt, setPrompt] = useState('');
   const [style, setStyle] = useState(list[0]);
+  const zhStyleNames = (i18next.resolvedLanguage || fallbackLng).startsWith(
+    'zh'
+  );
 
   const generate = useCallback(async () => {
     if (!prompt.trim()) {
@@ -121,7 +126,7 @@ ${style}
                   : 'bg-newColColor border-newBgLineColor'
               )}
             >
-              {STYLE_LABELS[p] || p}
+              {(zhStyleNames && STYLE_LABELS[p]) || p}
             </div>
           ))}
         </div>

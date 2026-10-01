@@ -65,7 +65,7 @@ export const ReplyTemplatesModal: FC<{ canEdit: boolean }> = ({ canEdit }) => {
               scope === s.scope ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
             )}
           >
-            {s.label}
+            {t(`reply_template_scope_${s.scope.toLowerCase()}`, s.label)}
           </button>
         ))}
       </nav>

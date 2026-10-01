@@ -75,7 +75,7 @@ export const DelayComponent: FC<{
     if (!currentDelay) return null;
     const option = delayOptions.find((opt) => opt.value === currentDelay);
     return (
-      option?.label ||
+      (option && t(`delay_option_${option.value}`, option.label)) ||
       t('n_minutes', '{{total}} 分钟', { total: currentDelay })
     );
   };
@@ -109,7 +109,7 @@ export const DelayComponent: FC<{
                   currentDelay === option.value && 'bg-[#612BD3] text-white hover:bg-[#612BD3]'
                 )}
               >
-                {option.label}
+                {t(`delay_option_${option.value}`, option.label)}
               </div>
             ))}
           </div>

@@ -71,7 +71,7 @@ export const YoutubePreview: FC<{
           <div>
             <img
               src={integration?.picture || '/no-picture.jpg'}
-              alt="头像"
+              alt={t('avatar_alt', '头像')}
               className="rounded-full z-[2] w-[40px] h-[40px]"
             />
           </div>

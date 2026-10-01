@@ -194,7 +194,7 @@ const HeygenProviderComponent = () => {
             <option value="">{t('select_1', '--请选择--')}</option>
             {aspectRatio.map((p) => (
               <option key={p.key} value={p.key}>
-                {p.value}
+                {t(`heygen_aspect_${p.key}`, p.value)}
               </option>
             ))}
           </Select>
@@ -206,7 +206,7 @@ const HeygenProviderComponent = () => {
             <option value="">{t('select_1', '--请选择--')}</option>
             {generateCaptions.map((p) => (
               <option key={p.key} value={p.key}>
-                {p.value}
+                {t(`heygen_captions_${p.key}`, p.value)}
               </option>
             ))}
           </Select>

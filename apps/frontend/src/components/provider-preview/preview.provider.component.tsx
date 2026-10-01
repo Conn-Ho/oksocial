@@ -197,13 +197,14 @@ export const ProviderPreviewComponent: FC<ProviderPreviewProps> = ({
       date: newDayjs(),
       integration: {
         ...(DEFAULT_INTEGRATION as MockIntegration),
+        name: t('preview_account_name', DEFAULT_INTEGRATION.name),
         identifier: provider,
         ...integration,
       } as MockIntegration,
       allIntegrations: [],
       value: [],
     }),
-    [provider, integration],
+    [provider, integration, t],
   );
 
   if (!meta) {

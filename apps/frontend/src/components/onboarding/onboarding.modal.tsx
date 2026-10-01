@@ -285,7 +285,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
   const { config, hint } =
     agent === apiTab
       ? { config: '', hint: '' }
-      : getMcpConfig(agent, auth, mcpBase, apiKey);
+      : getMcpConfig(agent, auth, mcpBase, apiKey, t);
 
   const maskedConfig =
     revealed || auth === 'oauth' || !apiKey

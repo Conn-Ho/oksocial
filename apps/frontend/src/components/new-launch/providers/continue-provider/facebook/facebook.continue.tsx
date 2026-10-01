@@ -36,10 +36,14 @@ export const FacebookContinue = withContinueProvider<FacebookItem, string>({
   getSelectionValue: (item) => item.id,
   transformSaveData: (selection) => ({ page: selection }),
   isSelected: (item, selection) => selection === item.id,
-  renderItem: (item) => (
+  renderItem: (item, _isSelected, t) => (
     <>
       <div>
-        <img className="w-full" src={item.picture.data.url} alt="头像" />
+        <img
+          className="w-full"
+          src={item.picture.data.url}
+          alt={t('avatar_alt', '头像')}
+        />
       </div>
       <div>{item.name}</div>
     </>

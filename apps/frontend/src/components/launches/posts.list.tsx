@@ -366,7 +366,7 @@ export const PostsList: FC = () => {
         {!isLoading && !posts.length && (
           <div className="px-[16px] py-[48px] text-center flex flex-col gap-[6px] items-center">
             <span className="text-[15px] font-[600]">
-              {t('posts_empty', '暂无{{status}}帖文', { status: POST_STATUS_LABELS[status] })}
+              {t('posts_empty', '暂无{{status}}帖文', { status: t(`posts_status_${status}`, POST_STATUS_LABELS[status]) })}
             </span>
             <span className="text-[13px] text-textItemBlur">
               {filtered
@@ -435,8 +435,8 @@ export const PostsList: FC = () => {
                         )}
                       </span>
                       {post.state === 'ERROR' && (
-                        <span className="text-[12px] text-red-500 line-clamp-2 break-words" title={postErrorLabel(post.error)}>
-                          {postErrorLabel(post.error)}
+                        <span className="text-[12px] text-red-500 line-clamp-2 break-words" title={postErrorLabel(post.error, t)}>
+                          {postErrorLabel(post.error, t)}
                         </span>
                       )}
                     </div>

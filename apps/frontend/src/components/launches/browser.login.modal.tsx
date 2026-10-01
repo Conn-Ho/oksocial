@@ -55,7 +55,7 @@ export const BrowserLoginModal: FC<{
   const closed = useRef(false);
   // the 2nd step is being opened (the poll and 我已登录 can both see the first login finish)
   const advancing = useRef(false);
-  const app = SCAN_APP[identifier];
+  const app = SCAN_APP[identifier] && t(`scan_app_${identifier}`, SCAN_APP[identifier]);
 
   const show = useCallback((next: Step) => {
     current.current = next;

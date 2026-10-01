@@ -16,10 +16,13 @@ import { RenderPreviewDateClient } from '@gitroom/frontend/components/preview/re
 import { CreationMethodBadge } from '@gitroom/frontend/components/launches/creation.method.badge';
 
 dayjs.extend(utc);
-export const metadata: Metadata = {
-  title: 'oksocial 帖子预览',
-  description: '',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return {
+    title: t('page_title_post_preview', 'oksocial 帖子预览'),
+    description: '',
+  };
+}
 export default async function Auth(
   props: {
     params: Promise<{

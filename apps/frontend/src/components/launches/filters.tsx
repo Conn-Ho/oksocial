@@ -6,7 +6,6 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 import { SelectCustomer } from '@gitroom/frontend/components/launches/select.customer';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-import i18next from 'i18next';
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
 
 // Helper function to get start and end dates based on display type
@@ -45,7 +44,6 @@ export const Filters = () => {
   const t = useT();
 
   // Set dayjs locale based on current language
-  const currentLanguage = i18next.resolvedLanguage || 'en';
   dayjs.locale();
 
   // Calculate display date range text
@@ -59,9 +57,7 @@ export const Filters = () => {
       case 'week':
         return `${startDate.format('L')} - ${endDate.format('L')}`;
       case 'month':
-        return currentLanguage.startsWith('zh')
-          ? startDate.format('YYYY年M月')
-          : startDate.format('MMMM YYYY');
+        return startDate.format(t('date_fmt_ym', 'YYYY年M月'));
       default:
         return '';
     }

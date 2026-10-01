@@ -32,13 +32,13 @@ type PricedAction = 'ai_tag' | 'ai_translate' | 'monitor_sync';
 type Panel = { settings: SyncSettings; billing: boolean; prices: Record<PricedAction, number> };
 
 // what a row costs: nothing (the inbox sync), or one of the price-table actions per item / read
-type Price = { free: true } | { action: PricedAction; unit: string };
+type Price = { free: true } | { action: PricedAction; unit: 'item' | 'read' };
 type Row = { key: Switch; label: string; hint: string; price: Price };
 type Group = { title: string; rows: Row[] };
 
 const FREE: Price = { free: true };
-const perItem = (action: PricedAction): Price => ({ action, unit: '条' });
-const perRead = (action: PricedAction): Price => ({ action, unit: '次' });
+const perItem = (action: PricedAction): Price => ({ action, unit: 'item' });
+const perRead = (action: PricedAction): Price => ({ action, unit: 'read' });
 
 const SECTIONS: Array<{ title: string; intro: string; groups: Group[] }> = [
   {
@@ -153,7 +153,10 @@ const PriceTag: FC<{ price: Price; panel: Panel }> = ({ price, panel }) => {
       ? t('sync_price_free', '免费')
       : !panel.billing
         ? t('sync_price_billing_off', '未启用计费')
-        : t('sync_price_credits', '{{n}} 积分/{{unit}}', { n: panel.prices[price.action] ?? 0, unit: price.unit });
+        : t('sync_price_credits', '{{n}} 积分/{{unit}}', {
+            n: panel.prices[price.action] ?? 0,
+            unit: price.unit === 'item' ? t('sync_unit_item', '条') : t('sync_unit_read', '次'),
+          });
   return <span className="text-[12px] text-textItemBlur tabular-nums whitespace-nowrap">{text}</span>;
 };
 
@@ -203,6 +206,7 @@ export const SyncAiSettings: FC = () => {
     return <div className="text-[14px] text-textItemBlur py-[20px]">{t('loading', '加载中…')}</div>;
   }
   const { settings } = data;
+  const policy = POLICIES.find((p) => p.value === settings.dmReplyPolicy);
 
   return (
     <div className="flex flex-col gap-[16px] min-w-0">
@@ -218,17 +222,17 @@ export const SyncAiSettings: FC = () => {
       </header>
 
       {SECTIONS.map((section, index) => (
-        <Card key={section.title} title={t(`sync_section_${index}`, section.title)} intro={section.intro}>
-          {section.groups.map((group) => (
+        <Card key={section.title} title={t(`sync_section_${index}`, section.title)} intro={t(`sync_section_${index}_intro`, section.intro)}>
+          {section.groups.map((group, groupIndex) => (
             <div key={group.title || section.title} className="flex flex-col">
               {group.title && (
-                <div className="text-[12px] font-[600] text-textItemBlur pt-[12px] pb-[2px]">{group.title}</div>
+                <div className="text-[12px] font-[600] text-textItemBlur pt-[12px] pb-[2px]">{t(`sync_section_${index}_group_${groupIndex}`, group.title)}</div>
               )}
               {group.rows.map((row) => (
                 <div key={row.key} className="flex items-center gap-[12px] py-[10px] border-b border-newBorder last:border-b-0">
                   <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
-                    <span className="text-[14px] font-[500]">{row.label}</span>
-                    <span className="text-[12px] text-textItemBlur leading-[1.5]">{row.hint}</span>
+                    <span className="text-[14px] font-[500]">{t(`sync_row_${row.key}`, row.label)}</span>
+                    <span className="text-[12px] text-textItemBlur leading-[1.5]">{t(`sync_row_${row.key}_hint`, row.hint)}</span>
                     <span className="sm:hidden">
                       <PriceTag price={row.price} panel={data} />
                     </span>
@@ -239,7 +243,9 @@ export const SyncAiSettings: FC = () => {
                   <Toggle
                     checked={settings[row.key]}
                     disabled={!canEdit}
-                    label={`${section.title} ${group.title} ${row.label}`.replace(/\s+/g, ' ').trim()}
+                    label={`${t(`sync_section_${index}`, section.title)} ${group.title && t(`sync_section_${index}_group_${groupIndex}`, group.title)} ${t(`sync_row_${row.key}`, row.label)}`
+                      .replace(/\s+/g, ' ')
+                      .trim()}
                     onChange={(value) => save({ [row.key]: value })}
                   />
                 </div>
@@ -270,7 +276,7 @@ export const SyncAiSettings: FC = () => {
                 ))}
               </div>
               <p className="text-[12px] text-textItemBlur leading-[1.5]">
-                {POLICIES.find((p) => p.value === settings.dmReplyPolicy)?.hint}
+                {policy && t(`sync_dm_policy_${policy.value || 'own'}_hint`, policy.hint)}
               </p>
             </div>
           )}

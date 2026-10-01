@@ -6,7 +6,7 @@ import { platformTimeLabel } from '@gitroom/helpers/utils/platform.time';
 import clsx from 'clsx';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { Tag } from '@gitroom/frontend/components/inbox/inbox.detail';
-import { INTENT_LABELS, SENTIMENT_LABELS } from '@gitroom/frontend/components/inbox/inbox.hooks';
+import { SENTIMENT_LABELS, intentLabel, sentimentLabel } from '@gitroom/frontend/components/inbox/inbox.hooks';
 import {
   METRICS,
   MonitorItem,
@@ -15,21 +15,31 @@ import {
   useMonitorItems,
 } from '@gitroom/frontend/components/monitor/monitor.hooks';
 
+// the section's name (its aria-label) and what it says while it is empty
+const SECTION: Record<MonitorItemKind, string> = {
+  COMMENT: '评论',
+  POST: '帖子',
+  HIT: '搜索结果',
+};
+
 const EMPTY: Record<MonitorItemKind, string> = {
   COMMENT: '还没有读到评论',
   POST: '还没有读到帖子',
   HIT: '还没有搜到内容',
 };
 
-const ItemMetrics: FC<{ item: MonitorItem }> = ({ item }) => (
-  <span className="flex flex-wrap gap-x-[10px] text-[12px] text-textColor/60 tabular-nums">
-    {METRICS.filter((m) => item[m.key] !== null && item[m.key] !== undefined).map((m) => (
-      <span key={m.key} className="whitespace-nowrap">
-        {m.label} {formatCount(item[m.key])}
-      </span>
-    ))}
-  </span>
-);
+const ItemMetrics: FC<{ item: MonitorItem }> = ({ item }) => {
+  const t = useT();
+  return (
+    <span className="flex flex-wrap gap-x-[10px] text-[12px] text-textColor/60 tabular-nums">
+      {METRICS.filter((m) => item[m.key] !== null && item[m.key] !== undefined).map((m) => (
+        <span key={m.key} className="whitespace-nowrap">
+          {t(`metric_${m.key}`, m.label)} {formatCount(item[m.key])}
+        </span>
+      ))}
+    </span>
+  );
+};
 
 /** Comments of a monitored post, posts of a competitor or hits of a keyword, newest first. */
 export const MonitorItems: FC<{
@@ -49,10 +59,10 @@ export const MonitorItems: FC<{
   }, [targetId, kind]);
 
   return (
-    <section className="flex flex-col gap-[8px]" aria-label={t(`monitor_items_${kind.toLowerCase()}`, EMPTY[kind])}>
+    <section className="flex flex-col gap-[8px]" aria-label={t(`monitor_items_${kind.toLowerCase()}`, SECTION[kind])}>
       {kind === 'HIT' && (
         <nav className="flex gap-[4px]" aria-label={t('sentiment', '情绪')}>
-          {[{ value: '', label: '全部' }, ...Object.entries(SENTIMENT_LABELS).map(([value, label]) => ({ value, label }))].map((o) => (
+          {[{ value: '', label: t('all', '全部') }, ...Object.keys(SENTIMENT_LABELS).map((value) => ({ value, label: sentimentLabel(t, value) }))].map((o) => (
             <button
               key={o.value}
               type="button"
@@ -87,10 +97,10 @@ export const MonitorItems: FC<{
                 ))}
               {item.sentiment && (
                 <Tag tone={item.sentiment === 'positive' ? 'good' : item.sentiment === 'negative' ? 'bad' : 'plain'}>
-                  {SENTIMENT_LABELS[item.sentiment] ?? item.sentiment}
+                  {sentimentLabel(t, item.sentiment)}
                 </Tag>
               )}
-              {item.intent && item.intent !== 'other' && <Tag tone={item.intent === 'lead' ? 'good' : 'plain'}>{INTENT_LABELS[item.intent] ?? item.intent}</Tag>}
+              {item.intent && item.intent !== 'other' && <Tag tone={item.intent === 'lead' ? 'good' : 'plain'}>{intentLabel(t, item.intent)}</Tag>}
               <span className="ms-auto text-[12px] text-textColor/50 shrink-0">
                 {item.publishedAt ? dayjs(item.publishedAt).format('MM-DD HH:mm') : platformTimeLabel(item.platformTime) || dayjs(item.createdAt).format('MM-DD HH:mm')}
               </span>

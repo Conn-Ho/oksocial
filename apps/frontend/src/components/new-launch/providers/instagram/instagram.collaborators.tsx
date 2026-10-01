@@ -56,7 +56,7 @@ const InstagramCollaborators: FC<{
         <option value="">{t('select_post_type', 'Select Post Type...')}</option>
         {postType.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`instagram_post_type_${item.value}`, item.label)}
           </option>
         ))}
       </Select>
@@ -104,7 +104,7 @@ const InstagramCollaborators: FC<{
             >
               {graduationStrategies.map((item) => (
                 <option key={item.value} value={item.value}>
-                  {item.label}
+                  {t(`instagram_graduation_${item.value.toLowerCase()}`, item.label)}
                 </option>
               ))}
             </Select>

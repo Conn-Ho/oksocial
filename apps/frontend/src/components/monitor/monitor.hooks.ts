@@ -3,6 +3,8 @@
 import { useCallback } from 'react';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
+import i18next from '@gitroom/react/translation/i18next';
+import { fallbackLng } from '@gitroom/react/translation/i18n.config';
 
 export type MonitorKind = 'POST' | 'ACCOUNT' | 'KEYWORD';
 export type MonitorItemKind = 'COMMENT' | 'POST' | 'HIT';
@@ -108,8 +110,14 @@ export const METRICS: Array<{ key: keyof MonitorMetrics; label: string; color: s
   { key: 'collects', label: '收藏', color: 'rgb(245, 166, 35)' },
 ];
 
+// 10,000 and up: 1.2万 in Chinese, 12.3K / 1.2M in other languages
+const compactCount = (n: number) =>
+  (i18next.resolvedLanguage || fallbackLng).startsWith('zh')
+    ? `${Math.round(n / 1000) / 10}万`
+    : new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
 export const formatCount = (n: number | null | undefined) =>
-  n === null || n === undefined ? '—' : n >= 10000 ? `${Math.round(n / 1000) / 10}万` : String(n);
+  n === null || n === undefined ? '—' : n >= 10000 ? compactCount(n) : String(n);
 
 export const useMonitorPlatforms = () => {
   const fetch = useFetch();

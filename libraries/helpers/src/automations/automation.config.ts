@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Translate, zhDefault } from '@gitroom/helpers/utils/translate';
 
 // Automation types, their config schemas and the plain-language rule summary. Shared by the
 // backend (validation, engine) and the frontend (forms, 规则说明).
@@ -184,56 +185,165 @@ export const matchesTriggers = (
   (!t.intents?.length || (!!item.intent && t.intents.includes(item.intent))) &&
   (!t.keywords?.length || t.keywords.some((k) => item.content.toLowerCase().includes(k.toLowerCase())));
 
-const list = (values: readonly string[], text: Record<string, string> = {}) =>
-  values.map((v) => text[v] ?? v).join('、');
+// rule text interpolates user words (keywords, topics): i18next must not HTML-escape them
+const noEscape = { escapeValue: false };
 
-const triggerText = (c: { sentiments?: readonly string[]; intents?: readonly string[]; keywords?: readonly string[] }) => {
+const list = (values: readonly string[], label: (v: string) => string, sep: string) => values.map(label).join(sep);
+
+const sentimentText = (t: Translate) => (v: string) => t(`automation_sentiment_${v}`, SENTIMENT_TEXT[v] ?? v);
+const intentText = (t: Translate) => (v: string) => t(`automation_intent_${v}`, INTENT_TEXT[v] ?? v);
+
+// 评论 / 私信 / @提及 inside the rule sentence
+const sourceText = (t: Translate): Record<string, string> => ({
+  COMMENT: t('automation_rule_comments', '评论'),
+  DM: t('automation_rule_dms', '私信'),
+  MENTION: t('automation_rule_mentions', '@提及'),
+});
+
+const triggerText = (
+  c: { sentiments?: readonly string[]; intents?: readonly string[]; keywords?: readonly string[] },
+  t: Translate
+) => {
+  const or = t('automation_rule_or', '、');
   const parts = [
-    c.sentiments?.length ? `情绪是${list(c.sentiments, SENTIMENT_TEXT)}` : '',
-    c.intents?.length ? `意向是${list(c.intents, INTENT_TEXT)}` : '',
-    c.keywords?.length ? `包含「${c.keywords.join('」或「')}」` : '',
+    c.sentiments?.length ? t('automation_rule_sentiment', '情绪是{{list}}', { list: list(c.sentiments, sentimentText(t), or), interpolation: noEscape }) : '',
+    c.intents?.length ? t('automation_rule_intent', '意向是{{list}}', { list: list(c.intents, intentText(t), or), interpolation: noEscape }) : '',
+    c.keywords?.length
+      ? t('automation_rule_keywords', '包含「{{list}}」', { list: c.keywords.join(t('automation_rule_keyword_sep', '」或「')), interpolation: noEscape })
+      : '',
   ].filter(Boolean);
-  return parts.length ? `且${parts.join('且')}` : '';
+  return parts.length
+    ? t('automation_rule_trigger', '且{{conditions}}', { conditions: parts.join(t('automation_rule_and', '且')), interpolation: noEscape })
+    : '';
 };
 
-const replyText = (c: { replyWith: 'ai' | 'template'; templateMatch: 'random' | 'ai' }) =>
-  c.replyWith === 'ai' ? '用 AI 写回复' : c.templateMatch === 'random' ? '从话术库随机挑一条回复' : '由 AI 从话术库挑最合适的一条回复';
+const replyText = (c: { replyWith: 'ai' | 'template'; templateMatch: 'random' | 'ai' }, t: Translate) =>
+  c.replyWith === 'ai'
+    ? t('automation_rule_reply_ai', '用 AI 写回复')
+    : c.templateMatch === 'random'
+    ? t('automation_rule_reply_random', '从话术库随机挑一条回复')
+    : t('automation_rule_reply_best', '由 AI 从话术库挑最合适的一条回复');
 
-/** 规则说明: the config as one sentence. Pure. */
-export const describeAutomation = (type: AutomationType, raw: unknown, dailyCap: number, reviewMode = false) => {
-  const tail = `每天最多 ${dailyCap} 次${reviewMode ? '，每一条先进入待确认，确认后才执行' : ''}。`;
+/** 规则说明: the config as one sentence. Pure; t defaults to the Chinese text (backend, specs). */
+export const describeAutomation = (type: AutomationType, raw: unknown, dailyCap: number, reviewMode = false, t: Translate = zhDefault) => {
+  const tail = reviewMode
+    ? t('automation_rule_tail_review', '每天最多 {{cap}} 次，每一条先进入待确认，确认后才执行。', { cap: dailyCap })
+    : t('automation_rule_tail', '每天最多 {{cap}} 次。', { cap: dailyCap });
+  const sep = t('list_sep', '、');
   switch (type) {
     case 'COMMENT_ASSISTANT': {
       const c = parseAutomationConfig(type, raw);
-      return `先找近 ${c.lookbackDays} 天未回复的${list(c.kinds, { COMMENT: '评论', MENTION: '@提及' })}${triggerText(c)}，再${replyText(c)}${c.oncePerAuthor ? '，同一个人每个帖子只回一次' : ''}；${tail}`;
+      return t('automation_rule_comment', '先找近 {{days}} 天未回复的{{kinds}}{{trigger}}，再{{reply}}{{once}}；{{tail}}', {
+        count: c.lookbackDays,
+        days: c.lookbackDays,
+        kinds: list(c.kinds, (k) => sourceText(t)[k], sep),
+        trigger: triggerText(c, t),
+        reply: replyText(c, t),
+        once: c.oncePerAuthor ? t('automation_rule_once_per_author', '，同一个人每个帖子只回一次') : '',
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'DM_ASSISTANT': {
       const c = parseAutomationConfig(type, raw);
-      return `先找近 ${c.lookbackDays} 天未回复的私信${triggerText(c)}，再${replyText(c)}，${c.strategy === 'once' ? '每个会话只回第一次' : '对方每次发来都继续回复'}；${tail}`;
+      return t('automation_rule_dm', '先找近 {{days}} 天未回复的私信{{trigger}}，再{{reply}}，{{strategy}}；{{tail}}', {
+        count: c.lookbackDays,
+        days: c.lookbackDays,
+        trigger: triggerText(c, t),
+        reply: replyText(c, t),
+        strategy:
+          c.strategy === 'once'
+            ? t('automation_rule_strategy_once', '每个会话只回第一次')
+            : t('automation_rule_strategy_continuous', '对方每次发来都继续回复'),
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'LEAD_COLLECTOR': {
       const c = parseAutomationConfig(type, raw);
-      return `先看近 ${c.lookbackDays} 天的${list(c.sources, { COMMENT: '评论', DM: '私信', MENTION: '@提及' })}${triggerText(c)}，用你的提示词打分，${c.minScore} 分及以上进入线索库；${tail}`;
+      return t('automation_rule_lead', '先看近 {{days}} 天的{{sources}}{{trigger}}，用你的提示词打分，{{score}} 分及以上进入线索库；{{tail}}', {
+        count: c.lookbackDays,
+        days: c.lookbackDays,
+        sources: list(c.sources, (k) => sourceText(t)[k], sep),
+        trigger: triggerText(c, t),
+        score: c.minScore,
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'REWRITE_SYNC': {
       const c = parseAutomationConfig(type, raw);
-      return `来源账号近 ${c.lookbackDays || '当'} 天新发的帖子，改写${c.tone === 'keep' ? '' : c.tone === 'casual' ? '成更口语的语气' : '成更专业的语气'}${c.length === 'keep' ? '' : c.length === 'shorter' ? '并缩短' : '并扩写'}${c.language === 'keep' ? '' : c.language === 'zh' ? '成中文' : '成英文'}后，${c.publish === 'draft' ? '存为目标账号的草稿' : '立即发到目标账号'}；${tail}`;
+      const how = [
+        c.tone === 'keep' ? '' : c.tone === 'casual' ? t('automation_rule_tone_casual', '成更口语的语气') : t('automation_rule_tone_professional', '成更专业的语气'),
+        c.length === 'keep' ? '' : c.length === 'shorter' ? t('automation_rule_shorter', '并缩短') : t('automation_rule_longer', '并扩写'),
+        c.language === 'keep' ? '' : c.language === 'zh' ? t('automation_rule_to_zh', '成中文') : t('automation_rule_to_en', '成英文'),
+      ].join('');
+      const values = {
+        count: c.lookbackDays,
+        days: c.lookbackDays,
+        how,
+        publish: c.publish === 'draft' ? t('automation_rule_save_draft', '存为目标账号的草稿') : t('automation_rule_publish_now', '立即发到目标账号'),
+        tail,
+        interpolation: noEscape,
+      };
+      return c.lookbackDays
+        ? t('automation_rule_rewrite', '来源账号近 {{days}} 天新发的帖子，改写{{how}}后，{{publish}}；{{tail}}', values)
+        : t('automation_rule_rewrite_today', '来源账号近 当 天新发的帖子，改写{{how}}后，{{publish}}；{{tail}}', values);
     }
     case 'AUTO_POST': {
       const c = parseAutomationConfig(type, raw);
-      return `每个账号每天围绕「${c.topics.join('」「')}」生成 ${c.postsPerDay} 条原创，${c.publish === 'draft' ? '存为草稿' : `定时在 ${c.hours[0]}:00–${c.hours[1]}:00 之间发布`}；${tail}`;
+      return t('automation_rule_auto_post', '每个账号每天围绕「{{topics}}」生成 {{n}} 条原创，{{publish}}；{{tail}}', {
+        count: c.postsPerDay,
+        n: c.postsPerDay,
+        topics: c.topics.join(t('automation_rule_topic_sep', '」「')),
+        publish:
+          c.publish === 'draft'
+            ? t('automation_rule_draft', '存为草稿')
+            : t('automation_rule_schedule', '定时在 {{from}}:00–{{to}}:00 之间发布', { from: c.hours[0], to: c.hours[1] }),
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'POST_ACTIONS': {
       const c = parseAutomationConfig(type, raw);
-      return `看所选 ${c.monitorTargetIds.length} 个监控近 ${c.lookbackHours} 小时的新帖${triggerText(c)}${c.minLikes ? `且点赞不少于 ${c.minLikes}` : ''}，${list(c.actions, POST_ACTION_TEXT)}；${tail}`;
+      return t('automation_rule_post_actions', '看所选 {{monitors}} 个监控近 {{hours}} 小时的新帖{{trigger}}{{likes}}，{{actions}}；{{tail}}', {
+        count: c.lookbackHours,
+        monitors: c.monitorTargetIds.length,
+        hours: c.lookbackHours,
+        trigger: triggerText(c, t),
+        likes: c.minLikes ? t('automation_rule_min_likes', '且点赞不少于 {{n}}', { n: c.minLikes }) : '',
+        actions: list(c.actions, (a) => t(`automation_rule_action_${a}`, POST_ACTION_TEXT[a] ?? a), sep),
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'FOLLOW_BACK': {
       const c = parseAutomationConfig(type, raw);
-      return `看每个账号最新的 ${c.scan} 个粉丝，回关还没关注的人${c.skipKeywords.length ? `，名字或简介含「${c.skipKeywords.join('」或「')}」的不回关` : ''}；${tail}`;
+      return t('automation_rule_follow_back', '看每个账号最新的 {{n}} 个粉丝，回关还没关注的人{{skip}}；{{tail}}', {
+        n: c.scan,
+        skip: c.skipKeywords.length
+          ? t('automation_rule_skip_keywords', '，名字或简介含「{{list}}」的不回关', {
+              list: c.skipKeywords.join(t('automation_rule_keyword_sep', '」或「')),
+              interpolation: noEscape,
+            })
+          : '',
+        tail,
+        interpolation: noEscape,
+      });
     }
     case 'PROSPECTING': {
       const c = parseAutomationConfig(type, raw);
-      return `看所选 ${c.monitorTargetIds.length} 个监控帖子近 ${c.lookbackDays} 天的新评论${triggerText(c)}，${c.leadPrompt ? `按你的提示词打分，${c.minScore} 分及以上的` : ''}${replyText(c)}${c.saveLeads ? '，并存入线索库' : ''}；${tail}`;
+      return t('automation_rule_prospecting', '看所选 {{posts}} 个监控帖子近 {{days}} 天的新评论{{trigger}}，{{scored}}{{reply}}{{save}}；{{tail}}', {
+        count: c.lookbackDays,
+        posts: c.monitorTargetIds.length,
+        days: c.lookbackDays,
+        trigger: triggerText(c, t),
+        scored: c.leadPrompt ? t('automation_rule_scored', '按你的提示词打分，{{score}} 分及以上的', { score: c.minScore }) : '',
+        reply: replyText(c, t),
+        save: c.saveLeads ? t('automation_rule_save_leads', '，并存入线索库') : '',
+        tail,
+        interpolation: noEscape,
+      });
     }
   }
 };

@@ -31,7 +31,17 @@ const allowedIntegrations = [
   'x',
 ];
 // what the platforms of allowedIntegrations are called in the empty state
-const OFFICIAL_ANALYTICS = ['Facebook', 'Instagram', 'LinkedIn 公司主页', 'TikTok', 'YouTube', 'Google 商家', 'Pinterest', 'Threads', 'X（官方授权）'];
+const officialAnalytics = (t: (key: string, fallback: string) => string) => [
+  'Facebook',
+  'Instagram',
+  t('analytics_linkedin_page', 'LinkedIn 公司主页'),
+  'TikTok',
+  'YouTube',
+  t('analytics_gmb', 'Google 商家'),
+  'Pinterest',
+  'Threads',
+  t('analytics_x_official', 'X（官方授权）'),
+];
 export const PlatformAnalytics = () => {
   const fetch = useFetch();
   const t = useT();
@@ -162,7 +172,7 @@ export const PlatformAnalytics = () => {
           {t(
             'analytics_browser_in_reports',
             '小红书、抖音、微博和浏览器登录的 X 账号，粉丝、曝光、互动和每条帖子的数据都在「报告」里。这里只显示通过官方授权连接的账号：{{list}}。',
-            { list: OFFICIAL_ANALYTICS.join('、') }
+            { list: officialAnalytics(t).join(t('list_sep', '、')), interpolation: { escapeValue: false } }
           )}
         </p>
         <div className="flex gap-[12px] flex-wrap justify-center">

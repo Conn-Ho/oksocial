@@ -61,7 +61,7 @@ const TargetRow: FC<{ target: MonitorTarget; active: boolean; onClick: () => voi
         <span className="flex flex-wrap gap-x-[10px] text-[12px] text-textColor/60 tabular-nums">
           {METRICS.filter((m) => latest?.[m.key] !== null && latest?.[m.key] !== undefined).map((m) => (
             <span key={m.key} className="whitespace-nowrap">
-              {m.label} {formatCount(latest?.[m.key])}
+              {t(`metric_${m.key}`, m.label)} {formatCount(latest?.[m.key])}
             </span>
           ))}
           {!latest && t('monitor_never_read', '还没读取过')}

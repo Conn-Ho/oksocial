@@ -103,7 +103,7 @@ const SettingsComponent = () => {
           >
             {whoCanReply.map((item) => (
               <option key={item.value} value={item.value}>
-                {item.label}
+                {t(`x_who_can_reply_${item.value}`, item.label)}
               </option>
             ))}
           </Select>
