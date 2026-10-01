@@ -146,6 +146,7 @@ export const CommentComponent: FC<{
   date: dayjs.Dayjs;
 }> = (props) => {
   const { date } = props;
+  const t = useT();
   const { closeAll } = useModals();
   const [commentsList, setCommentsList] = useState<Comments[]>([]);
   const user = useUser();
@@ -270,7 +271,11 @@ export const CommentComponent: FC<{
   }, []);
   return (
     <div className="relative flex gap-[20px] flex-col flex-1 rounded-[4px] border border-customColor6 bg-sixth p-[16px] pt-0">
-      <TopTitle title={`评论 · ${date.format('YYYY-MM-DD HH:mm')}`} />
+      <TopTitle
+        title={t('comments_title_at', '评论 · {{date}}', {
+          date: date.format('YYYY-MM-DD HH:mm'),
+        })}
+      />
       <button
         onClick={closeAll}
         className="outline-none absolute end-[20px] top-[15px] mantine-UnstyledButton-root mantine-ActionIcon-root hover:bg-tableBorder cursor-pointer mantine-Modal-close mantine-1dcetaa"

@@ -108,7 +108,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
   const modal = useModals();
   const { data: integrations } = useIntegrationList();
   const meta = AUTOMATION_META[type];
-  const [name, setName] = useState(existing?.name || meta.label);
+  const [name, setName] = useState(existing?.name || t(`automation_type_${type.toLowerCase()}`, meta.label));
   const [channels, setChannels] = useState<string[]>(existing?.integrationIds || []);
   const [dailyCap, setDailyCap] = useState(existing?.dailyCap || meta.defaultCap);
   const [reviewMode, setReviewMode] = useState(existing?.reviewMode ?? type !== 'LEAD_COLLECTOR');
@@ -125,13 +125,16 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
   const [busy, setBusy] = useState<'' | 'save' | 'test'>('');
 
   const set = (patch: Record<string, any>) => setConfig((c) => ({ ...c, ...patch }));
+  // the shared Chinese option tables, labelled in the current language
+  const labels = (prefix: string, table: Record<string, string>) =>
+    Object.fromEntries(Object.entries(table).map(([k, text]) => [k, t(`${prefix}${k}`, text)]));
   const rule = useMemo(() => {
     try {
-      return describeAutomation(type, config, dailyCap, reviewMode);
+      return describeAutomation(type, config, dailyCap, reviewMode, t);
     } catch (e) {
-      return `配置还不完整：${(e as Error).message}`;
+      return t('automation_config_incomplete', '配置还不完整：{{error}}', { error: (e as Error).message, interpolation: { escapeValue: false } });
     }
-  }, [type, config, dailyCap, reviewMode]);
+  }, [type, config, dailyCap, reviewMode, t]);
 
   const channelChoices = (integrations || []).filter((i: any) => !i.disabled);
 
@@ -159,14 +162,14 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
     setBusy('');
     setTestOut(
       res.ok
-        ? `${body.output}${type !== 'LEAD_COLLECTOR' || body.passes === undefined ? '' : body.passes ? '（会进入线索库）' : '（分数不够，不入库）'}`
-        : body?.message || '测试失败'
+        ? `${body.output}${type !== 'LEAD_COLLECTOR' || body.passes === undefined ? '' : body.passes ? t('automation_test_passes', '（会进入线索库）') : t('automation_test_below', '（分数不够，不入库）')}`
+        : body?.message || t('automation_test_failed', '测试失败')
     );
   }, [type, config, sample]);
 
   return (
     <div className="flex flex-col gap-[14px] w-full">
-      <p className="text-[13px] text-textColor/60">{meta.description}</p>
+      <p className="text-[13px] text-textColor/60">{t(`automation_desc_${type.toLowerCase()}`, meta.description)}</p>
       <Row label={t('name', '名称')}>
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} className={field} />
       </Row>
@@ -192,8 +195,8 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
           <Row label={t('lookback', '只看最近几天')}>
             <input type="number" min={1} max={type === 'LEAD_COLLECTOR' ? 180 : 30} value={config.lookbackDays ?? 7} onChange={(e) => set({ lookbackDays: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
           </Row>
-          <Chips label={t('sentiment', '情绪')} options={SENTIMENT_TEXT} value={config.sentiments || []} onChange={(v) => set({ sentiments: v })} />
-          <Chips label={t('intent', '意向')} options={INTENT_TEXT} value={config.intents || []} onChange={(v) => set({ intents: v })} />
+          <Chips label={t('sentiment', '情绪')} options={labels('automation_sentiment_', SENTIMENT_TEXT)} value={config.sentiments || []} onChange={(v) => set({ sentiments: v })} />
+          <Chips label={t('intent', '意向')} options={labels('automation_intent_', INTENT_TEXT)} value={config.intents || []} onChange={(v) => set({ intents: v })} />
         </>
       )}
       {MONITOR_TYPES.includes(type) && (
@@ -201,7 +204,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {type === 'POST_ACTIONS' && (
         <>
-          <Chips label={t('post_actions', '操作')} options={POST_ACTION_TEXT} value={config.actions || []} onChange={(v) => set({ actions: v })} />
+          <Chips label={t('post_actions', '操作')} options={labels('automation_action_', POST_ACTION_TEXT)} value={config.actions || []} onChange={(v) => set({ actions: v })} />
           <div className="flex flex-wrap gap-[16px]">
             <Row label={t('lookback_hours', '只看最近几小时的新帖')}>
               <input type="number" min={1} max={168} value={config.lookbackHours ?? 24} onChange={(e) => set({ lookbackHours: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
@@ -212,7 +215,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
           </div>
           {(config.actions || []).includes('comment') && (
             <Row label={t('comment_prompt', '评论的额外要求（可选）')} hint={t('comment_hint', 'AI 会针对帖子内容写一句有信息量的评论，不打广告、不放链接。')}>
-              <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder="例如：多提问，少下结论" />
+              <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder={t('automation_comment_prompt_placeholder', '例如：多提问，少下结论')} />
             </Row>
           )}
         </>
@@ -223,7 +226,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
             <input type="number" min={10} max={200} value={config.scan ?? 50} onChange={(e) => set({ scan: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
           </Row>
           <Row label={t('follow_back_skip', '名字或简介含这些词就不回关（逗号分隔）')}>
-            <input defaultValue={(config.skipKeywords || []).join('，')} onBlur={(e) => set({ skipKeywords: words(e.target.value) })} className={field} placeholder="例如：空投，代写，互粉" />
+            <input defaultValue={(config.skipKeywords || []).join('，')} onBlur={(e) => set({ skipKeywords: words(e.target.value) })} className={field} placeholder={t('automation_skip_placeholder', '例如：空投，代写，互粉')} />
           </Row>
         </>
       )}
@@ -233,10 +236,10 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
             <input type="number" min={1} max={30} value={config.lookbackDays ?? 3} onChange={(e) => set({ lookbackDays: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
           </Row>
           <Row label={t('prospect_prompt', '什么样的评论者值得回复（可选：留空则回复所有符合关键词的评论）')}>
-            <textarea value={config.leadPrompt || ''} maxLength={500} onChange={(e) => set({ leadPrompt: e.target.value })} className="bg-newTableHeader rounded-[4px] p-[8px] min-h-[60px] text-[14px]" placeholder="例如：正在找 AI 编程工具、问价格或问怎么用的人" />
+            <textarea value={config.leadPrompt || ''} maxLength={500} onChange={(e) => set({ leadPrompt: e.target.value })} className="bg-newTableHeader rounded-[4px] p-[8px] min-h-[60px] text-[14px]" placeholder={t('automation_prospect_placeholder', '例如：正在找 AI 编程工具、问价格或问怎么用的人')} />
           </Row>
           {!!config.leadPrompt && (
-            <Row label={t('min_score', '回复的最低分')} hint={`${config.minScore ?? 70} 分`}>
+            <Row label={t('min_score', '回复的最低分')} hint={t('automation_score_value', '{{n}} 分', { n: config.minScore ?? 70 })}>
               <input type="range" min={0} max={100} value={config.minScore ?? 70} onChange={(e) => set({ minScore: Number(e.target.value) })} />
             </Row>
           )}
@@ -248,7 +251,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {type === 'COMMENT_ASSISTANT' && (
         <>
-          <Chips label={t('kinds', '类型')} options={{ COMMENT: '评论', MENTION: '@提及' }} value={config.kinds || []} onChange={(v) => set({ kinds: v })} />
+          <Chips label={t('kinds', '类型')} options={{ COMMENT: t('automation_kind_comment', '评论'), MENTION: t('automation_kind_mention', '@提及') }} value={config.kinds || []} onChange={(v) => set({ kinds: v })} />
           <label className="flex items-center gap-[8px] text-[14px]">
             <input type="checkbox" checked={!!config.oncePerAuthor} onChange={(e) => set({ oncePerAuthor: e.target.checked })} />
             {t('once_per_author', '同一个人在同一个帖子下只回一次')}
@@ -257,7 +260,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {type === 'DM_ASSISTANT' && (
         <>
-          <Chips label={t('strategy', '回复策略')} options={{ once: '只回第一次', continuous: '持续回复' }} value={[config.strategy]} onChange={(v) => set({ strategy: v[v.length - 1] || 'once' })} />
+          <Chips label={t('strategy', '回复策略')} options={{ once: t('automation_strategy_once', '只回第一次'), continuous: t('automation_strategy_continuous', '持续回复') }} value={[config.strategy]} onChange={(v) => set({ strategy: v[v.length - 1] || 'once' })} />
           <p className="text-[12px] text-textColor/50 -mt-[4px]">
             {t('strategy_team_override', '如果在「设置 › 同步与 AI」里选了团队的私信自动回复策略，以团队设置为准。')}
           </p>
@@ -270,22 +273,22 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {(type === 'COMMENT_ASSISTANT' || type === 'DM_ASSISTANT' || type === 'PROSPECTING') && (
         <>
-          <Chips label={t('reply_with', '回复内容')} options={{ ai: 'AI 回复', template: '话术库' }} value={[config.replyWith]} onChange={(v) => set({ replyWith: v[v.length - 1] || 'ai' })} />
+          <Chips label={t('reply_with', '回复内容')} options={{ ai: t('automation_reply_ai', 'AI 回复'), template: t('automation_reply_template', '话术库') }} value={[config.replyWith]} onChange={(v) => set({ replyWith: v[v.length - 1] || 'ai' })} />
           {config.replyWith === 'template' && (
-            <Chips label={t('template_match', '话术匹配')} options={{ ai: 'AI 挑最合适的', random: '随机' }} value={[config.templateMatch]} onChange={(v) => set({ templateMatch: v[v.length - 1] || 'ai' })} />
+            <Chips label={t('template_match', '话术匹配')} options={{ ai: t('automation_match_ai', 'AI 挑最合适的'), random: t('automation_match_random', '随机') }} value={[config.templateMatch]} onChange={(v) => set({ templateMatch: v[v.length - 1] || 'ai' })} />
           )}
           <Row label={t('extra_prompt', '给 AI 的额外要求（可选）')}>
-            <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder="例如：遇到价格问题引导私信，不要承诺折扣" />
+            <input value={config.extraPrompt || ''} maxLength={300} onChange={(e) => set({ extraPrompt: e.target.value })} className={field} placeholder={t('automation_extra_prompt_placeholder', '例如：遇到价格问题引导私信，不要承诺折扣')} />
           </Row>
         </>
       )}
       {type === 'LEAD_COLLECTOR' && (
         <>
-          <Chips label={t('sources', '线索来源')} options={{ COMMENT: '评论', DM: '私信', MENTION: '@提及' }} value={config.sources || []} onChange={(v) => set({ sources: v })} />
+          <Chips label={t('sources', '线索来源')} options={{ COMMENT: t('automation_kind_comment', '评论'), DM: t('automation_kind_dm', '私信'), MENTION: t('automation_kind_mention', '@提及') }} value={config.sources || []} onChange={(v) => set({ sources: v })} />
           <Row label={t('lead_prompt', '什么样的人算线索（必填，500 字内）')}>
             <textarea value={config.prompt || ''} maxLength={500} onChange={(e) => set({ prompt: e.target.value })} className="bg-newTableHeader rounded-[4px] p-[8px] min-h-[70px] text-[14px]" />
           </Row>
-          <Row label={t('min_score', '入库最低分')} hint={`${config.minScore ?? 80} 分`}>
+          <Row label={t('min_score', '入库最低分')} hint={t('automation_score_value', '{{n}} 分', { n: config.minScore ?? 80 })}>
             <input type="range" min={0} max={100} value={config.minScore ?? 80} onChange={(e) => set({ minScore: Number(e.target.value) })} />
           </Row>
         </>
@@ -299,10 +302,10 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
               ))}
             </select>
           </Row>
-          <Chips label={t('tone', '语气')} options={{ keep: '保持', casual: '更口语', professional: '更专业' }} value={[config.tone]} onChange={(v) => set({ tone: v[v.length - 1] || 'keep' })} />
-          <Chips label={t('length', '长短')} options={{ keep: '保持', shorter: '缩短', longer: '扩写' }} value={[config.length]} onChange={(v) => set({ length: v[v.length - 1] || 'keep' })} />
-          <Chips label={t('language', '语言')} options={{ keep: '保持', zh: '中文', en: '英文' }} value={[config.language]} onChange={(v) => set({ language: v[v.length - 1] || 'keep' })} />
-          <Chips label={t('publish', '发布方式')} options={{ draft: '存草稿', now: '立即发布' }} value={[config.publish]} onChange={(v) => set({ publish: v[v.length - 1] || 'draft' })} />
+          <Chips label={t('tone', '语气')} options={{ keep: t('automation_option_keep', '保持'), casual: t('automation_tone_casual', '更口语'), professional: t('automation_tone_professional', '更专业') }} value={[config.tone]} onChange={(v) => set({ tone: v[v.length - 1] || 'keep' })} />
+          <Chips label={t('length', '长短')} options={{ keep: t('automation_option_keep', '保持'), shorter: t('automation_length_shorter', '缩短'), longer: t('automation_length_longer', '扩写') }} value={[config.length]} onChange={(v) => set({ length: v[v.length - 1] || 'keep' })} />
+          <Chips label={t('language', '语言')} options={{ keep: t('automation_option_keep', '保持'), zh: t('automation_language_zh', '中文'), en: t('automation_language_en', '英文') }} value={[config.language]} onChange={(v) => set({ language: v[v.length - 1] || 'keep' })} />
+          <Chips label={t('publish', '发布方式')} options={{ draft: t('automation_publish_draft', '存草稿'), now: t('automation_publish_now', '立即发布') }} value={[config.publish]} onChange={(v) => set({ publish: v[v.length - 1] || 'draft' })} />
         </>
       )}
       {type === 'AUTO_POST' && (
@@ -313,8 +316,8 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
           <Row label={t('posts_per_day', '每个账号每天几条')}>
             <input type="number" min={1} max={10} value={config.postsPerDay ?? 1} onChange={(e) => set({ postsPerDay: Number(e.target.value) })} className={clsx(field, 'w-[100px]')} />
           </Row>
-          <Chips label={t('tone', '语气')} options={{ keep: '自然', casual: '更口语', professional: '更专业' }} value={[config.tone]} onChange={(v) => set({ tone: v[v.length - 1] || 'keep' })} />
-          <Chips label={t('publish', '发布方式')} options={{ draft: '存草稿', schedule: '定时发布' }} value={[config.publish]} onChange={(v) => set({ publish: v[v.length - 1] || 'draft' })} />
+          <Chips label={t('tone', '语气')} options={{ keep: t('automation_tone_natural', '自然'), casual: t('automation_tone_casual', '更口语'), professional: t('automation_tone_professional', '更专业') }} value={[config.tone]} onChange={(v) => set({ tone: v[v.length - 1] || 'keep' })} />
+          <Chips label={t('publish', '发布方式')} options={{ draft: t('automation_publish_draft', '存草稿'), schedule: t('automation_publish_schedule', '定时发布') }} value={[config.publish]} onChange={(v) => set({ publish: v[v.length - 1] || 'draft' })} />
         </>
       )}
 
@@ -335,7 +338,7 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
 
       <div className="flex flex-col gap-[6px]">
         <div className="flex gap-[8px]">
-          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? '输入一个主题试试' : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? '粘贴一段帖子正文试试' : type === 'PROSPECTING' ? '粘贴一条评论试试' : type === 'FOLLOW_BACK' ? '粘贴一个人的名字或简介试试' : '粘贴一条评论或私信试试'} className={clsx(field, 'flex-1 min-w-0')} />
+          <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder={type === 'AUTO_POST' ? t('automation_sample_topic', '输入一个主题试试') : type === 'REWRITE_SYNC' || type === 'POST_ACTIONS' ? t('automation_sample_post', '粘贴一段帖子正文试试') : type === 'PROSPECTING' ? t('automation_sample_comment', '粘贴一条评论试试') : type === 'FOLLOW_BACK' ? t('automation_sample_profile', '粘贴一个人的名字或简介试试') : t('automation_sample_message', '粘贴一条评论或私信试试')} className={clsx(field, 'flex-1 min-w-0')} />
           <Button secondary={true} loading={busy === 'test'} disabled={!sample.trim() && type !== 'AUTO_POST'} onClick={test}>
             {t('test', '测试')}
           </Button>

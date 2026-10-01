@@ -120,7 +120,14 @@ function LayoutContextInner(params: { children: ReactNode }) {
         } catch (e) {
           /** keep /billing **/
         }
-        if (await deleteDialog(body?.message, '去升级', '需要升级套餐', '稍后再说')) {
+        if (
+          await deleteDialog(
+            body?.message,
+            t('layout_go_upgrade', '去升级'),
+            t('layout_upgrade_needed', '需要升级套餐'),
+            t('layout_maybe_later', '稍后再说')
+          )
+        ) {
           window.open(target, '_blank');
           return false;
         }

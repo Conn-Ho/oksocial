@@ -131,7 +131,7 @@ export const FacebookPreview: FC<{
         <div className="w-[36px] h-[36px]">
           <img
             src={integration?.picture || '/no-picture.jpg'}
-            alt="头像"
+            alt={t('avatar_alt', '头像')}
             className="rounded-full relative z-[2] w-[36px] h-[36px]"
           />
         </div>
@@ -290,7 +290,7 @@ export const FacebookPreview: FC<{
                 <div className="h-[34px]">
                   <img
                     src={integration?.picture || '/no-picture.jpg'}
-                    alt="头像"
+                    alt={t('avatar_alt', '头像')}
                     className="rounded-full relative z-[2] h-[34px] w-[34px]"
                   />
                 </div>

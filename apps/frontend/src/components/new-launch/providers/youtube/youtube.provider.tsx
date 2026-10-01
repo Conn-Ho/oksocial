@@ -52,7 +52,7 @@ const YoutubeSettings: FC = () => {
       >
         {type.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`youtube_privacy_${item.value}`, item.label)}
           </option>
         ))}
       </Select>
@@ -64,7 +64,7 @@ const YoutubeSettings: FC = () => {
       >
         {madeForKids.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`youtube_made_for_kids_${item.value}`, item.label)}
           </option>
         ))}
       </Select>

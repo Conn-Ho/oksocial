@@ -95,8 +95,8 @@ export const ShareSection: FC<{ canManage: boolean; days: number }> = ({ canMana
             <li key={s.id} className="flex items-center flex-wrap md:flex-nowrap gap-x-[10px] gap-y-[4px] text-[13px] py-[8px] border-t border-newBorder first:border-t-0">
               <span className="truncate font-mono min-w-0 max-w-full">{s.url}</span>
               <span className="text-textItemBlur shrink-0 tabular-nums">
-                {t('last_n_days', '近 {{n}} 天', { n: s.days })} · {s.expiresAt ? `${dayjs(s.expiresAt).format('YYYY-MM-DD')} 到期` : '永久'}
-                {s.hasPassword ? ' · 有密码' : ''}
+                {t('last_n_days', '近 {{n}} 天', { n: s.days })} · {s.expiresAt ? t('share_expires_on', '{{date}} 到期', { date: dayjs(s.expiresAt).format('YYYY-MM-DD') }) : t('share_never_expires', '永久')}
+                {s.hasPassword ? ` · ${t('share_has_password', '有密码')}` : ''}
               </span>
               <button
                 type="button"

@@ -13,8 +13,8 @@ import {
   CreationPlatform,
   CreationResult,
   StoredImage,
-  TEMPLATE_LABEL,
-  TRANSLATE_TARGETS,
+  templateLabel,
+  translateTargetLabel,
   lengthFor,
   useCreationCall,
 } from '@gitroom/frontend/components/creation/creation.hooks';
@@ -184,11 +184,20 @@ const RemakeView: FC<Shared & { output: CreationOutput['remake']; platformId: st
   );
 };
 
-const scriptText = (s: CreationOutput['script']) =>
+const scriptText = (t: ReturnType<typeof useT>, s: CreationOutput['script']) =>
   [
-    s.title && `标题：${s.title}`,
-    s.hook && `开头钩子：${s.hook}`,
-    ...s.shots.map((shot, i) => `镜头 ${i + 1}（${shot.seconds} 秒）\n画面：${shot.visual}\n口播：${shot.voiceover}\n字幕：${shot.caption}`),
+    s.title && t('creation_script_title_line', '标题：{{title}}', { title: s.title, interpolation: { escapeValue: false } }),
+    s.hook && t('creation_script_hook_line', '开头钩子：{{hook}}', { hook: s.hook, interpolation: { escapeValue: false } }),
+    ...s.shots.map((shot, i) =>
+      t('creation_script_shot', '镜头 {{n}}（{{s}} 秒）\n画面：{{visual}}\n口播：{{voiceover}}\n字幕：{{caption}}', {
+        n: i + 1,
+        s: shot.seconds,
+        visual: shot.visual,
+        voiceover: shot.voiceover,
+        caption: shot.caption,
+        interpolation: { escapeValue: false },
+      })
+    ),
     s.tags.length && s.tags.map((x) => `#${x}`).join(' '),
   ]
     .filter(Boolean)
@@ -242,7 +251,7 @@ const ScriptView: FC<Shared & { output: CreationOutput['script']; platformId?: s
       </div>
       {!!s.tags.length && <p className="text-[13px] text-textColor/70">{s.tags.map((x) => `#${x}`).join(' ')}</p>}
       <Actions>
-        <Button secondary={true} onClick={() => copyText(scriptText(s))}>{t('creation_copy_script', '复制脚本')}</Button>
+        <Button secondary={true} onClick={() => copyText(scriptText(t, s))}>{t('creation_copy_script', '复制脚本')}</Button>
         {props.canWrite && caption && (
           <Button onClick={() => saveDrafts([{ key: 'script', label: platform ? t('creation_caption_for', '{{name}}的视频描述', { name: platform.name }) : t('creation_caption', '视频描述'), platform: props.platformId, texts: [caption] }])}>
             {t('creation_save_caption', '标题和标签存为草稿')}
@@ -316,7 +325,7 @@ export const CreationResults: FC<Shared & { result: CreationResult }> = ({ resul
             <figure className="flex flex-col gap-[6px]">
               <img src={result.output.image.path} alt="" className="w-full rounded-[10px] border border-newTableBorder" />
               <figcaption className="text-[12px] text-textColor/50">
-                {TRANSLATE_TARGETS.find((x) => x.value === result.output.target)?.label || result.output.target}
+                {translateTargetLabel(t, result.output.target)}
               </figcaption>
             </figure>
           </div>
@@ -324,6 +333,6 @@ export const CreationResults: FC<Shared & { result: CreationResult }> = ({ resul
         </div>
       );
     default:
-      return <p className="text-[13px] text-textColor/60">{TEMPLATE_LABEL[(result as CreationResult).template]}</p>;
+      return <p className="text-[13px] text-textColor/60">{templateLabel(t, (result as CreationResult).template)}</p>;
   }
 };

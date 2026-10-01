@@ -39,21 +39,26 @@ const EXPORT_ROWS = 5000;
 const cell = (row: PostRow, key: PostSortKey) =>
   key === 'publishedAt' ? dateTime(row.publishedAt) || '—' : key === 'engagementRate' ? percent(row.engagementRate) : fmt(row[key]);
 
-const PostTitle: FC<{ row: PostRow }> = ({ row }) => (
-  <div className="flex flex-col gap-[4px] min-w-0">
-    {row.url ? (
-      <a href={row.url} target="_blank" rel="noopener noreferrer" className="truncate hover:underline">
-        {row.title || '（无标题）'}
-      </a>
-    ) : (
-      <span className="truncate">{row.title || '（无标题）'}</span>
-    )}
-    <span className="flex items-center gap-[8px] text-[12px] text-textItemBlur min-w-0">
-      <ChannelCell name={row.channelName} picture={row.channelPicture} providerIdentifier={row.providerIdentifier} />
-      {row.viaOksocial && <span className="shrink-0 rounded-full bg-newTableHeader px-[8px] py-[1px] text-[11px]">oksocial 发布</span>}
-    </span>
-  </div>
-);
+const PostTitle: FC<{ row: PostRow }> = ({ row }) => {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[4px] min-w-0">
+      {row.url ? (
+        <a href={row.url} target="_blank" rel="noopener noreferrer" className="truncate hover:underline">
+          {row.title || t('untitled_post', '（无标题）')}
+        </a>
+      ) : (
+        <span className="truncate">{row.title || t('untitled_post', '（无标题）')}</span>
+      )}
+      <span className="flex items-center gap-[8px] text-[12px] text-textItemBlur min-w-0">
+        <ChannelCell name={row.channelName} picture={row.channelPicture} providerIdentifier={row.providerIdentifier} />
+        {row.viaOksocial && (
+          <span className="shrink-0 rounded-full bg-newTableHeader px-[8px] py-[1px] text-[11px]">{t('report_via_oksocial', 'oksocial 发布')}</span>
+        )}
+      </span>
+    </div>
+  );
+};
 
 /** 帖文报告: every post of our accounts with its latest numbers, filtered, sorted by any column, exported. */
 export const PostReportTab: FC<{ platformName: (identifier: string) => string }> = ({ platformName }) => {
@@ -106,8 +111,8 @@ export const PostReportTab: FC<{ platformName: (identifier: string) => string }>
       }
       const all: PostReport = await res.json();
       await downloadSheets(
-        `oksocial-帖文报告-${all.fromDate}-${all.toDate}.xlsx`,
-        postReportSheets(all.rows, { platformName, date: (iso) => (iso ? dayjs(iso).format('YYYY-MM-DD HH:mm') : '') })
+        t('report_posts_file', 'oksocial-帖文报告-{{from}}-{{to}}.xlsx', { from: all.fromDate, to: all.toDate }),
+        postReportSheets(all.rows, { platformName, date: (iso) => (iso ? dayjs(iso).format('YYYY-MM-DD HH:mm') : '') }, t)
       );
     } catch {
       toaster.show(t('export_failed', '导出失败，请重试'), 'warning');

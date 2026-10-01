@@ -41,6 +41,7 @@ const SECTIONS: Array<{ key: 'metrics' | 'actions' | 'highlights' | 'risks' | 'n
 ];
 
 const WeeklyView: FC<{ report: WeeklyReport }> = ({ report }) => {
+  const t = useT();
   // stored JSON: an older report may lack a field
   const { data, content } = report;
   const ops = data.operations || ({} as Partial<WeeklyReport['data']['operations']>);
@@ -48,10 +49,10 @@ const WeeklyView: FC<{ report: WeeklyReport }> = ({ report }) => {
     <article className="flex flex-col gap-[18px]" aria-labelledby={`weekly-${report.id}`}>
       <header className="flex flex-col gap-[4px]">
         <h3 id={`weekly-${report.id}`} className="text-[18px] font-[600]">
-          团队社媒周报告 · {weekOf(data.week.start)}
+          {t('weekly_report_title', '团队社媒周报告 · {{week}}', { week: weekOf(data.week.start) })}
         </h3>
         <p className="text-[12px] text-textItemBlur tabular-nums">
-          周一至周日 · AI 生成于 {dayjs(report.updatedAt).format('YYYY-MM-DD HH:mm')}
+          {t('weekly_generated', '周一至周日 · AI 生成于 {{time}}', { time: dayjs(report.updatedAt).format('YYYY-MM-DD HH:mm') })}
         </p>
       </header>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px]">
@@ -59,27 +60,27 @@ const WeeklyView: FC<{ report: WeeklyReport }> = ({ report }) => {
           const k = data.kpis?.[tile.key] ?? NO_KPI;
           return (
             <div key={tile.key} className="rounded-[10px] border border-newBorder p-[14px] flex flex-col gap-[6px]">
-              <span className="text-[13px] text-textItemBlur">{tile.label}</span>
+              <span className="text-[13px] text-textItemBlur">{t(`weekly_tile_${tile.key}`, tile.label)}</span>
               <span className="text-[22px] font-[600] leading-none tabular-nums">
                 {tile.key === 'engagementRate' ? percent(k.value) : tile.key === 'netFollowers' ? signed(k.value) : fmt(k.value)}
               </span>
-              <Change value={k.change} unit={tile.key === 'engagementRate' ? ' 个百分点' : '%'} className="text-[12px]" />
+              <Change value={k.change} unit={tile.key === 'engagementRate' ? t('report_unit_points', ' 个百分点') : '%'} className="text-[12px]" />
             </div>
           );
         })}
       </div>
       <p className="text-[15px] leading-[1.7]">{content?.summary}</p>
       <p className="flex flex-wrap gap-x-[14px] gap-y-[4px] text-[13px] text-textItemBlur tabular-nums">
-        <span>发布 {ops.publishedTotal ?? 0} 篇</span>
-        <span>回复 {ops.repliesTotal ?? 0} 条</span>
-        <span>收到互动 {ops.receivedTotal ?? 0} 条</span>
-        <span>自动化执行 {ops.automationsTotal ?? 0} 次</span>
-        <span>竞品新帖 {ops.competitorPosts ?? 0} 条</span>
+        <span>{t('weekly_ops_published', '发布 {{n}} 篇', { n: ops.publishedTotal ?? 0 })}</span>
+        <span>{t('weekly_ops_replies', '回复 {{n}} 条', { n: ops.repliesTotal ?? 0 })}</span>
+        <span>{t('weekly_ops_received', '收到互动 {{n}} 条', { n: ops.receivedTotal ?? 0 })}</span>
+        <span>{t('weekly_ops_automations', '自动化执行 {{n}} 次', { n: ops.automationsTotal ?? 0 })}</span>
+        <span>{t('weekly_ops_competitor_posts', '竞品新帖 {{n}} 条', { n: ops.competitorPosts ?? 0 })}</span>
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-[16px]">
         {SECTIONS.filter((s) => content?.[s.key]?.length).map((s) => (
           <section key={s.key} className={clsx('flex flex-col gap-[6px]', s.key === 'nextSteps' && 'md:col-span-2')}>
-            <h4 className={clsx('text-[14px] font-[600]', s.tone)}>{s.label}</h4>
+            <h4 className={clsx('text-[14px] font-[600]', s.tone)}>{t(`weekly_section_${s.key}`, s.label)}</h4>
             <ul className="flex flex-col gap-[6px] text-[14px] leading-[1.6] list-disc ps-[18px] marker:text-textItemBlur">
               {content[s.key].map((item, i) => (
                 <li key={i}>{item}</li>

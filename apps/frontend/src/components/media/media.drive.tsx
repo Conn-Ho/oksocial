@@ -214,13 +214,13 @@ const TrashList: FC<{ onChanged: () => void }> = ({ onChanged }) => {
                   {item.kind === 'image' || item.kind === 'gif' ? (
                     <img src={mediaDirectory.set(item.thumbnail || item.path)} alt="" className="w-full h-full object-cover" loading="lazy" />
                   ) : (
-                    <span>{item.kind ? MEDIA_KIND_LABELS[item.kind] : t('media_file', '文件')}</span>
+                    <span>{item.kind ? t(`media_kind_${item.kind}`, MEDIA_KIND_LABELS[item.kind]) : t('media_file', '文件')}</span>
                   )}
                 </div>
                 <span className="truncate min-w-0">{item.originalName || item.name}</span>
               </div>
               <span className="col-start-2 md:col-start-auto text-[12px] md:text-[13px] text-textItemBlur flex flex-wrap gap-x-[10px] md:contents">
-                <span>{item.kind ? MEDIA_KIND_LABELS[item.kind] : '—'}</span>
+                <span>{item.kind ? t(`media_kind_${item.kind}`, MEDIA_KIND_LABELS[item.kind]) : '—'}</span>
                 <span className="tabular-nums">{item.fileSize ? formatBytes(item.fileSize) : '—'}</span>
                 <span className="tabular-nums">{dayjs(item.trashedAt).format('YYYY-MM-DD HH:mm')}</span>
                 <span className={clsx('tabular-nums', item.daysLeft <= 3 && 'text-red-500')}>

@@ -100,16 +100,17 @@ export const BrowserProxiesComponent: FC = () => {
   );
 };
 
-const proxySchema = object().shape({
-  name: string().required().max(60),
-  url: string()
-    .required()
-    .matches(
-      /^(https?|socks5h?):\/\/([^\s:@/]+(:[^\s@/]*)?@)?[^\s:@/]+:\d{2,5}\/?$/,
-      'http://user:pass@host:port 或 socks5://host:port'
-    ),
-  region: string().max(40),
-});
+const proxySchema = (t: ReturnType<typeof useT>) =>
+  object().shape({
+    name: string().required().max(60),
+    url: string()
+      .required()
+      .matches(
+        /^(https?|socks5h?):\/\/([^\s:@/]+(:[^\s@/]*)?@)?[^\s:@/]+:\d{2,5}\/?$/,
+        t('proxy_url_format', 'http://user:pass@host:port 或 socks5://host:port')
+      ),
+    region: string().max(40),
+  });
 
 const AddBrowserProxy: FC<{ reload: () => void }> = ({ reload }) => {
   const fetch = useFetch();
@@ -117,7 +118,7 @@ const AddBrowserProxy: FC<{ reload: () => void }> = ({ reload }) => {
   const toaster = useToaster();
   const t = useT();
   const form = useForm({
-    resolver: yupResolver(proxySchema),
+    resolver: yupResolver(proxySchema(t)),
     values: { name: '', url: '', region: '' },
   });
 
@@ -138,7 +139,7 @@ const AddBrowserProxy: FC<{ reload: () => void }> = ({ reload }) => {
   return (
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(submit)} className="flex flex-col gap-[12px]">
-        <Input label={t('name', 'Name')} name="name" placeholder="台湾住宅 IP 1" />
+        <Input label={t('name', 'Name')} name="name" placeholder={t('proxy_name_placeholder', '台湾住宅 IP 1')} />
         <Input
           label={t('proxy_address', '地址')}
           name="url"

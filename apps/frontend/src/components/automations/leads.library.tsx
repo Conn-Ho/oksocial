@@ -150,7 +150,7 @@ export const LeadsLibrary: FC = () => {
 
   const sourceLabel = (source: string) => {
     const group = leadSourceGroup(source);
-    return group ? LEAD_SOURCE_GROUPS[group].label : source;
+    return group ? t(`leads_source_${group}`, LEAD_SOURCE_GROUPS[group].label) : source;
   };
 
   return (
@@ -181,7 +181,7 @@ export const LeadsLibrary: FC = () => {
           onChange={(source) => changeFilter({ source })}
           options={[
             { value: undefined, label: t('all', '全部') },
-            ...LEAD_SOURCE_KEYS.map((key) => ({ value: key, label: LEAD_SOURCE_GROUPS[key].label })),
+            ...LEAD_SOURCE_KEYS.map((key) => ({ value: key, label: t(`leads_source_${key}`, LEAD_SOURCE_GROUPS[key].label) })),
           ]}
         />
       </section>

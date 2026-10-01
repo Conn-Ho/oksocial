@@ -1,9 +1,13 @@
 import { Metadata } from 'next';
+import { getT } from '@gitroom/react/translation/get.translation.service.backend';
 import { ReactNode } from 'react';
 
-export const metadata: Metadata = {
-  title: '授权应用',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return {
+    title: t('page_title_oauth_authorize', '授权应用'),
+  };
+}
 
 export default async function OAuthLayout({
   children,

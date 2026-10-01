@@ -63,19 +63,20 @@ export const getMcpConfig = (
   client: AnyMcpClient,
   auth: McpAuth,
   mcpBase: string,
-  apiKey: string
+  apiKey: string,
+  t: ReturnType<typeof useT>
 ): { config: string; hint: string } => {
   if (isChatOnlyMcpClient(client)) {
     return {
       config: chatOnlyMcpClients[client],
-      hint: '把这段粘贴到对话里，智能体会向你要 API Key。',
+      hint: t('mcp_hint_chat_only', '把这段粘贴到对话里，智能体会向你要 API Key。'),
     };
   }
   if (isRemoteMcpClient(client)) {
     return {
       config:
         auth === 'oauth' ? getMcpOauthUrl(mcpBase) : `${mcpBase}/mcp/${apiKey}`,
-      hint: remoteMcpClients[client],
+      hint: t(`mcp_hint_remote_${client.toLowerCase()}`, remoteMcpClients[client]),
     };
   }
 
@@ -90,61 +91,61 @@ export const getMcpConfig = (
       case 'Claude Code':
         return {
           config: `claude mcp add oksocial --transport http "${oauthUrl}"`,
-          hint: '在终端里运行这条命令。',
+          hint: t('mcp_hint_run_command', '在终端里运行这条命令。'),
         };
       case 'Cursor':
         return {
           config: json({ mcpServers: { oksocial: { url: oauthUrl } } }),
-          hint: '加到项目根目录的 .cursor/mcp.json。',
+          hint: t('mcp_hint_cursor', '加到项目根目录的 .cursor/mcp.json。'),
         };
       case 'VS Code / Copilot':
         return {
           config: json({
             servers: { oksocial: { type: 'http', url: oauthUrl } },
           }),
-          hint: '加到项目根目录的 .vscode/mcp.json。',
+          hint: t('mcp_hint_vscode', '加到项目根目录的 .vscode/mcp.json。'),
         };
       case 'Windsurf':
         return {
           config: json({
             mcpServers: { oksocial: { serverUrl: oauthUrl } },
           }),
-          hint: '加到 ~/.codeium/windsurf/mcp_config.json。',
+          hint: t('mcp_hint_windsurf', '加到 ~/.codeium/windsurf/mcp_config.json。'),
         };
       case 'Amp':
         return {
           config: `amp mcp add oksocial ${oauthUrl}`,
-          hint: '在终端里运行这条命令。',
+          hint: t('mcp_hint_run_command', '在终端里运行这条命令。'),
         };
       case 'Codex':
         return {
           config: `# ~/.codex/config.toml\n\n[mcp_servers.oksocial]\nurl = "${oauthUrl}"`,
-          hint: '加到 ~/.codex/config.toml，然后运行：codex mcp login oksocial',
+          hint: t('mcp_hint_codex_oauth', '加到 ~/.codex/config.toml，然后运行：codex mcp login oksocial'),
         };
       case 'Gemini CLI':
         return {
           config: json({ mcpServers: { oksocial: { url: oauthUrl } } }),
-          hint: '加到 ~/.gemini/settings.json。',
+          hint: t('mcp_hint_gemini', '加到 ~/.gemini/settings.json。'),
         };
       case 'Warp':
         return {
           config: json({ oksocial: { url: oauthUrl } }),
-          hint: '打开 Settings > MCP Servers > + Add，粘贴这段配置。',
+          hint: t('mcp_hint_warp', '打开 Settings > MCP Servers > + Add，粘贴这段配置。'),
         };
       case 'Hermes':
         return {
           config: `# ~/.hermes/config.yaml\n\nmcp_servers:\n  oksocial:\n    url: "${oauthUrl}"\n    auth: oauth`,
-          hint: '加到 ~/.hermes/config.yaml，然后在对话里运行 /reload-mcp。',
+          hint: t('mcp_hint_hermes', '加到 ~/.hermes/config.yaml，然后在对话里运行 /reload-mcp。'),
         };
       case 'OpenClaw':
         return {
           config: `openclaw mcp add oksocial --url ${oauthUrl} --transport streamable-http --auth oauth && openclaw mcp login oksocial`,
-          hint: '在终端里运行这条命令。',
+          hint: t('mcp_hint_run_command', '在终端里运行这条命令。'),
         };
       case 'NanoClaw':
         return {
           config: `ncl groups config add-mcp-server --id <group-id> --name oksocial --url ${oauthUrl}`,
-          hint: '在终端里运行，把 <group-id> 换成要接入 oksocial 的智能体分组。',
+          hint: t('mcp_hint_nanoclaw', '在终端里运行，把 <group-id> 换成要接入 oksocial 的智能体分组。'),
         };
     }
   }
@@ -153,7 +154,7 @@ export const getMcpConfig = (
     case 'Claude Code':
       return {
         config: `claude mcp add --transport http oksocial ${urlBase} --header "Authorization: ${bearer}"`,
-        hint: '在终端里运行这条命令。',
+        hint: t('mcp_hint_run_command', '在终端里运行这条命令。'),
       };
     case 'Cursor':
       return {
@@ -162,7 +163,7 @@ export const getMcpConfig = (
             oksocial: { url: urlBase, headers: { Authorization: bearer } },
           },
         }),
-        hint: '加到项目根目录的 .cursor/mcp.json。',
+        hint: t('mcp_hint_cursor', '加到项目根目录的 .cursor/mcp.json。'),
       };
     case 'VS Code / Copilot':
       return {
@@ -175,7 +176,7 @@ export const getMcpConfig = (
             },
           },
         }),
-        hint: '加到项目根目录的 .vscode/mcp.json。',
+        hint: t('mcp_hint_vscode', '加到项目根目录的 .vscode/mcp.json。'),
       };
     case 'Windsurf':
       return {
@@ -187,7 +188,7 @@ export const getMcpConfig = (
             },
           },
         }),
-        hint: '加到 ~/.codeium/windsurf/mcp_config.json。',
+        hint: t('mcp_hint_windsurf', '加到 ~/.codeium/windsurf/mcp_config.json。'),
       };
     case 'Amp':
       return {
@@ -196,12 +197,12 @@ export const getMcpConfig = (
             oksocial: { url: urlBase, headers: { Authorization: bearer } },
           },
         }),
-        hint: '加到 Amp 的 settings.json。',
+        hint: t('mcp_hint_amp', '加到 Amp 的 settings.json。'),
       };
     case 'Codex':
       return {
         config: `# ~/.codex/config.toml\n\n[mcp_servers.oksocial]\nurl = "${urlBase}"\nhttp_headers = { "Authorization" = "${bearer}" }`,
-        hint: '加到 ~/.codex/config.toml。',
+        hint: t('mcp_hint_codex', '加到 ~/.codex/config.toml。'),
       };
     case 'Gemini CLI':
       return {
@@ -210,19 +211,19 @@ export const getMcpConfig = (
             oksocial: { url: urlBase, headers: { Authorization: bearer } },
           },
         }),
-        hint: '加到 ~/.gemini/settings.json。',
+        hint: t('mcp_hint_gemini', '加到 ~/.gemini/settings.json。'),
       };
     case 'Warp':
       return {
         config: json({
           oksocial: { url: urlBase, headers: { Authorization: bearer } },
         }),
-        hint: '打开 Settings > MCP Servers > + Add，粘贴这段配置。',
+        hint: t('mcp_hint_warp', '打开 Settings > MCP Servers > + Add，粘贴这段配置。'),
       };
     case 'Hermes':
       return {
         config: `# ~/.hermes/config.yaml\n\nmcp_servers:\n  oksocial:\n    url: "${urlBase}"\n    headers:\n      Authorization: "${bearer}"`,
-        hint: '加到 ~/.hermes/config.yaml，然后在对话里运行 /reload-mcp。',
+        hint: t('mcp_hint_hermes', '加到 ~/.hermes/config.yaml，然后在对话里运行 /reload-mcp。'),
       };
     case 'OpenClaw':
       return {
@@ -237,13 +238,13 @@ export const getMcpConfig = (
             },
           },
         }),
-        hint: '加到 ~/.openclaw/openclaw.json。',
+        hint: t('mcp_hint_openclaw', '加到 ~/.openclaw/openclaw.json。'),
       };
     case 'NanoClaw':
       // No headers flag, the key travels inside the URL like remote clients
       return {
         config: `ncl groups config add-mcp-server --id <group-id> --name oksocial --url ${mcpBase}/mcp/${apiKey}`,
-        hint: '在终端里运行，把 <group-id> 换成要接入 oksocial 的智能体分组。',
+        hint: t('mcp_hint_nanoclaw', '在终端里运行，把 <group-id> 换成要接入 oksocial 的智能体分组。'),
       };
   }
 };
@@ -300,7 +301,8 @@ const McpSection = ({
     activeClient,
     auth,
     mcpBase,
-    user.publicApi
+    user.publicApi,
+    t
   );
 
   const baseUrl = auth === 'oauth' ? getMcpOauthUrl(mcpBase) : `${mcpBase}/mcp`;

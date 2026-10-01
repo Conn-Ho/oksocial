@@ -9,8 +9,8 @@ import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
 import {
   CreationResult,
-  TEMPLATE_LABEL,
   TEMPLATES,
+  templateLabel,
   useBrands,
   useCreationPlatforms,
 } from '@gitroom/frontend/components/creation/creation.hooks';
@@ -89,7 +89,7 @@ export const CreationComponent: FC = () => {
         <section aria-label={t('creation_result', '结果')} className="min-w-0 flex flex-col gap-[12px]">
           {result ? (
             <>
-              <h3 className="text-[13px] text-textColor/50">{t('creation_result_of', '{{name}} · 结果可以直接修改', { name: TEMPLATE_LABEL[result.template] })}</h3>
+              <h3 className="text-[13px] text-textColor/50">{t('creation_result_of', '{{name}} · 结果可以直接修改', { name: templateLabel(t, result.template), interpolation: { escapeValue: false } })}</h3>
               <CreationResults key={result.generationId} result={result} platforms={platforms || []} images={images} canWrite={canWrite} />
             </>
           ) : (

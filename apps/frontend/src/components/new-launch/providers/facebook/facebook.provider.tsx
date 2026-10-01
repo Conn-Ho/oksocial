@@ -18,6 +18,8 @@ import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.v
 import { useIntegration } from '@gitroom/frontend/components/launches/helpers/use.integration';
 import { FacebookPreview } from '@gitroom/frontend/components/new-launch/providers/facebook/facebook.preview';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import i18next from '@gitroom/react/translation/i18next';
+import { fallbackLng } from '@gitroom/react/translation/i18n.config';
 import { useEffect } from 'react';
 
 const postType = [
@@ -42,6 +44,8 @@ export const FacebookSettings = () => {
   const hasMedia = !!value?.some((p) => !!p.image?.length);
   const presetAvailable = postCurrentType !== 'story' && !hasMedia;
   const selectedBg = getPresetBackground(preset);
+  // the preset names are Facebook's English ones; only Chinese gets the translated list
+  const zhPresetNames = (i18next.resolvedLanguage || fallbackLng).startsWith('zh');
 
   // Clear any selected background when it can no longer apply (story / media),
   // so a stray combination never reaches the provider.
@@ -65,7 +69,7 @@ export const FacebookSettings = () => {
           </option>
           {postType.map((item) => (
             <option key={item.value} value={item.value}>
-              {item.label}
+              {t(`facebook_post_type_${item.value}`, item.label)}
             </option>
           ))}
         </Select>
@@ -112,7 +116,7 @@ export const FacebookSettings = () => {
                     bg ? { background: bg.background, color: bg.text } : undefined
                   }
                 >
-                  {presetNameZh(item.name)}
+                  {zhPresetNames ? presetNameZh(item.name) : item.name}
                 </option>
               );
             })}

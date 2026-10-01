@@ -45,7 +45,7 @@ export const TumblrContinue = withContinueProvider<
   getSelectionValue: (item) => ({ id: item.id }),
   transformSaveData: (selection) => selection,
   isSelected: (item, selection) => selection?.id === item.id,
-  renderItem: (item) => (
+  renderItem: (item, _isSelected, t) => (
     <>
       <div className="flex justify-center">
         {item.picture?.data?.url ? (
@@ -66,10 +66,16 @@ export const TumblrContinue = withContinueProvider<
       )}
       {!!item.followers && (
         <div className="text-xs text-gray-400">
-          {item.followers.toLocaleString()} 位关注者
+          {t('tumblr_followers', '{{n}} 位关注者', {
+            n: item.followers.toLocaleString(),
+          })}
         </div>
       )}
-      {item.primary && <div className="text-xs text-gray-400">主博客</div>}
+      {item.primary && (
+        <div className="text-xs text-gray-400">
+          {t('tumblr_primary_blog', '主博客')}
+        </div>
+      )}
     </>
   ),
 });

@@ -66,7 +66,7 @@ export const SaveDraftModal: FC<{
         toaster.show(
           t('creation_drafts_saved', '已存为 {{n}} 条草稿（{{time}}），在日历里打开检查后再发布', {
             n: saved,
-            time: dayjs(res.date).format('M月D日 HH:mm'),
+            time: dayjs(res.date).format(t('date_fmt_md_hm', 'M月D日 HH:mm')),
           }),
           failed.length ? 'warning' : 'success'
         );

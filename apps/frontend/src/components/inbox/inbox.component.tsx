@@ -18,6 +18,8 @@ import {
   KIND_TABS,
   SENTIMENT_LABELS,
   inboxQuery,
+  intentLabel,
+  sentimentLabel,
   useInboxCounts,
   useInboxList,
   useInboxNotices,
@@ -211,9 +213,9 @@ export const InboxComponent: FC = () => {
           onChange={(e) => update({ sentiment: e.target.value || undefined })}
         >
           <option value="">{t('all_sentiments', '全部情绪')}</option>
-          {Object.entries(SENTIMENT_LABELS).map(([v, l]) => (
+          {Object.keys(SENTIMENT_LABELS).map((v) => (
             <option key={v} value={v}>
-              {l}
+              {sentimentLabel(t, v)}
             </option>
           ))}
         </select>
@@ -224,9 +226,9 @@ export const InboxComponent: FC = () => {
           onChange={(e) => update({ intent: e.target.value || undefined })}
         >
           <option value="">{t('all_intents', '全部意向')}</option>
-          {Object.entries(INTENT_LABELS).map(([v, l]) => (
+          {Object.keys(INTENT_LABELS).map((v) => (
             <option key={v} value={v}>
-              {l}
+              {intentLabel(t, v)}
             </option>
           ))}
         </select>

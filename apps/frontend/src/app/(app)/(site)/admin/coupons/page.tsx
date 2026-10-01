@@ -1,11 +1,15 @@
 export const dynamic = 'force-dynamic';
 import { Metadata } from 'next';
+import { getT } from '@gitroom/react/translation/get.translation.service.backend';
 import { AdminCouponsComponent } from '@gitroom/frontend/components/admin/admin-coupons.component';
 
-export const metadata: Metadata = {
-  title: 'oksocial 兑换券管理',
-  description: '',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return {
+    title: t('page_title_coupons', 'oksocial 兑换券管理'),
+    description: '',
+  };
+}
 
 export default async function Page() {
   return (

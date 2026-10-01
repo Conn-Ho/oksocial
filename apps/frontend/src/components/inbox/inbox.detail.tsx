@@ -9,9 +9,9 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { Button } from '@gitroom/react/form/button';
 import {
-  INTENT_LABELS,
   InboxItem,
-  SENTIMENT_LABELS,
+  intentLabel,
+  sentimentLabel,
   useInboxCapabilities,
   useReplyTemplates,
 } from '@gitroom/frontend/components/inbox/inbox.hooks';
@@ -31,20 +31,23 @@ export const Tag: FC<{ tone: 'good' | 'bad' | 'plain'; children: React.ReactNode
   </span>
 );
 
-export const ItemTags: FC<{ item: InboxItem }> = ({ item }) => (
-  <>
-    {item.sentiment && (
-      <Tag tone={item.sentiment === 'positive' ? 'good' : item.sentiment === 'negative' ? 'bad' : 'plain'}>
-        {SENTIMENT_LABELS[item.sentiment] ?? item.sentiment}
-      </Tag>
-    )}
-    {item.intent && item.intent !== 'other' && (
-      <Tag tone={item.intent === 'lead' ? 'good' : item.intent === 'complaint' ? 'bad' : 'plain'}>
-        {INTENT_LABELS[item.intent] ?? item.intent}
-      </Tag>
-    )}
-  </>
-);
+export const ItemTags: FC<{ item: InboxItem }> = ({ item }) => {
+  const t = useT();
+  return (
+    <>
+      {item.sentiment && (
+        <Tag tone={item.sentiment === 'positive' ? 'good' : item.sentiment === 'negative' ? 'bad' : 'plain'}>
+          {sentimentLabel(t, item.sentiment)}
+        </Tag>
+      )}
+      {item.intent && item.intent !== 'other' && (
+        <Tag tone={item.intent === 'lead' ? 'good' : item.intent === 'complaint' ? 'bad' : 'plain'}>
+          {intentLabel(t, item.intent)}
+        </Tag>
+      )}
+    </>
+  );
+};
 
 /** One inbox item with its reply box. */
 export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ item, onChanged }) => {
@@ -137,7 +140,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
           className="w-[20px] h-[20px] rounded-full"
         />
         <span className="text-textColor/70 text-[13px]">{item.integration.name}</span>
-        <span className="text-textColor/50 text-[13px]">· {KIND_TEXT[item.kind]}</span>
+        <span className="text-textColor/50 text-[13px]">· {t(`inbox_kind_${item.kind.toLowerCase()}`, KIND_TEXT[item.kind])}</span>
         <span className="ms-auto text-textColor/50 text-[12px]">
           {platformTimeLabel(item.platformTime) || dayjs(item.createdAt).format('MM-DD HH:mm')}
         </span>
@@ -193,7 +196,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
             {t(
               'inbox_cannot_reply',
               '这个平台的{{kind}}暂时不能在 oksocial 里回复，请到平台内回复后标记为已解决。',
-              { kind: KIND_TEXT[item.kind] }
+              { kind: t(`inbox_kind_${item.kind.toLowerCase()}`, KIND_TEXT[item.kind]), interpolation: { escapeValue: false } }
             )}
           </p>
         )}

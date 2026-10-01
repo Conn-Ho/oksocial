@@ -13,6 +13,7 @@ import clsx from 'clsx';
 import dynamic from 'next/dynamic';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { CheckPayment } from '@gitroom/frontend/components/layout/check.payment';
@@ -48,6 +49,7 @@ import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
 
 export const LayoutComponent = ({ children }: { children: ReactNode }) => {
   const fetch = useFetch();
+  const t = useT();
 
   const { backendUrl, billingEnabled, isGeneral } = useVariables();
 
@@ -116,7 +118,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         className="sticky top-[8px] flex flex-col h-[calc(100vh-16px)] gap-[14px] pt-[2px] pb-[6px]"
                       >
                         <Brand />
-                        <nav aria-label="主导航" className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+                        <nav aria-label={t('layout_main_nav', '主导航')} className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
                           <TopMenu variant="row" />
                         </nav>
                         <SetupChecklist variant="rail" />

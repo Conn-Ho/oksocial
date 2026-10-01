@@ -78,7 +78,7 @@ export const AddMember = () => {
             <option value="">{t('select_role', 'Select Role')}</option>
             {roles.map((role) => (
               <option key={role.value} value={role.value}>
-                {role.name}
+                {t(`role_label_${role.value.toLowerCase()}`, role.name)}
               </option>
             ))}
           </Select>
@@ -219,12 +219,12 @@ export const TeamsComponent = () => {
                   >
                     {roles.map((r) => (
                       <option key={r.value} value={r.value}>
-                        {r.name}
+                        {t(`role_label_${r.value.toLowerCase()}`, r.name)}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  ROLE_LABELS[p.role] ?? p.role
+                  ROLE_LABELS[p.role] ? t(`role_label_${p.role.toLowerCase()}`, ROLE_LABELS[p.role]) : p.role
                 )}
               </div>
               {+myLevel > +getLevel(p.role) ? (

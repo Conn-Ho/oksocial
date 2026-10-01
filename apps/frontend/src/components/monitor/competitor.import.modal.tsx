@@ -78,7 +78,7 @@ export const CompetitorImportModal: FC<{
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={'https://x.com/someone\nhttps://www.xiaohongshu.com/user/profile/5f1e…\n微博,1234567890'}
+          placeholder={t('competitor_import_placeholder', 'https://x.com/someone\nhttps://www.xiaohongshu.com/user/profile/5f1e…\n微博,1234567890')}
           className="bg-newTableHeader rounded-[6px] p-[10px] min-h-[140px] text-[14px] outline-none font-mono"
           autoFocus={true}
         />
@@ -126,7 +126,7 @@ export const CompetitorImportModal: FC<{
           <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} className={fieldClass}>
             {INTERVALS.map((i) => (
               <option key={i.minutes} value={i.minutes}>
-                {i.label}
+                {t(`monitor_interval_${i.minutes}`, i.label)}
               </option>
             ))}
           </select>

@@ -63,7 +63,7 @@ const TwitchSettings: FC = () => {
       >
         {messageTypes.map((item) => (
           <option key={item.value} value={item.value}>
-            {item.label}
+            {t(`twitch_message_type_${item.value}`, item.label)}
           </option>
         ))}
       </Select>
@@ -76,7 +76,7 @@ const TwitchSettings: FC = () => {
         >
           {announcementColors.map((c) => (
             <option key={c.value} value={c.value}>
-              {c.label}
+              {t(`twitch_color_${c.value}`, c.label)}
             </option>
           ))}
         </Select>

@@ -4,6 +4,7 @@ import React, { FC, ReactNode, useCallback, useMemo } from 'react';
 import clsx from 'clsx';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 // The small pieces every 报告 tab is built from: cards, soft pill tabs, change marks, account cells.
 
@@ -74,8 +75,9 @@ export const ScrollRegion: FC<{ label: string; children: ReactNode }> = ({ label
 );
 
 /** ▲ 12.3% / ▼ 4% / ■ 0% against the previous period; nothing when there is no base. */
-export const Change: FC<{ value: number | null; unit?: string; className?: string }> = ({ value, unit = '%', className }) =>
-  value === null ? null : (
+export const Change: FC<{ value: number | null; unit?: string; className?: string }> = ({ value, unit = '%', className }) => {
+  const t = useT();
+  return value === null ? null : (
     <span
       className={clsx(
         'inline-flex items-center gap-[2px] tabular-nums',
@@ -86,11 +88,14 @@ export const Change: FC<{ value: number | null; unit?: string; className?: strin
       <span aria-hidden="true" className="text-[10px]">
         {value > 0 ? '▲' : value < 0 ? '▼' : '■'}
       </span>
-      <span className="sr-only">{value > 0 ? '上升' : value < 0 ? '下降' : '持平'}</span>
+      <span className="sr-only">
+        {value > 0 ? t('report_change_up', '上升') : value < 0 ? t('report_change_down', '下降') : t('report_change_flat', '持平')}
+      </span>
       {Math.abs(value)}
       {unit}
     </span>
   );
+};
 
 /** An account: platform icon and name. */
 export const ChannelCell: FC<{ name: string; providerIdentifier: string; picture?: string | null; note?: ReactNode }> = ({

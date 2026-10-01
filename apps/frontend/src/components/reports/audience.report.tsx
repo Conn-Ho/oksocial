@@ -46,33 +46,41 @@ const Bars: FC<{ title: string; items: AudienceShare[] }> = ({ title, items }) =
   </div>
 );
 
-const Gender: FC<{ items: AudienceShare[] }> = ({ items }) => (
-  <div className="flex flex-col gap-[6px]">
-    <h4 className="text-[12px] text-textItemBlur">性别</h4>
-    <div className="flex h-[10px] rounded-full overflow-hidden bg-newTableHeader" aria-hidden="true">
-      {items.map((g, i) => (
-        <span key={g.label} style={{ width: `${g.share}%`, background: GENDER_COLORS[i % GENDER_COLORS.length] }} />
-      ))}
+const Gender: FC<{ items: AudienceShare[] }> = ({ items }) => {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[6px]">
+      <h4 className="text-[12px] text-textItemBlur">{t('audience_top_gender', '性别')}</h4>
+      <div className="flex h-[10px] rounded-full overflow-hidden bg-newTableHeader" aria-hidden="true">
+        {items.map((g, i) => (
+          <span key={g.label} style={{ width: `${g.share}%`, background: GENDER_COLORS[i % GENDER_COLORS.length] }} />
+        ))}
+      </div>
+      <ul className="flex gap-[14px] text-[13px] flex-wrap">
+        {items.map((g, i) => (
+          <li key={g.label} className="flex items-center gap-[6px]">
+            <span className="w-[8px] h-[8px] rounded-full" style={{ background: GENDER_COLORS[i % GENDER_COLORS.length] }} aria-hidden="true" />
+            {g.label} <span className="tabular-nums text-textItemBlur">{g.share}%</span>
+          </li>
+        ))}
+      </ul>
     </div>
-    <ul className="flex gap-[14px] text-[13px] flex-wrap">
-      {items.map((g, i) => (
-        <li key={g.label} className="flex items-center gap-[6px]">
-          <span className="w-[8px] h-[8px] rounded-full" style={{ background: GENDER_COLORS[i % GENDER_COLORS.length] }} aria-hidden="true" />
-          {g.label} <span className="tabular-nums text-textItemBlur">{g.share}%</span>
-        </li>
-      ))}
-    </ul>
-  </div>
-);
+  );
+};
 
 const ActiveHours: FC<{ hours: number[] }> = ({ hours }) => {
+  const t = useT();
   const max = Math.max(...hours, 1);
   return (
     <div className="flex flex-col gap-[6px]">
       <h4 className="text-[12px] text-textItemBlur">
-        活跃时段 <span className="text-textColor">高峰 {peakHours(hours)}</span>
+        {t('audience_active_hours', '活跃时段')} <span className="text-textColor">{t('audience_peak', '高峰 {{hours}}', { hours: peakHours(hours) })}</span>
       </h4>
-      <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-[2px]" role="img" aria-label={`各小时观看占比，高峰 ${peakHours(hours)}`}>
+      <div
+        className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-[2px]"
+        role="img"
+        aria-label={t('audience_hours_aria', '各小时观看占比，高峰 {{hours}}', { hours: peakHours(hours) })}
+      >
         {hours.map((h, i) => (
           <span
             key={i}
@@ -93,13 +101,16 @@ const ActiveHours: FC<{ hours: number[] }> = ({ hours }) => {
   );
 };
 
-const Summary: FC<{ label: string; value: AudienceShare | null }> = ({ label, value }) => (
-  <div className="flex flex-col gap-[2px] min-w-0">
-    <span className="text-[12px] text-textItemBlur">{label}</span>
-    <span className="text-[18px] font-[600] truncate">{value?.label ?? '—'}</span>
-    <span className="text-[12px] text-textItemBlur tabular-nums">{value ? `${value.share}%` : '暂无数据'}</span>
-  </div>
-);
+const Summary: FC<{ label: string; value: AudienceShare | null }> = ({ label, value }) => {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-[2px] min-w-0">
+      <span className="text-[12px] text-textItemBlur">{label}</span>
+      <span className="text-[18px] font-[600] truncate">{value?.label ?? '—'}</span>
+      <span className="text-[12px] text-textItemBlur tabular-nums">{value ? `${value.share}%` : t('report_no_data', '暂无数据')}</span>
+    </div>
+  );
+};
 
 const AudienceCard: FC<{ row: ChannelAudience }> = ({ row }) => {
   const t = useT();
@@ -116,7 +127,7 @@ const AudienceCard: FC<{ row: ChannelAudience }> = ({ row }) => {
       actions={
         a && (
           <span className="text-[12px] text-textItemBlur tabular-nums">
-            {[basis, `${dayjs(a.capturedAt).format('MM-DD HH:mm')} 更新`].filter(Boolean).join(' · ')}
+            {[basis, t('audience_updated', '{{time}} 更新', { time: dayjs(a.capturedAt).format('MM-DD HH:mm') })].filter(Boolean).join(' · ')}
           </span>
         )
       }
@@ -134,10 +145,10 @@ const AudienceCard: FC<{ row: ChannelAudience }> = ({ row }) => {
           </div>
           {!!a.gender?.length && <Gender items={a.gender} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
-            {!!a.age?.length && <Bars title="年龄段" items={a.age} />}
-            {!!a.regions?.length && <Bars title="地区 / 城市" items={a.regions} />}
+            {!!a.age?.length && <Bars title={t('audience_age', '年龄段')} items={a.age} />}
+            {!!a.regions?.length && <Bars title={t('audience_regions', '地区 / 城市')} items={a.regions} />}
           </div>
-          {!!a.interests?.length && <Bars title="兴趣" items={a.interests.slice(0, 6)} />}
+          {!!a.interests?.length && <Bars title={t('audience_interests', '兴趣')} items={a.interests.slice(0, 6)} />}
           {!!a.activeHours?.length && <ActiveHours hours={a.activeHours} />}
         </div>
       )}

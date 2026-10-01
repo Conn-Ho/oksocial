@@ -104,7 +104,7 @@ export const RemakeModal: FC<{
       const res = await call('/monitoring/remake/draft', 'POST', { integrationId, content: text.trim() });
       toaster.show(
         t('remake_saved', '已存为草稿（{{time}}），在日历里打开它、配好图片再发布', {
-          time: dayjs(res.date).format('M月D日 HH:mm'),
+          time: dayjs(res.date).format(t('date_fmt_md_hm', 'M月D日 HH:mm')),
         }),
         'success'
       );
@@ -145,8 +145,8 @@ export const RemakeModal: FC<{
             { value: 'video', label: t('remake_type_video', '视频 · 即将支持'), disabled: true, hint: t('remake_video_soon', '视频复刻即将支持') },
           ]}
         />
-        <Segmented label={t('remake_tone', '语气')} value={tone} onChange={setTone} options={TONES} />
-        <Segmented label={t('remake_length', '篇幅')} value={length} onChange={setLength} options={LENGTHS} />
+        <Segmented label={t('remake_tone', '语气')} value={tone} onChange={setTone} options={TONES.map((o) => ({ ...o, label: t(`remake_tone_${o.value}`, o.label) }))} />
+        <Segmented label={t('remake_length', '篇幅')} value={length} onChange={setLength} options={LENGTHS.map((o) => ({ ...o, label: t(`remake_length_${o.value}`, o.label) }))} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">

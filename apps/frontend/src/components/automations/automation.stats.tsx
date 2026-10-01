@@ -103,8 +103,8 @@ export const AutomationStats: FC = () => {
   if (isLoading || !data) {
     return <p className="text-textItemBlur text-[14px] py-[20px]">{t('loading', '加载中…')}</p>;
   }
-  const monthStart = dayjs(data.since.month).format('M月D日');
-  const today = dayjs(data.since.today).format('M月D日');
+  const monthStart = dayjs(data.since.month).format(t('date_fmt_md', 'M月D日'));
+  const today = dayjs(data.since.today).format(t('date_fmt_md', 'M月D日'));
   const labels = {
     enabled: t('automation_stats_enabled', '启用情况'),
     all: t('automation_stats_all', '总运行次数'),
@@ -133,8 +133,8 @@ export const AutomationStats: FC = () => {
               className={clsx('grid grid-cols-2 gap-x-[12px] gap-y-[10px] px-[16px] py-[14px] items-start', COLUMNS, i > 0 && 'border-t border-newBorder')}
             >
               <div className="col-span-2 md:col-span-1 flex flex-col gap-[2px] min-w-0">
-                <span className="text-[14px] font-[600]">{row.label}</span>
-                <span className="text-[12px] text-textItemBlur leading-[1.5]">{row.description}</span>
+                <span className="text-[14px] font-[600]">{t(`automation_type_${row.type.toLowerCase()}`, row.label)}</span>
+                <span className="text-[12px] text-textItemBlur leading-[1.5]">{t(`automation_desc_${row.type.toLowerCase()}`, row.description)}</span>
               </div>
               <Cell label={labels.enabled}>
                 <Enablement row={row} />

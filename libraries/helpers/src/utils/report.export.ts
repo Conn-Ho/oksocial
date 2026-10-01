@@ -1,5 +1,7 @@
 // 报告 → Excel: the sheets of an export (one per report section) as plain rows, so the page only
-// has to hand them to exceljs. Pure.
+// has to hand them to exceljs. Pure. Headers go through the page's t (Chinese without one).
+
+import { Translate, zhDefault } from '@gitroom/helpers/utils/translate';
 
 type Kpi = { value: number | null; previous: number | null; change: number | null };
 type Cell = string | number | null;
@@ -78,25 +80,44 @@ const KPI_ROWS: Array<[keyof ReportForExport['totals'], string]> = [
 ];
 
 /** 平台报告: 概览 (KPIs with 上期), 趋势, 账号详情, 帖文Top8. */
-export const platformReportSheets = (report: ReportForExport, options: ExportOptions): ExportSheet[] => [
+export const platformReportSheets = (report: ReportForExport, options: ExportOptions, t: Translate = zhDefault): ExportSheet[] => [
   {
-    name: '概览',
-    columns: columns([['指标', 14], ['本期', 14], ['上期', 14], ['变化', 16]]),
+    name: t('report_sheet_overview', '概览'),
+    columns: columns([[t('report_col_metric', '指标'), 14], [t('report_col_current', '本期'), 14], [t('report_col_previous', '上期'), 14], [t('report_col_change', '变化'), 16]]),
     rows: KPI_ROWS.map(([key, label]) => {
       const k = report.totals[key];
+      const name = t(`report_kpi_${key}`, label);
       return key === 'engagementRate'
-        ? [label, percent(k.value), percent(k.previous), signed(k.change, ' 个百分点')]
-        : [label, k.value, k.previous, signed(k.change, '%')];
+        ? [name, percent(k.value), percent(k.previous), signed(k.change, t('report_unit_points', ' 个百分点'))]
+        : [name, k.value, k.previous, signed(k.change, '%')];
     }),
   },
   {
-    name: '趋势',
-    columns: columns([['日期', 12], ['总粉丝', 12], ['净增粉', 12], ['发布数', 10], ['曝光', 12], ['互动', 12], ['互动率', 10]]),
+    name: t('report_sheet_trend', '趋势'),
+    columns: columns([
+      [t('report_col_date', '日期'), 12],
+      [t('report_kpi_followers', '总粉丝'), 12],
+      [t('report_kpi_netFollowers', '净增粉'), 12],
+      [t('report_kpi_posts', '发布数'), 10],
+      [t('report_kpi_views', '曝光'), 12],
+      [t('report_kpi_engagement', '互动'), 12],
+      [t('report_kpi_engagementRate', '互动率'), 10],
+    ]),
     rows: report.series.map((p) => [p.date, p.followers, p.netFollowers, p.posts, p.views, p.engagement, percent(p.engagementRate)]),
   },
   {
-    name: '账号详情',
-    columns: columns([['账号', 20], ['平台', 10], ['总粉丝', 12], ['净增长', 12], ['增长率', 10], ['发布', 10], ['曝光', 12], ['互动', 12], ['互动率', 10]]),
+    name: t('report_sheet_accounts', '账号详情'),
+    columns: columns([
+      [t('account', '账号'), 20],
+      [t('platform', '平台'), 10],
+      [t('report_col_followers', '总粉丝'), 12],
+      [t('report_col_net_growth', '净增长'), 12],
+      [t('report_col_growth_rate', '增长率'), 10],
+      [t('report_col_posts', '发布'), 10],
+      [t('post_col_views', '曝光'), 12],
+      [t('post_col_engagement', '互动'), 12],
+      [t('post_col_engagementRate', '互动率'), 10],
+    ]),
     rows: report.channels.map((c) => [
       c.name,
       options.platformName(c.providerIdentifier),
@@ -110,8 +131,22 @@ export const platformReportSheets = (report: ReportForExport, options: ExportOpt
     ]),
   },
   {
-    name: '帖文Top8',
-    columns: columns([['排名', 6], ['帖文', 40], ['账号', 16], ['平台', 10], ['发布时间', 18], ['曝光', 10], ['点赞', 10], ['评论', 10], ['分享', 10], ['收藏', 10], ['互动', 10], ['互动率', 10], ['链接', 40]]),
+    name: t('report_sheet_top_posts', '帖文Top8'),
+    columns: columns([
+      [t('report_col_rank', '排名'), 6],
+      [t('report_col_post', '帖文'), 40],
+      [t('account', '账号'), 16],
+      [t('platform', '平台'), 10],
+      [t('post_col_publishedAt', '发布时间'), 18],
+      [t('post_col_views', '曝光'), 10],
+      [t('post_col_likes', '点赞'), 10],
+      [t('post_col_comments', '评论'), 10],
+      [t('post_col_shares', '分享'), 10],
+      [t('post_col_collects', '收藏'), 10],
+      [t('post_col_engagement', '互动'), 10],
+      [t('post_col_engagementRate', '互动率'), 10],
+      [t('report_col_link', '链接'), 40],
+    ]),
     rows: report.topPosts.map((p, i) => [
       i + 1,
       p.title,
@@ -131,15 +166,30 @@ export const platformReportSheets = (report: ReportForExport, options: ExportOpt
 ];
 
 /** 帖文报告: every row of the table, with why a row has no numbers. */
-export const postReportSheets = (rows: PostForExport[], options: ExportOptions): ExportSheet[] => [
+export const postReportSheets = (rows: PostForExport[], options: ExportOptions, t: Translate = zhDefault): ExportSheet[] => [
   {
-    name: '帖文报告',
-    columns: columns([['帖文', 40], ['账号', 16], ['平台', 10], ['oksocial 发布', 12], ['发布时间', 18], ['曝光', 10], ['点赞', 10], ['评论', 10], ['分享', 10], ['收藏', 10], ['互动', 10], ['互动率', 10], ['说明', 22], ['链接', 40]]),
+    name: t('post_report', '帖文报告'),
+    columns: columns([
+      [t('report_col_post', '帖文'), 40],
+      [t('account', '账号'), 16],
+      [t('platform', '平台'), 10],
+      [t('report_via_oksocial', 'oksocial 发布'), 12],
+      [t('post_col_publishedAt', '发布时间'), 18],
+      [t('post_col_views', '曝光'), 10],
+      [t('post_col_likes', '点赞'), 10],
+      [t('post_col_comments', '评论'), 10],
+      [t('post_col_shares', '分享'), 10],
+      [t('post_col_collects', '收藏'), 10],
+      [t('post_col_engagement', '互动'), 10],
+      [t('post_col_engagementRate', '互动率'), 10],
+      [t('report_col_note', '说明'), 22],
+      [t('report_col_link', '链接'), 40],
+    ]),
     rows: rows.map((p) => [
       p.title,
       p.channelName,
       options.platformName(p.providerIdentifier),
-      p.viaOksocial ? '是' : '',
+      p.viaOksocial ? t('yes', '是') : '',
       options.date(p.publishedAt),
       p.views,
       p.likes,
@@ -148,7 +198,7 @@ export const postReportSheets = (rows: PostForExport[], options: ExportOptions):
       p.collects,
       p.engagement,
       percent(p.engagementRate),
-      POST_STATUS_TEXT[p.status ?? 'ok'],
+      !p.status || p.status === 'ok' ? '' : t(`post_status_${p.status}`, POST_STATUS_TEXT[p.status]),
       p.url ?? '',
     ]),
   },

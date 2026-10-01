@@ -157,6 +157,7 @@ const LoadMessages: FC<{ id: string }> = ({ id }) => {
 };
 
 const Message: FC<UserMessageProps> = (props) => {
+  const t = useT();
   const convertContentToImagesAndVideo = useMemo(() => {
     const content = props.message?.content || '';
     const text =
@@ -166,7 +167,7 @@ const Message: FC<UserMessageProps> = (props) => {
 
     return text
       .replace(/Video: (http.*mp4\n)/g, (match, p1) => {
-        return `<video controls class="h-[150px] w-[150px] rounded-[8px] mb-[10px]"><source src="${p1.trim()}" type="video/mp4">你的浏览器不支持播放视频。</video>`;
+        return `<video controls class="h-[150px] w-[150px] rounded-[8px] mb-[10px]"><source src="${p1.trim()}" type="video/mp4">${t('agent_video_unsupported', '你的浏览器不支持播放视频。')}</video>`;
       })
       .replace(/Image: (http.*\n)/g, (match, p1) => {
         return `<img src="${p1.trim()}" class="h-[150px] w-[150px] max-w-full border border-newBgColorInner" />`;

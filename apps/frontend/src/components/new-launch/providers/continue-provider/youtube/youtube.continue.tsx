@@ -44,7 +44,7 @@ export const YoutubeContinue = withContinueProvider<
   getSelectionValue: (item) => ({ id: item.id }),
   transformSaveData: (selection) => selection,
   isSelected: (item, selection) => selection?.id === item.id,
-  renderItem: (item) => (
+  renderItem: (item, _isSelected, t) => (
     <>
       <div className="flex justify-center">
         {item.picture?.data?.url ? (
@@ -78,7 +78,9 @@ export const YoutubeContinue = withContinueProvider<
       )}
       {item.subscriberCount && (
         <div className="text-xs text-gray-400">
-          {parseInt(item.subscriberCount).toLocaleString()} 位订阅者
+          {t('youtube_subscribers', '{{n}} 位订阅者', {
+            n: parseInt(item.subscriberCount).toLocaleString(),
+          })}
         </div>
       )}
     </>

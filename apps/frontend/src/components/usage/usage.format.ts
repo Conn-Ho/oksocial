@@ -35,10 +35,10 @@ export const durationDiscountLabel = (t: Translate, months: number) =>
     ? t('billing_yearly_discount', '年付优惠')
     : t('billing_n_months_discount', '{{n}} 个月优惠', { n: months });
 
-/** '8折' / '95折'; '' when there is no discount. */
+/** '8折' / '95折' (English: '20% off' / '5% off'); '' when there is no discount. */
 export const discountLabel = (t: Translate, percent: number) => {
   const n = discountNumber(percent);
-  return n ? t('billing_discount', '{{n}}折', { n }) : '';
+  return n ? t('billing_discount', '{{n}}折', { n, pct: 100 - percent }) : '';
 };
 
 /** ¥3,312.00 */

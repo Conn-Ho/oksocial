@@ -99,14 +99,14 @@ export const AddTargetModal: FC<{
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={copy.placeholder}
+            placeholder={t(`monitor_input_${kind.toLowerCase()}_placeholder`, copy.placeholder)}
             className="bg-newTableHeader rounded-[6px] p-[10px] min-h-[84px] text-[14px] outline-none"
             autoFocus={true}
           />
         ) : (
-          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={copy.placeholder} className={fieldClass} autoFocus={true} />
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t(`monitor_input_${kind.toLowerCase()}_placeholder`, copy.placeholder)} className={fieldClass} autoFocus={true} />
         )}
-        <span className="text-[12px] text-textColor/50 leading-[1.5]">{copy.hint}</span>
+        <span className="text-[12px] text-textColor/50 leading-[1.5]">{t(`monitor_input_${kind.toLowerCase()}_hint`, copy.hint)}</span>
       </label>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
@@ -145,7 +145,7 @@ export const AddTargetModal: FC<{
           <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} className={fieldClass}>
             {INTERVALS.map((i) => (
               <option key={i.minutes} value={i.minutes}>
-                {i.label}
+                {t(`monitor_interval_${i.minutes}`, i.label)}
               </option>
             ))}
           </select>

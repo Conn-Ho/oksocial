@@ -37,10 +37,14 @@ export const LinkedinContinue = withContinueProvider<
   getSelectionValue: (item) => ({ id: item.id, pageId: item.pageId }),
   transformSaveData: (selection) => ({ page: selection.id }),
   isSelected: (item, selection) => selection?.id === item.id,
-  renderItem: (item) => (
+  renderItem: (item, _isSelected, t) => (
     <>
       <div>
-        <img className="w-full" src={item.picture} alt="头像" />
+        <img
+          className="w-full"
+          src={item.picture}
+          alt={t('avatar_alt', '头像')}
+        />
       </div>
       <div>{item.name}</div>
     </>

@@ -674,7 +674,7 @@ const AddAnnouncementModal: FC<{ close: () => void }> = ({ close }) => {
                 color === opt.value ? 'opacity-100 ring-2 ring-white' : 'opacity-40'
               }`}
             >
-              {opt.label}
+              {t(`announcement_color_${opt.value.toLowerCase()}`, opt.label)}
             </div>
           ))}
         </div>

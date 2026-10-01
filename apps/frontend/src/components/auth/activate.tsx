@@ -138,7 +138,7 @@ export function Activate() {
                 disabled={cooldown > 0}
               >
                 {cooldown > 0
-                  ? `${t('resend_available_in', '可重发倒计时')} ${cooldown} 秒`
+                  ? t('auth_resend_in_seconds', '可重发倒计时 {{n}} 秒', { n: cooldown })
                   : t('resend_activation_email', 'Resend Activation Email')}
               </Button>
             </form>

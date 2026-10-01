@@ -48,23 +48,30 @@ const readRows = async (file: File): Promise<BulkRowInput[]> => {
   return rows;
 };
 
-const downloadTemplate = async (integrations: BulkIntegration[]) => {
+// one per BULK_HEADERS column, for the template's translated header row
+const BULK_HEADER_KEYS = ['account', 'time', 'content', 'first_comment', 'media', 'mode'];
+
+const downloadTemplate = async (integrations: BulkIntegration[], t: ReturnType<typeof useT>) => {
   const ExcelJS = await loadExcel();
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('帖子');
-  sheet.addRow([...BULK_HEADERS]);
+  const sheet = workbook.addWorksheet(t('bulk_sheet_posts', '帖子'));
+  sheet.addRow(BULK_HEADERS.map((h, i) => t(`bulk_header_${BULK_HEADER_KEYS[i]}`, h)));
   sheet.addRow([
-    integrations[0]?.name || '账号名称',
+    integrations[0]?.name || t('bulk_sample_account', '账号名称'),
     dayjs().add(1, 'day').hour(20).minute(0).format('YYYY-MM-DD HH:mm'),
-    '正文，可以换行',
-    '（可选）首评，发帖后由本账号发出的第一条评论',
-    '（可选）媒体库里的文件名，多个用逗号分隔',
-    '（可选）写“草稿”则只存草稿',
+    t('bulk_sample_content', '正文，可以换行'),
+    t('bulk_sample_first_comment', '（可选）首评，发帖后由本账号发出的第一条评论'),
+    t('bulk_sample_media', '（可选）媒体库里的文件名，多个用逗号分隔'),
+    t('bulk_sample_mode', '（可选）写“草稿”则只存草稿'),
   ]);
   sheet.columns.forEach((c, i) => (c.width = [16, 20, 50, 30, 30, 14][i]));
   sheet.getRow(1).font = { bold: true };
-  const accounts = workbook.addWorksheet('账号列表');
-  accounts.addRow(['账号名称', '平台', '账号 ID']);
+  const accounts = workbook.addWorksheet(t('bulk_sheet_accounts', '账号列表'));
+  accounts.addRow([
+    t('bulk_sample_account', '账号名称'),
+    t('bulk_accounts_platform', '平台'),
+    t('bulk_accounts_id', '账号 ID'),
+  ]);
   integrations.forEach((i) => accounts.addRow([i.name, i.identifier, i.internalId]));
   const buffer = await workbook.xlsx.writeBuffer();
   const url = URL.createObjectURL(
@@ -74,7 +81,7 @@ const downloadTemplate = async (integrations: BulkIntegration[]) => {
   );
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'oksocial-批量发布模板.xlsx';
+  a.download = t('bulk_template_file', 'oksocial-批量发布模板.xlsx');
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -98,11 +105,16 @@ export const BulkImportModal: FC<{
 
   const plan: BulkPlanRow[] = useMemo(
     () =>
-      planBulkPosts(rows, integrations, {
-        start: dayjs(start).toDate(),
-        intervalMinutes: Math.max(1, intervalMinutes || 1),
-      }),
-    [rows, integrations, start, intervalMinutes]
+      planBulkPosts(
+        rows,
+        integrations,
+        {
+          start: dayjs(start).toDate(),
+          intervalMinutes: Math.max(1, intervalMinutes || 1),
+        },
+        t
+      ),
+    [rows, integrations, start, intervalMinutes, t]
   );
   const valid = plan.filter((p) => !p.errors.length);
 
@@ -173,7 +185,7 @@ export const BulkImportModal: FC<{
   return (
     <div className="flex flex-col gap-[16px] w-full">
       <div className="flex flex-wrap items-center gap-[12px]">
-        <Button secondary={true} onClick={() => downloadTemplate(integrations)}>
+        <Button secondary={true} onClick={() => downloadTemplate(integrations, t)}>
           {t('bulk_template', '下载模板')}
         </Button>
         <label className="cursor-pointer rounded-full bg-btnPrimary text-white px-[20px] h-[40px] font-[600] flex items-center hover:brightness-110">
@@ -240,7 +252,7 @@ export const BulkImportModal: FC<{
                     >
                       {result?.state === 'ok'
                         ? t('bulk_imported', '已导入')
-                        : result?.message || p.errors.join('；') || t('bulk_ready', '可导入')}
+                        : result?.message || p.errors.join(t('bulk_error_sep', '；')) || t('bulk_ready', '可导入')}
                     </td>
                   </tr>
                 );

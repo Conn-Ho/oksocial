@@ -96,7 +96,10 @@ export const Webhooks: FC = () => {
                   <div className="flex flex-col justify-center">{p.name}</div>
                   <div className="flex flex-col justify-center min-w-0">
                     <span>
-                      {WEBHOOK_FORMAT_META[(p.format || 'GENERIC') as WebhookFormat].label}
+                      {t(
+                        `webhook_format_${(p.format || 'GENERIC').toLowerCase()}`,
+                        WEBHOOK_FORMAT_META[(p.format || 'GENERIC') as WebhookFormat].label
+                      )}
                       {p.notifications ? ` · ${t('webhook_with_notifications', '含站内通知')}` : ''}
                     </span>
                     <span className="text-textItemBlur text-[12px] truncate">{hostOf(p.url)}</span>
@@ -176,7 +179,8 @@ export const AddOrEditWebhook: FC<{
   });
   const integrations = form.watch('integrations');
   const format = form.watch('format') as WebhookFormat;
-  const meta = WEBHOOK_FORMAT_META[format] || WEBHOOK_FORMAT_META.GENERIC;
+  const metaFormat: WebhookFormat = WEBHOOK_FORMAT_META[format] ? format : 'GENERIC';
+  const meta = WEBHOOK_FORMAT_META[metaFormat];
   const integration = useCallback(async () => {
     return (await fetch('/integrations/list')).json();
   }, []);
@@ -242,7 +246,13 @@ export const AddOrEditWebhook: FC<{
       if (out?.ok) {
         toast.show(t('webhook_test_ok', '测试消息已发到群里'), 'success');
       } else {
-        toast.show(`${t('webhook_test_failed', '发送失败')}：${out?.error || out?.message || res.status}`, 'warning');
+        toast.show(
+          t('webhook_test_failed_with', '发送失败：{{error}}', {
+            error: out?.error || out?.message || res.status,
+            interpolation: { escapeValue: false },
+          }),
+          'warning'
+        );
       }
       return;
     }
@@ -256,7 +266,7 @@ export const AddOrEditWebhook: FC<{
         body: JSON.stringify([
           {
             id: 'cm6tcts4f0005qcwit25cis26',
-            content: '这是发布到 Instagram 的第一条测试帖子',
+            content: t('webhook_test_post_1', '这是发布到 Instagram 的第一条测试帖子'),
             publishDate: '2025-02-06T13:09:00.000Z',
             releaseURL: 'https://facebook.com/release/release',
             state: 'PUBLISHED',
@@ -270,7 +280,7 @@ export const AddOrEditWebhook: FC<{
           },
           {
             id: 'cm6tcts4f0005qcwit25cis26',
-            content: '这是发布到 Facebook 的第二条测试帖子',
+            content: t('webhook_test_post_2', '这是发布到 Facebook 的第二条测试帖子'),
             publishDate: '2025-02-06T13:09:00.000Z',
             releaseURL: 'https://facebook.com/release2/release2',
             state: 'PUBLISHED',
@@ -302,11 +312,11 @@ export const AddOrEditWebhook: FC<{
             <Select label={t('webhook_format', '发送到')} name="format">
               {WEBHOOK_FORMATS.map((f) => (
                 <option key={f} value={f}>
-                  {WEBHOOK_FORMAT_META[f].label}
+                  {t(`webhook_format_${f.toLowerCase()}`, WEBHOOK_FORMAT_META[f].label)}
                 </option>
               ))}
             </Select>
-            <p className="text-[12px] text-textItemBlur -mt-[4px] mb-[8px]">{meta.hint}</p>
+            <p className="text-[12px] text-textItemBlur -mt-[4px] mb-[8px]">{t(`webhook_format_${metaFormat.toLowerCase()}_hint`, meta.hint)}</p>
             <Input
               label="URL"
               translationKey="label_url"
