@@ -1,4 +1,5 @@
 import { HttpException, Injectable } from '@nestjs/common';
+import { CREATION_CATALOG } from '@gitroom/nestjs-libraries/creation/creation.platforms';
 import { Prisma } from '@prisma/client';
 import dayjs from 'dayjs';
 import { CreationRepository } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.repository';
@@ -152,11 +153,26 @@ export class AiCreationService {
     return { ...output, generationId: id };
   }
 
-  /** Platforms whose provider says how to write for them (and that this instance offers). */
+  /**
+   * Every platform AI 创作 writes for: the ones with a channel this instance offers first (their
+   * provider says how to write for them), then the rest of the catalog, domestic before overseas.
+   */
   platforms(): CreationPlatform[] {
-    return socialIntegrationList
+    const channels: CreationPlatform[] = socialIntegrationList
       .filter((p) => p.creation && !this._integrationManager.isHiddenProvider(p.identifier))
-      .map((p) => ({ identifier: p.identifier, name: p.name, maxLength: p.maxLength(), ...p.creation! }));
+      .map((p) => ({
+        identifier: p.identifier,
+        name: p.name,
+        maxLength: p.maxLength(),
+        region: 'cn' as const,
+        ...p.creation!,
+        channel: true,
+      }));
+    const taken = new Set(channels.map((p) => p.identifier));
+    const rest = CREATION_CATALOG.filter((p) => !taken.has(p.identifier))
+      .sort((a, b) => Number(a.region === 'global') - Number(b.region === 'global'))
+      .map((p) => ({ ...p, channel: false }));
+    return [...channels, ...rest];
   }
 
   private platform(identifier: string) {

@@ -8,7 +8,15 @@ import { CreationCapabilities } from '@gitroom/nestjs-libraries/integrations/soc
 import { countLength, weightedLength } from '@gitroom/helpers/utils/count.length';
 
 /** A platform the creation desk writes for: the provider's name, limit and creation capability. */
-export type CreationPlatform = CreationCapabilities & { identifier: string; name: string; maxLength: number };
+export type CreationPlatform = CreationCapabilities & {
+  identifier: string;
+  name: string;
+  maxLength: number;
+  // domestic or overseas, for grouping
+  region?: 'cn' | 'global';
+  // an account on it can be connected as a channel (drafts can go there)
+  channel?: boolean;
+};
 
 /** One platform's version of a 跨平台适配 result; `parts` is what gets posted (a thread when several). */
 export type PlatformVersion = {

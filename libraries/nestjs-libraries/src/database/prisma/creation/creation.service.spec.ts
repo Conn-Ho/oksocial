@@ -77,6 +77,7 @@ const setup = (opts: { aiEnabled?: boolean; generation?: any; channels?: Record<
     c3: { id: 'c3', name: 'X 号', providerIdentifier: 'xweb', deletedAt: null, disabled: false },
     off: { id: 'off', name: '停用', providerIdentifier: 'xweb', deletedAt: null, disabled: true },
     li: { id: 'li', name: '领英', providerIdentifier: 'linkedin', deletedAt: null, disabled: false },
+    dc: { id: 'dc', name: 'Discord 群', providerIdentifier: 'discord', deletedAt: null, disabled: false },
   };
   const integrations = { getIntegrationById: jest.fn(async (_o: string, id: string) => channels[id] ?? null) };
   const posts = {
@@ -165,11 +166,30 @@ describe('AiCreationService.run (the one door every generation goes through)', (
 });
 
 describe('AiCreationService templates', () => {
-  it('lists the platforms that describe how to write for them', () => {
+  it('lists the platforms with a channel to connect first, then every other platform it can write for', () => {
     const { service } = setup();
-    expect(service.platforms().map((p) => [p.identifier, p.maxLength, p.format])).toEqual([
-      ['xiaohongshu', 1000, 'post'], ['douyin', 1000, 'video'], ['xweb', 280, 'thread'],
+    const list = service.platforms();
+    expect(list.slice(0, 3).map((p) => [p.identifier, p.maxLength, p.format, p.channel])).toEqual([
+      ['xiaohongshu', 1000, 'post', true], ['douyin', 1000, 'video', true], ['xweb', 280, 'thread', true],
     ]);
+    const ids = list.map((p) => p.identifier);
+    expect(ids).toEqual(expect.arrayContaining([
+      'bilibili', 'zhihu', 'kuaishou', 'shipinhao', 'gongzhonghao', 'toutiao', 'jike',
+      'instagram', 'facebook', 'threads', 'tiktok', 'youtube', 'linkedin', 'pinterest', 'reddit', 'bluesky',
+    ]));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).not.toContain('hidden');
+    // X is written for once, as the browser channel
+    expect(ids).not.toContain('x');
+    expect(list.find((p) => p.identifier === 'bilibili')).toMatchObject({ channel: false, format: 'video', region: 'cn' });
+    expect(list.find((p) => p.identifier === 'linkedin')).toMatchObject({ channel: false, region: 'global', maxLength: 3000 });
+    // the rest: domestic before overseas
+    const rest = list.filter((p) => !p.channel).map((p) => p.region);
+    expect(rest.indexOf('global')).toBeGreaterThan(rest.lastIndexOf('cn'));
+    for (const p of list.filter((x) => !x.channel)) {
+      expect(p.guide.length).toBeGreaterThan(10);
+      expect(p.maxLength).toBeGreaterThan(0);
+    }
   });
 
   it('brand: reads the source and returns cleaned fields, recording the source but not the file', async () => {
@@ -183,7 +203,7 @@ describe('AiCreationService templates', () => {
 
   it('adapt: checks the platforms first, then writes with the chosen brand', async () => {
     const { service, ai, brands } = setup();
-    await expect(service.adapt('o1', 'u1', { text: 'x', platforms: ['linkedin'] })).rejects.toMatchObject({ status: 400 });
+    await expect(service.adapt('o1', 'u1', { text: 'x', platforms: ['discord'] })).rejects.toMatchObject({ status: 400 });
     expect(ai.adapt).not.toHaveBeenCalled();
     const res = await service.adapt('o1', 'u1', { text: '原文', platforms: ['xiaohongshu', 'xweb'], brandId: 'b2', instruction: ' 轻松 ' });
     expect(brands.promptFor).toHaveBeenCalledWith('o1', 'b2');
@@ -302,7 +322,8 @@ describe('history, media library and drafts', () => {
       service.saveDrafts('o1', { posts: [{ integrationId: 'c1', texts: ['x'] }, { integrationId: 'off', texts: ['y'] }] })
     ).rejects.toMatchObject({ status: 404 });
     await expect(service.saveDrafts('o1', { posts: [{ integrationId: 'nope', texts: ['x'] }] })).rejects.toMatchObject({ status: 404 });
-    await expect(service.saveDrafts('o1', { posts: [{ integrationId: 'li', texts: ['x'] }] })).rejects.toMatchObject({ status: 400 });
+    // a channel on a platform AI 创作 does not write for
+    await expect(service.saveDrafts('o1', { posts: [{ integrationId: 'dc', texts: ['x'] }] })).rejects.toMatchObject({ status: 400 });
     expect(posts.createPost).not.toHaveBeenCalled();
   });
 

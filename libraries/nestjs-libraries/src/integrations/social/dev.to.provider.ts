@@ -59,7 +59,7 @@ export class DevToProvider extends SocialAbstract implements SocialProvider {
     return [
       {
         key: 'apiKey',
-        label: 'API key',
+        label: 'API Key（Dev.to 设置 › Extensions 里生成）',
         validation: `/^.{3,}$/`,
         type: 'password' as const,
       },

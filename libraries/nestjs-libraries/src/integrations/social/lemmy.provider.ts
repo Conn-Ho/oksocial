@@ -109,20 +109,20 @@ export class LemmyProvider extends SocialAbstract implements SocialProvider {
     return [
       {
         key: 'service',
-        label: 'Service',
+        label: '实例地址（如 https://lemmy.world）',
         defaultValue: 'https://lemmy.world',
         validation: `/^https?:\\/\\/(www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)$/`,
         type: 'text' as const,
       },
       {
         key: 'identifier',
-        label: 'Identifier',
+        label: '用户名或邮箱',
         validation: `/^.{3,}$/`,
         type: 'text' as const,
       },
       {
         key: 'password',
-        label: 'Password',
+        label: '密码',
         validation: `/^.{3,}$/`,
         type: 'password' as const,
       },

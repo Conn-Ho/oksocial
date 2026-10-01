@@ -91,6 +91,7 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
   }
 
   creation: CreationCapabilities = {
+    region: 'global',
     format: 'thread',
     imagesMax: MEDIA_MAX,
     weighted: true,

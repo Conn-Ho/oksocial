@@ -53,7 +53,7 @@ export class HashnodeProvider extends SocialAbstract implements SocialProvider {
     return [
       {
         key: 'apiKey',
-        label: 'API key',
+        label: 'Personal Access Token（Hashnode 设置 › Developer）',
         validation: `/^.{3,}$/`,
         type: 'password' as const,
       },

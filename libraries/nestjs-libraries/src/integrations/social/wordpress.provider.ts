@@ -70,19 +70,19 @@ export class WordpressProvider
     return [
       {
         key: 'domain',
-        label: 'Domain URL',
+        label: '站点地址（https://你的域名）',
         validation: `/^https?:\\/\\/(?:www\\.)?[\\w\\-]+(\\.[\\w\\-]+)+([\\/?#][^\\s]*)?$/`,
         type: 'text' as const,
       },
       {
         key: 'username',
-        label: 'Username',
+        label: '用户名',
         validation: `/.+/`,
         type: 'text' as const,
       },
       {
         key: 'password',
-        label: 'Password',
+        label: '应用密码（WordPress 后台 › 用户 › 个人资料 › 应用密码）',
         validation: `/.+/`,
         type: 'password' as const,
         hint: 'Application password, create in User->Profile',

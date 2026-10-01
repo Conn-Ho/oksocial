@@ -237,6 +237,8 @@ export type CreationCapabilities = {
   coverAspect: '1:1' | '3:4' | '9:16' | '16:9';
   // how posts read on this platform, for the writer
   guide: string;
+  // domestic (default) or overseas, for grouping
+  region?: 'cn' | 'global';
 };
 
 export type GenerateAuthUrlResponse = {

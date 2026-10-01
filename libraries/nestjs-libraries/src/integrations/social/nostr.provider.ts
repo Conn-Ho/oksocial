@@ -43,7 +43,7 @@ export class NostrProvider extends SocialAbstract implements SocialProvider {
     return [
       {
         key: 'password',
-        label: 'Nostr private key',
+        label: 'Nostr 私钥（nsec 开头）',
         validation: `/^.{3,}$/`,
         type: 'password' as const,
       },

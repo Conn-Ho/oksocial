@@ -9,6 +9,7 @@ import { fieldClass } from '@gitroom/frontend/components/monitor/add.target.moda
 import { Segmented } from '@gitroom/frontend/components/monitor/remake.modal';
 import { areaClass } from '@gitroom/frontend/components/creation/brand.form';
 import {
+  ADAPT_MAX_PLATFORMS,
   Brand,
   CreationPlatform,
   CreationResult,
@@ -124,7 +125,14 @@ export const CreationDesk: FC<{
 
   // a brand deleted on the 品牌档案 tab falls back to the default
   useEffect(() => setBrandId((current) => (brands.some((b) => b.id === current) ? current : defaultBrand)), [brands, defaultBrand]);
-  useEffect(() => setChosen((current) => (current.length ? current : platforms.map((p) => p.identifier))), [platforms]);
+  // by default the platforms the team can post to; the others are a click away
+  useEffect(
+    () =>
+      setChosen((current) =>
+        current.length ? current : platforms.filter((p) => p.channel).slice(0, ADAPT_MAX_PLATFORMS).map((p) => p.identifier)
+      ),
+    [platforms]
+  );
   // remake needs a platform, a script is for a video platform when there is one
   useEffect(() => {
     if (platforms.length) {
@@ -262,23 +270,47 @@ export const CreationDesk: FC<{
           </Label>
           <div className="flex flex-col gap-[6px] text-[13px]">
             <span className="text-textColor/70">{t('creation_platforms', '目标平台')}</span>
-            <div className="flex flex-wrap gap-[6px]">
-              {platforms.map((p) => {
-                const on = chosen.includes(p.identifier);
-                return (
-                  <button
-                    key={p.identifier}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setChosen((c) => (on ? c.filter((x) => x !== p.identifier) : [...c, p.identifier]))}
-                    className={clsx('flex items-center gap-[6px] h-[32px] px-[10px] rounded-full border text-[13px]', on ? 'border-btnPrimary bg-newTableHeader' : 'border-newTableBorder text-textColor/60')}
-                  >
-                    <img src={`/icons/platforms/${p.identifier}.png`} alt="" className="w-[16px] h-[16px] rounded-full" />
-                    {p.name}
-                  </button>
-                );
+            {(
+              [
+                ['cn', t('creation_region_cn', '国内')],
+                ['global', t('creation_region_global', '海外')],
+              ] as const
+            ).map(([region, label]) => {
+              const group = platforms.filter((p) => (p.region || 'cn') === region);
+              return group.length ? (
+                <div key={region} className="flex flex-wrap items-center gap-[6px]">
+                  <span className="w-[32px] shrink-0 text-[12px] text-textItemBlur">{label}</span>
+                  {group.map((p) => {
+                    const on = chosen.includes(p.identifier);
+                    const full = !on && chosen.length >= ADAPT_MAX_PLATFORMS;
+                    return (
+                      <button
+                        key={p.identifier}
+                        type="button"
+                        aria-pressed={on}
+                        disabled={full}
+                        title={full ? t('creation_platforms_full', '一次最多选 {{n}} 个平台', { n: ADAPT_MAX_PLATFORMS }) : undefined}
+                        onClick={() => setChosen((c) => (on ? c.filter((x) => x !== p.identifier) : [...c, p.identifier]))}
+                        className={clsx(
+                          'flex items-center gap-[6px] h-[32px] px-[10px] rounded-full border text-[13px] transition-colors',
+                          on ? 'border-btnPrimary/50 bg-boxFocused text-textItemFocused font-[600]' : 'border-newTableBorder text-textColor/70 hover:bg-boxHover',
+                          full && 'opacity-40 cursor-not-allowed'
+                        )}
+                      >
+                        <img src={`/icons/platforms/${p.identifier}.png`} alt="" className="w-[16px] h-[16px] rounded-full" />
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null;
+            })}
+            <span className="text-[12px] text-textItemBlur">
+              {t('creation_platforms_hint', '已选 {{n}} 个，一次最多 {{max}} 个；海外平台默认写英文，可在额外要求里指定语言。', {
+                n: chosen.length,
+                max: ADAPT_MAX_PLATFORMS,
               })}
-            </div>
+            </span>
           </div>
           <Label text={t('creation_instruction', '额外要求（可选）')}>
             <input value={instruction} onChange={(e) => setInstruction(e.target.value)} maxLength={500} placeholder={t('creation_instruction_placeholder', '例如：突出限时优惠，结尾引导评论')} className={fieldClass} />

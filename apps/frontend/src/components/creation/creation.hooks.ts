@@ -31,7 +31,13 @@ export type CreationPlatform = {
   imagesMax?: number;
   weighted?: boolean;
   coverAspect: string;
+  region?: 'cn' | 'global';
+  // an account on it can be connected (drafts can go there)
+  channel?: boolean;
 };
+
+/** At most this many platforms per 跨平台适配 (the API's limit). */
+export const ADAPT_MAX_PLATFORMS = 10;
 
 export type TemplateKey = 'adapt' | 'titles' | 'remake' | 'script' | 'cover' | 'translate';
 

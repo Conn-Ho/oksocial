@@ -268,20 +268,20 @@ export class BlueskyProvider extends SocialAbstract implements SocialProvider {
     return [
       {
         key: 'service',
-        label: 'Service',
+        label: '服务器地址（一般填 https://bsky.social）',
         defaultValue: 'https://bsky.social',
         validation: `/^(https?:\\/\\/)?((([a-zA-Z0-9\\-_]{1,256}\\.[a-zA-Z]{2,6})|(([0-9]{1,3}\\.){3}[0-9]{1,3}))(:[0-9]{1,5})?)(\\/[^\\s]*)?$/`,
         type: 'text' as const,
       },
       {
         key: 'identifier',
-        label: 'Identifier',
+        label: '账号（handle 或邮箱）',
         validation: `/^.+$/`,
         type: 'text' as const,
       },
       {
         key: 'password',
-        label: 'Password',
+        label: '应用专用密码（Bluesky 设置 › 隐私与安全 › 应用密码）',
         validation: `/^.{3,}$/`,
         type: 'password' as const,
       },
