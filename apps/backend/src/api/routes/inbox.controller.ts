@@ -11,6 +11,7 @@ import {
   InboxReplyDto,
   InboxStatusDto,
   InboxTranslateDto,
+  ReplyHistoryQueryDto,
   ReplyTemplateDto,
   ReplyTemplatesBulkDto,
 } from '@gitroom/nestjs-libraries/dtos/inbox/inbox.dto';
@@ -40,6 +41,12 @@ export class InboxController {
     return this._inboxService.replyCapabilities();
   }
 
+  @Get('/capabilities/top-level')
+  @ApiOperation({ summary: '各平台以新评论方式回复的类型', description: '这些平台不能回复某条评论，回复会作为帖子下的一条新评论发出（例如知乎）。' })
+  topLevelReplies() {
+    return this._inboxService.topLevelReplies();
+  }
+
   @Get('/notices')
   @ApiOperation({ summary: '需要处理的账号提示', description: '例如小红书网页版没有登录，私信和评论通知读不到。' })
   notices(@GetOrgFromRequest() org: Organization) {
@@ -60,13 +67,9 @@ export class InboxController {
   }
 
   @Get('/history')
-  @ApiOperation({ summary: '回复历史' })
-  history(
-    @GetOrgFromRequest() org: Organization,
-    @Query('page') page?: string,
-    @Query('source') source?: 'MANUAL' | 'AI' | 'TEMPLATE' | 'AUTOMATION'
-  ) {
-    return this._inboxService.replyHistory(org.id, page ? Number(page) : 1, source);
+  @ApiOperation({ summary: '回复历史', description: '可按来源（人工、AI、话术、自动化）和回复的类型（评论、私信、@提及）筛选。' })
+  history(@GetOrgFromRequest() org: Organization, @Query() query: ReplyHistoryQueryDto) {
+    return this._inboxService.replyHistory(org.id, query.page || 1, query.source, query.kind);
   }
 
   @Post('/sync')

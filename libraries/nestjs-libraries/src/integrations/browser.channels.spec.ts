@@ -1,4 +1,4 @@
-import { BadBody } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { BadBody, RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { BROWSER_CHANNELS } from '@gitroom/nestjs-libraries/integrations/social/browser.channels';
 import { CREATION_CATALOG } from '@gitroom/nestjs-libraries/creation/creation.platforms';
 
@@ -624,6 +624,123 @@ describe('interactions run the platform\'s opencli write command', () => {
       i.bookmark('s1', { externalId: '123456789012345', url: 'https://www.pinterest.com/pin/123456789012345/' })
     );
     expect(writes.calls).toEqual([['pinterest', 'save', '123456789012345']]);
+  });
+});
+
+const inbox = async (identifier: string, runs: Run[], use: (i: any) => Promise<any>) => {
+  const fleet = fakeFleet(runs);
+  const result = await use(withFleet(channel(identifier), fleet).inbox);
+  return { result, calls: fleet.calls };
+};
+const BILI_ME = { internalId: '3747567055671097', profile: null, name: 'bili_84201078353' } as any;
+const ZHIHU_ME = { internalId: '862605311738023936', profile: 'tu-mi-43-37', name: '而罗' } as any;
+const biliVideoRow = (n: number) => ({ rank: n, title: `视频${n}`, plays: 100, likes: 0, date: '2026-09-28', url: `https://www.bilibili.com/video/BV1xK4y1C7a${n}` });
+const biliComment = (rpid: string, author: string, text: string) => ({ rank: 1, rpid, author, text, likes: 3, replies: 0, time: '2026-09-28 09:30' });
+const zhihuAnswerRow = (id: string, comments: number) => ({ rank: 1, question: `问题${id}`, votes: 1, comments, created: 1790000000, url: `https://www.zhihu.com/question/111/answer/${id}` });
+const zhihuComment = (id: string, author: string, content: string) => ({ rank: 1, depth: 0, id, author, likes: 0, created_at: '2026-09-21T10:00:00.000Z', url: `${ANSWER_URL}#comment-${id}`, content });
+
+describe('互动收件箱 of B站 and 知乎: comments on our own posts, and replies', () => {
+  it('B站 reads the comments of the latest 5 videos, without our own comments', async () => {
+    const videos = [1, 2, 3, 4, 5].map(biliVideoRow);
+    const { result, calls } = await inbox(
+      'bilibili',
+      [
+        ok(videos),
+        ok([biliComment('2001', '豆子', '求推荐磨豆机'), biliComment('2002', 'bili_84201078353', '谢谢大家'), { rpid: '', author: 'x', text: '无 id' }]),
+        { ok: false, code: 'EMPTY' },
+        ok([biliComment('2003', '阿杰', '第二个视频不错')]),
+        ok([]),
+        ok([]),
+      ],
+      (i) => i.fetch('s1', BILI_ME)
+    );
+    expect(calls).toEqual([
+      ['bilibili', 'user-videos', '3747567055671097', '--limit', '5'],
+      ...videos.map((v) => ['bilibili', 'comments', v.url.slice(-12), '--limit', '20']),
+    ]);
+    expect(result).toEqual([
+      {
+        kind: 'COMMENT', externalId: '2001', threadId: 'BV1xK4y1C7a1', threadTitle: '视频1', threadUrl: 'https://www.bilibili.com/video/BV1xK4y1C7a1',
+        replyTarget: '2001', authorName: '豆子', content: '求推荐磨豆机', platformTime: '2026-09-28T09:30:00.000Z',
+      },
+      expect.objectContaining({ externalId: '2003', threadId: 'BV1xK4y1C7a3', authorName: '阿杰' }),
+    ]);
+  });
+
+  it('our own comments stay out after the account is renamed in oksocial (by the username of the login)', async () => {
+    const renamed = { ...BILI_ME, name: '小鹿咖啡官方', profile: 'bili_84201078353' };
+    const { result } = await inbox('bilibili', [ok([biliVideoRow(1)]), ok([biliComment('2002', 'bili_84201078353', '谢谢大家'), biliComment('2003', '阿杰', '好')])], (i) =>
+      i.fetch('s1', renamed)
+    );
+    expect(result.map((r: any) => r.externalId)).toEqual(['2003']);
+  });
+
+  it('B站 without videos reads nothing else (a new account)', async () => {
+    const { result, calls } = await inbox('bilibili', [ok([])], (i) => i.fetch('s1', BILI_ME));
+    expect(result).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a post whose comments cannot be read is skipped; when none can be read the sync fails with the first reason', async () => {
+    const failed = { ok: false, code: 'FAILED', message: 'view API failed' };
+    const loggedOut = { ok: false, code: 'NOT_LOGGED_IN', message: '请登录' };
+    const partly = await inbox('bilibili', [ok([biliVideoRow(1), biliVideoRow(2)]), failed, ok([biliComment('2001', '豆子', '好')])], (i) => i.fetch('s1', BILI_ME));
+    expect(partly.result.map((r: any) => r.externalId)).toEqual(['2001']);
+    await expect(inbox('bilibili', [ok([biliVideoRow(1), biliVideoRow(2)]), failed, failed], (i) => i.fetch('s1', BILI_ME))).rejects.toThrow(/view API failed/);
+    // 知乎 now and then answers one read of a burst with "not logged in": that answer is skipped
+    const flaky = await inbox('zhihu', [ok([zhihuAnswerRow('202', 4), zhihuAnswerRow('203', 1)]), loggedOut, ok([zhihuComment('9003', '豆豆', '有道理')])], (i) => i.fetch('s1', ZHIHU_ME));
+    expect(flaky.result.map((r: any) => r.externalId)).toEqual(['9003']);
+    // a real logout fails every read
+    const out = inbox('zhihu', [ok([zhihuAnswerRow('202', 4), zhihuAnswerRow('203', 1)]), loggedOut, loggedOut], (i) => i.fetch('s1', ZHIHU_ME));
+    await expect(out).rejects.toBeInstanceOf(RefreshToken);
+  });
+
+  it('B站 replies under the comment by its rpid (writes need --execute)', async () => {
+    const { calls } = await inbox('bilibili', [ok([{ rpid: '3001', bvid: BV }])], (i) =>
+      i.reply.COMMENT('s1', BILI_ME, { replyTarget: '2001', threadId: BV }, '推荐 C40')
+    );
+    expect(calls).toEqual([['bilibili', 'comment', BV, '推荐 C40', '--parent', '2001', '--execute', 'true']]);
+    await expect(inbox('bilibili', [], (i) => i.reply.COMMENT('s1', BILI_ME, { replyTarget: '2001', threadId: null }, 'hi'))).rejects.toThrow(/哪个视频/);
+    expect(channel('bilibili').inbox!.topLevelReplies).toBeUndefined();
+  });
+
+  it('知乎 reads the newest comments of at most 3 answers that have any, without our own', async () => {
+    const answers = [zhihuAnswerRow('201', 0), zhihuAnswerRow('202', 4), zhihuAnswerRow('203', 1), zhihuAnswerRow('204', 0), zhihuAnswerRow('205', 2), zhihuAnswerRow('206', 9)];
+    const { result, calls } = await inbox(
+      'zhihu',
+      [ok(answers), ok([zhihuComment('9001', '阿杰', '学到了'), zhihuComment('9002', '而罗', '谢谢')]), ok([zhihuComment('9003', '豆豆', '有道理')]), ok([])],
+      (i) => i.fetch('s1', ZHIHU_ME)
+    );
+    const comments = (id: string) => ['zhihu', 'answer-comments', `https://www.zhihu.com/question/111/answer/${id}`, '--limit', '20', '--order', 'latest', '--replies-limit', '0'];
+    expect(calls).toEqual([['zhihu', 'user-answers', 'tu-mi-43-37', '--limit', '20'], comments('202'), comments('203'), comments('205')]);
+    expect(result).toEqual([
+      {
+        kind: 'COMMENT', externalId: '9001', threadId: '202', threadTitle: '问题202', threadUrl: 'https://www.zhihu.com/question/111/answer/202',
+        replyTarget: 'https://www.zhihu.com/question/111/answer/202', authorName: '阿杰', content: '学到了', platformTime: '2026-09-21T10:00:00.000Z',
+      },
+      expect.objectContaining({ externalId: '9003', threadId: '203' }),
+    ]);
+  });
+
+  it('知乎 answers without comments need no comment read', async () => {
+    const { result, calls } = await inbox('zhihu', [ok([zhihuAnswerRow('201', 0), zhihuAnswerRow('202', 0)])], (i) => i.fetch('s1', ZHIHU_ME));
+    expect(result).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('知乎 answers a comment with a new comment on the answer, and says so to the UI', async () => {
+    const { calls } = await inbox('zhihu', [ok([{ status: 'success', outcome: 'created' }])], (i) =>
+      i.reply.COMMENT('s1', ZHIHU_ME, { replyTarget: ANSWER_URL, threadId: '222' }, '感谢补充')
+    );
+    expect(calls).toEqual([['zhihu', 'comment', ANSWER_URL, '感谢补充', '--execute', 'true']]);
+    expect(channel('zhihu').inbox!.topLevelReplies).toEqual(['COMMENT']);
+    await expect(inbox('zhihu', [ok([{ status: 'failed', message: '评论太频繁' }])], (i) => i.reply.COMMENT('s1', ZHIHU_ME, { replyTarget: ANSWER_URL, threadId: '222' }, 'hi'))).rejects.toThrow(/评论太频繁/);
+    await expect(inbox('zhihu', [], (i) => i.reply.COMMENT('s1', ZHIHU_ME, { replyTarget: null, threadId: '222' }, 'hi'))).rejects.toThrow(/哪个回答/);
+  });
+
+  it('only B站 and 知乎 of the new channels have an inbox, and both answer comments', () => {
+    const replies = Object.fromEntries(BROWSER_CHANNELS.filter((c) => c.inbox).map((c) => [c.identifier, Object.keys(c.inbox!.reply || {})]));
+    expect(replies).toEqual({ bilibili: ['COMMENT'], zhihu: ['COMMENT'] });
   });
 });
 

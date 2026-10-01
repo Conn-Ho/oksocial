@@ -5,6 +5,7 @@ import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { MenuItem } from '@gitroom/frontend/components/new-layout/menu-item';
+import { useInboxUnreplied } from '@gitroom/frontend/components/inbox/inbox.hooks';
 
 export interface MenuItemInterface {
   name: string;
@@ -355,6 +356,7 @@ export const useVisibleMenuItems = () => {
 
 export const TopMenu: FC<{ variant?: 'rail' | 'row' }> = ({ variant = 'rail' }) => {
   const { firstMenu, secondMenu } = useVisibleMenuItems();
+  const unreplied = useInboxUnreplied(firstMenu.some((item) => item.path === '/inbox'));
   const row = variant === 'row';
   return (
     <>
@@ -367,6 +369,7 @@ export const TopMenu: FC<{ variant?: 'rail' | 'row' }> = ({ variant = 'rail' }) 
             key={item.name}
             onClick={item.onClick}
             variant={variant}
+            badge={item.path === '/inbox' ? unreplied : 0}
           />
         ))}
       </div>

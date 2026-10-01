@@ -9,6 +9,7 @@ jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
   socialIntegrationList: [
     { identifier: 'xweb', inbox: { fetch: jest.fn(), reply: { COMMENT: jest.fn(), MENTION: jest.fn() } } },
     { identifier: 'weibo', inbox: { fetch: jest.fn() } },
+    { identifier: 'zhihu', inbox: { fetch: jest.fn(), reply: { COMMENT: jest.fn() }, topLevelReplies: ['COMMENT'] } },
     { identifier: 'linkedin' },
   ],
 }));
@@ -33,6 +34,7 @@ const setup = (
     setStatus: jest.fn(async () => ({})),
     listTemplates: jest.fn(async () => [{ content: '感谢关注' }]),
     setNotice: jest.fn(async () => ({})),
+    replyHistory: jest.fn(async () => []),
     notices: jest.fn(async () => [{ id: 'i1', name: '：）', providerIdentifier: 'xiaohongshu', notice: '网页版没有登录' }]),
     inboxIntegrations: jest.fn(async () => [
       { id: 'i1', organizationId: 'o1' },
@@ -83,8 +85,19 @@ const setup = (
 describe('InboxService', () => {
   it('lists inbox providers and what each can answer', () => {
     const { service } = setup();
-    expect(service.inboxProviders()).toEqual(['xweb', 'weibo']);
-    expect(service.replyCapabilities()).toEqual({ xweb: ['COMMENT', 'MENTION'], weibo: [] });
+    expect(service.inboxProviders()).toEqual(['xweb', 'weibo', 'zhihu']);
+    expect(service.replyCapabilities()).toEqual({ xweb: ['COMMENT', 'MENTION'], weibo: [], zhihu: ['COMMENT'] });
+  });
+
+  it('reply history passes the page, the source and the kind of item on', async () => {
+    const { service, repo } = setup();
+    await service.replyHistory('o1', 3, 'AI', 'COMMENT');
+    expect(repo.replyHistory).toHaveBeenCalledWith('o1', 3, 'AI', 'COMMENT');
+  });
+
+  it('tells the UI which kinds a platform answers with a new comment on the post', () => {
+    const { service } = setup();
+    expect(service.topLevelReplies()).toEqual({ zhihu: ['COMMENT'] });
   });
 
   it('sync stores only new items and tags them in batches', async () => {
@@ -261,7 +274,7 @@ describe('InboxService', () => {
     finish([{ kind: 'DM', externalId: 'x', authorName: 'a', content: 'hi' }]);
     await settle();
     expect(service.syncStatus('o1')).toEqual({ running: false, last: { at: expect.any(String), added: 1, failed: 0 } });
-    expect(repo.inboxIntegrations).toHaveBeenCalledWith(['xweb', 'weibo'], 'o1');
+    expect(repo.inboxIntegrations).toHaveBeenCalledWith(['xweb', 'weibo', 'zhihu'], 'o1');
   });
 
   it('立即更新 of one channel, and a run that fails, still end', async () => {

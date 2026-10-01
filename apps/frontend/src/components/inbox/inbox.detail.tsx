@@ -13,6 +13,7 @@ import {
   intentLabel,
   sentimentLabel,
   useInboxCapabilities,
+  useInboxTopLevelReplies,
   useReplyTemplates,
 } from '@gitroom/frontend/components/inbox/inbox.hooks';
 
@@ -55,6 +56,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
   const t = useT();
   const toaster = useToaster();
   const { data: capabilities } = useInboxCapabilities();
+  const { data: topLevel } = useInboxTopLevelReplies();
   const { data: templates } = useReplyTemplates();
   const [text, setText] = useState('');
   const [source, setSource] = useState<'MANUAL' | 'AI' | 'TEMPLATE'>('MANUAL');
@@ -68,6 +70,7 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
   }, [item.id]);
 
   const canReply = !!capabilities?.[item.integration.providerIdentifier]?.includes(item.kind);
+  const repliesOnPost = canReply && !!topLevel?.[item.integration.providerIdentifier]?.includes(item.kind);
   const scopedTemplates = (templates || []).filter((tpl) =>
     item.kind === 'DM' ? tpl.scope === 'DM' : tpl.scope === 'COMMENT'
   );
@@ -197,6 +200,14 @@ export const InboxDetail: FC<{ item: InboxItem; onChanged: () => void }> = ({ it
               'inbox_cannot_reply',
               '这个平台的{{kind}}暂时不能在 oksocial 里回复，请到平台内回复后标记为已解决。',
               { kind: t(`inbox_kind_${item.kind.toLowerCase()}`, KIND_TEXT[item.kind]), interpolation: { escapeValue: false } }
+            )}
+          </p>
+        )}
+        {repliesOnPost && (
+          <p className="text-[13px] text-textColor/60">
+            {t(
+              'inbox_reply_top_level',
+              '这个平台不能直接回复某条评论：回复会作为所在内容下的一条新评论发出，建议在开头写上对方的名字。'
             )}
           </p>
         )}

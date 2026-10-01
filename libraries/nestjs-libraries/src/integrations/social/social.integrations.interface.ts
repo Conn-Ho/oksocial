@@ -108,6 +108,9 @@ export type InboxFetched = {
 // logged in), shown to the team instead of an inbox that silently stays empty.
 export type InboxFetchResult = { items: InboxFetched[]; warnings?: string[] };
 
+// What a reply needs of the item it answers (as fetch stored it).
+export type InboxReplyItem = { replyTarget: string | null; threadId: string | null };
+
 export type InboxCapabilities = {
   // Latest items; the inbox de-duplicates by (kind, externalId).
   fetch(token: string, integration: Integration): Promise<InboxFetched[] | InboxFetchResult>;
@@ -115,14 +118,12 @@ export type InboxCapabilities = {
   reply?: Partial<
     Record<
       InboxKind,
-      (
-        token: string,
-        integration: Integration,
-        item: { replyTarget: string | null; threadId: string | null },
-        text: string
-      ) => Promise<void>
+      (token: string, integration: Integration, item: InboxReplyItem, text: string) => Promise<void>
     >
   >;
+  // Kinds whose reply goes out as a new comment on the post, not under the item: the platform
+  // has no reply to a comment (the UI says so before sending).
+  topLevelReplies?: InboxKind[];
 };
 
 export const CHANNEL_STAT_KEYS = [

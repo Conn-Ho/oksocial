@@ -3,6 +3,7 @@ import { Integration, MonitorItemKind, MonitorKind, MonitorTarget } from '@prism
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import {
+  MonitorPostSort,
   MonitorTargetChanges,
   MonitorRepository,
 } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository';
@@ -510,6 +511,32 @@ export class MonitorService implements OnModuleInit {
   async items(orgId: string, id: string, kind: MonitorItemKind, page?: number, sentiment?: string) {
     await this.getTarget(orgId, id);
     return this._repository.items(id, kind, page, sentiment);
+  }
+
+  /** 竞品帖文: every competitor post (and keyword hit when asked), most liked first unless sorted otherwise. */
+  allPosts(
+    orgId: string,
+    query: {
+      source?: 'COMPETITORS' | 'ALL';
+      platform?: string;
+      targetId?: string;
+      from?: string;
+      to?: string;
+      sort?: MonitorPostSort;
+      order?: 'asc' | 'desc';
+      page?: number;
+    }
+  ) {
+    return this._repository.allPosts(orgId, {
+      withHits: query.source === 'ALL',
+      platform: query.platform,
+      targetId: query.targetId,
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+      sort: query.sort ?? 'likes',
+      order: query.order ?? 'desc',
+      page: query.page ?? 1,
+    });
   }
 
   /** Our usable channel of that platform: the chosen one if it still works, else the oldest. */

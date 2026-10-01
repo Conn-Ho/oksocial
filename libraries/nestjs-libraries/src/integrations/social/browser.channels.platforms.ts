@@ -4,6 +4,7 @@ import type {
   Row,
 } from '@gitroom/nestjs-libraries/integrations/social/browser.channels';
 import {
+  InboxFetched,
   InteractAccount,
   InteractPost,
   MonitorPost,
@@ -17,9 +18,10 @@ import {
   firstRow,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 
-// What each browser channel's opencli commands (1.8.8) read for 监控 and do as interactions, mapped
-// onto the shared row shapes. A platform or action without a command is left out: unsupported.
-type Platform = Pick<BrowserChannelSpec, 'monitor' | 'interact'>;
+// What each browser channel's opencli commands (1.8.8) read for 监控 and the inbox and do as
+// interactions, mapped onto the shared row shapes. A platform or action without a command is left
+// out: unsupported.
+type Platform = Pick<BrowserChannelSpec, 'monitor' | 'interact' | 'inbox'>;
 
 const text = (value: unknown) => (value === null || value === undefined ? '' : String(value).trim());
 const opt = (value: unknown) => text(value) || undefined;
@@ -45,6 +47,33 @@ export const clip = (value: string, max: number) => {
   const end = Math.max(...SENTENCE_ENDS.map((p) => out.lastIndexOf(p)));
   return end >= max / 2 ? out.slice(0, end + 1).trim() : out;
 };
+
+/**
+ * The inbox items of each of our posts, one read per post. A post that cannot be read is skipped
+ * (知乎 answers a burst of reads with "not logged in" now and then, though the listing just read);
+ * when none can be read, the sync fails with the first reason (a real logout fails them all).
+ */
+const threadItems = async <T>(threads: T[], readThread: (thread: T) => Promise<InboxFetched[]>) => {
+  const items: InboxFetched[] = [];
+  const failures: unknown[] = [];
+  for (const thread of threads) {
+    try {
+      items.push(...(await readThread(thread)));
+    } catch (err) {
+      failures.push(err);
+    }
+  }
+  if (failures.length && failures.length === threads.length) {
+    throw failures[0];
+  }
+  return items;
+};
+/**
+ * Rows written by someone else than the account itself. The rows carry the author's name only: the
+ * account's name, or its username from the login (kept when the name is changed in oksocial).
+ */
+const notMine = (author: unknown, integration: { name: string; profile: string | null }) =>
+  ![integration.name, integration.profile].includes(text(author));
 
 // ---------------------------------------------------------------- B站
 const BV = /bilibili\.com\/video\/(BV[A-Za-z0-9]{10})/i;
@@ -76,6 +105,16 @@ const biliVideo = (r: Row, extra: Partial<MonitorPost> = {}): MonitorPost[] => {
 };
 const userVideos = async (read: Read, uid: string, limit: number, extra: Partial<MonitorPost> = {}) =>
   (await read(['bilibili', 'user-videos', uid, '--limit', limitOf(limit)])).flatMap((r) => biliVideo(r, extra));
+// 互动: the latest videos (their listing has no comment counts, so each is read) and the top
+// comments of each, as B站 orders them
+const BILI_INBOX_VIDEOS = 5;
+const BILI_INBOX_COMMENTS = 20;
+/** A top-level comment under one of our videos; a reply goes under it by its rpid. */
+const biliInboxItem = (video: MonitorPost) => (r: Row): InboxFetched => ({
+  kind: 'COMMENT', externalId: String(r.rpid), threadId: video.externalId, threadTitle: video.title, threadUrl: video.url,
+  replyTarget: String(r.rpid), authorName: text(r.author), content: String(r.text),
+  platformTime: biliTime(r.time)?.toISOString() ?? opt(r.time),
+});
 
 export const BILIBILI: Platform = {
   monitor: {
@@ -142,6 +181,22 @@ export const BILIBILI: Platform = {
       return ['bilibili', 'comment', bv, body, '--parent', comment.externalId, '--execute', 'true'];
     },
   },
+  inbox: {
+    fetch: async (read, integration) =>
+      threadItems(await userVideos(read, integration.internalId, BILI_INBOX_VIDEOS), async (video) =>
+        (await read(['bilibili', 'comments', video.externalId, '--limit', limitOf(BILI_INBOX_COMMENTS)], 120_000))
+          .filter((r) => r.rpid && r.text && notMine(r.author, integration))
+          .map(biliInboxItem(video))
+      ),
+    reply: {
+      COMMENT: (item, body) => {
+        if (!item.threadId || !item.replyTarget) {
+          throw new Error('不知道这条评论在哪个视频下，无法回复');
+        }
+        return ['bilibili', 'comment', item.threadId, body, '--parent', item.replyTarget, '--execute', 'true'];
+      },
+    },
+  },
 };
 
 // ---------------------------------------------------------------- 知乎
@@ -177,6 +232,16 @@ const zhihuTarget = (post: InteractPost) => {
   }
   throw new Error('知乎点赞、收藏和评论需要问题下回答的完整链接，或专栏文章链接');
 };
+// 互动: the latest answers that have comments, their newest top-level comments. Articles are left
+// out (opencli reads comments of answers only).
+const ZHIHU_INBOX_SCAN = 20;
+const ZHIHU_INBOX_ANSWERS = 3;
+const ZHIHU_INBOX_COMMENTS = 20;
+/** A comment under one of our answers; zhihu comments only on the answer, so that is what a reply needs. */
+const zhihuInboxItem = (answer: MonitorPost) => (r: Row): InboxFetched => ({
+  kind: 'COMMENT', externalId: String(r.id), threadId: answer.externalId, threadTitle: answer.title, threadUrl: answer.url,
+  replyTarget: answer.url, authorName: text(r.author), content: String(r.content), platformTime: opt(r.created_at),
+});
 const zhihuAccounts = (rows: Row[]): InteractAccount[] =>
   rows.filter((r) => r.url_token).map((r) => ({
     name: String(r.url_token), displayName: opt(r.name), bio: opt(r.headline), url: text(r.url) || peopleUrl(r.url_token),
@@ -244,6 +309,28 @@ export const ZHIHU: Platform = {
     comment: (post, body) => ['zhihu', 'comment', zhihuTarget(post), body, '--execute', 'true'],
     followers: async (read, handle, limit) => zhihuAccounts(await read(['zhihu', 'followers', handle, '--limit', limitOf(limit)])),
     following: async (read, handle, limit) => zhihuAccounts(await read(['zhihu', 'following', handle, '--limit', limitOf(limit)])),
+  },
+  inbox: {
+    fetch: async (read, integration) => {
+      const listed = await read(['zhihu', 'user-answers', integration.profile || integration.internalId, '--limit', limitOf(ZHIHU_INBOX_SCAN)]);
+      // an answer without comments needs no read (the listing counts them)
+      const answers = listed.flatMap((r) => zhihuItem(r)).filter((a) => a.comments !== 0).slice(0, ZHIHU_INBOX_ANSWERS);
+      return threadItems(answers, async (answer) =>
+        (await read(['zhihu', 'answer-comments', answer.url, '--limit', limitOf(ZHIHU_INBOX_COMMENTS), '--order', 'latest', '--replies-limit', '0'], 120_000))
+          .filter((r) => r.id && r.content && notMine(r.author, integration))
+          .map(zhihuInboxItem(answer))
+      );
+    },
+    reply: {
+      COMMENT: (item, body) => {
+        if (!item.replyTarget) {
+          throw new Error('不知道这条评论在哪个回答下，无法回复');
+        }
+        return ['zhihu', 'comment', item.replyTarget, body, '--execute', 'true'];
+      },
+    },
+    // zhihu comment writes top-level comments only
+    topLevelReplies: ['COMMENT'],
   },
 };
 

@@ -87,10 +87,16 @@ export const useInboxList = (filters: InboxFilters) => {
   return useSWR<{ total: number; page: number; pages: number; items: InboxItem[] }>(key, load);
 };
 
-export const useInboxCounts = () => {
+export const useInboxCounts = (enabled = true) => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/inbox/counts')).json(), []);
-  return useSWR<Partial<Record<InboxKind, number>>>('/inbox/counts', load, { refreshInterval: 60_000 });
+  return useSWR<Partial<Record<InboxKind, number>>>(enabled ? '/inbox/counts' : null, load, { refreshInterval: 60_000 });
+};
+
+/** Everything not answered yet, over all kinds: the 互动 badge in the menu (polled every minute while shown). */
+export const useInboxUnreplied = (shown: boolean) => {
+  const { data } = useInboxCounts(shown);
+  return KIND_TABS.reduce((sum, { kind }) => sum + (typeof data?.[kind] === 'number' ? data[kind]! : 0), 0);
 };
 
 export const useInboxCapabilities = () => {
@@ -99,15 +105,24 @@ export const useInboxCapabilities = () => {
   return useSWR<Record<string, InboxKind[]>>('/inbox/capabilities', load);
 };
 
+/** Kinds a platform answers with a new comment on the post, not under the item (知乎). */
+export const useInboxTopLevelReplies = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/capabilities/top-level')).json(), []);
+  return useSWR<Record<string, InboxKind[]>>('/inbox/capabilities/top-level', load);
+};
+
 export const useReplyTemplates = () => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/inbox/templates')).json(), []);
   return useSWR<ReplyTemplate[]>('/inbox/templates', load);
 };
 
-export const useReplyHistory = (page: number) => {
+export type ReplySource = 'MANUAL' | 'AI' | 'TEMPLATE' | 'AUTOMATION';
+
+export const useReplyHistory = (page: number, source?: ReplySource, kind?: InboxKind) => {
   const fetch = useFetch();
-  const key = `/inbox/history?page=${page}`;
+  const key = `/inbox/history?page=${page}${source ? `&source=${source}` : ''}${kind ? `&kind=${kind}` : ''}`;
   const load = useCallback(async () => (await fetch(key)).json(), [key]);
   return useSWR<
     Array<{

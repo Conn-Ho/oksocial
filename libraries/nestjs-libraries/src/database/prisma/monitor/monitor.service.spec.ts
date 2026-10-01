@@ -92,6 +92,7 @@ const setup = (
     getItem: jest.fn(async (): Promise<any> => null),
     snapshots: jest.fn(async () => [{ likes: 1 }]),
     items: jest.fn(async () => ({ items: [] as any[] })),
+    allPosts: jest.fn(async () => ({ total: 0, page: 1, pages: 0, items: [] as any[] })),
     postsSince: jest.fn(async (): Promise<any[]> => []),
     listTargets: jest.fn(async (): Promise<any[]> => []),
     updateTarget: jest.fn(async () => ({ count: 1 })),
@@ -204,6 +205,29 @@ describe('platforms and link detection', () => {
     expect(() => service.resolveAccount('bob')).toThrow(/先选平台/);
     expect(() => service.resolveAccount('https://nowhere.com/u/x')).toThrow();
     expect(() => service.resolveAccount('bob', 'linkedin')).toThrow(/暂不支持监控/);
+  });
+});
+
+describe('竞品帖文', () => {
+  it('lists competitor posts most liked first by default, 30 a page', async () => {
+    const { service, repo } = setup();
+    await service.allPosts('o1', {});
+    expect(repo.allPosts).toHaveBeenCalledWith('o1', {
+      withHits: false, platform: undefined, targetId: undefined, from: undefined, to: undefined, sort: 'likes', order: 'desc', page: 1,
+    });
+  });
+
+  it('passes the filters on, with keyword hits only for source ALL and dates as dates', async () => {
+    const { service, repo } = setup();
+    await service.allPosts('o1', {
+      source: 'ALL', platform: 'bilibili', targetId: 't1', from: '2026-09-01T00:00:00.000Z', to: '2026-09-30T23:59:59.000Z', sort: 'views', order: 'asc', page: 2,
+    });
+    expect(repo.allPosts).toHaveBeenCalledWith('o1', {
+      withHits: true, platform: 'bilibili', targetId: 't1', from: new Date('2026-09-01T00:00:00.000Z'), to: new Date('2026-09-30T23:59:59.000Z'),
+      sort: 'views', order: 'asc', page: 2,
+    });
+    await service.allPosts('o1', { source: 'COMPETITORS' });
+    expect((repo.allPosts.mock.calls.at(-1) as any[])[1].withHits).toBe(false);
   });
 });
 

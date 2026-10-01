@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useVisibleMenuItems } from '@gitroom/frontend/components/layout/top.menu';
 import { MenuItem } from '@gitroom/frontend/components/new-layout/menu-item';
+import { useInboxUnreplied } from '@gitroom/frontend/components/inbox/inbox.hooks';
 import { LanguageComponent } from '@gitroom/frontend/components/layout/language.component';
 
 const ModeComponent = dynamic(() => import('@gitroom/frontend/components/layout/mode.component'), {
@@ -35,6 +36,7 @@ export const MobileNav: FC = () => {
   const t = useT();
   const pathname = usePathname();
   const { firstMenu, secondMenu } = useVisibleMenuItems();
+  const unreplied = useInboxUnreplied(firstMenu.some((item) => item.path === '/inbox'));
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -78,7 +80,7 @@ export const MobileNav: FC = () => {
         <ul className="flex gap-[4px] px-[8px] py-[6px]">
           {primary.map((item) => (
             <li key={item.path} className="flex-1 min-w-0">
-              <MenuItem path={item.path} label={item.name} icon={item.icon} onClick={item.onClick} />
+              <MenuItem path={item.path} label={item.name} icon={item.icon} onClick={item.onClick} badge={item.path === '/inbox' ? unreplied : 0} />
             </li>
           ))}
           <li className="flex-1 min-w-0">

@@ -27,6 +27,15 @@ export class InboxQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
 }
 
+const REPLY_SOURCES = ['MANUAL', 'AI', 'TEMPLATE', 'AUTOMATION'] as const;
+
+// 回复历史: by who or what wrote the reply, and the kind of item it answered
+export class ReplyHistoryQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @IsIn(REPLY_SOURCES) source?: (typeof REPLY_SOURCES)[number];
+  @IsOptional() @IsIn(KINDS) kind?: (typeof KINDS)[number];
+}
+
 export class InboxReplyDto {
   @IsString() @IsNotEmpty() @MaxLength(2000) content: string;
   @IsOptional() @IsIn(['MANUAL', 'AI', 'TEMPLATE']) source?: 'MANUAL' | 'AI' | 'TEMPLATE';

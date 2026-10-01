@@ -26,6 +26,8 @@ import { MonitorDetail } from '@gitroom/frontend/components/monitor/monitor.deta
 import { RemakeModal } from '@gitroom/frontend/components/monitor/remake.modal';
 import { CompetitorSearchModal } from '@gitroom/frontend/components/monitor/competitor.search.modal';
 import { CompetitorImportModal } from '@gitroom/frontend/components/monitor/competitor.import.modal';
+import { CompetitorPosts } from '@gitroom/frontend/components/monitor/competitor.posts';
+import { useOpenFromQuery } from '@gitroom/frontend/components/layout/quick.create';
 import { MobileBack, scrollToTopOnPhone } from '@gitroom/frontend/components/new-layout/mobile.back';
 
 const ADD_LABEL: Record<MonitorKind, string> = { POST: '监控帖子', ACCOUNT: '添加竞品', KEYWORD: '添加关键词' };
@@ -34,6 +36,12 @@ const EMPTY: Record<MonitorKind, string> = {
   ACCOUNT: '添加竞品账号，定时读取他们最近的帖子；发新帖时通知你，也可以和自己的账号做对比。',
   KEYWORD: '添加关键词，定时搜索最新内容，AI 标记情绪，有新内容时通知你。',
 };
+
+const tabClass = (selected: boolean) =>
+  clsx(
+    'px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
+    selected ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
+  );
 
 /** One row of the target list: what is monitored and its latest state. */
 const TargetRow: FC<{ target: MonitorTarget; active: boolean; onClick: () => void }> = ({ target, active, onClick }) => {
@@ -92,10 +100,12 @@ export const MonitorComponent: FC = () => {
   const user = useUser();
   const call = useMonitorCall();
   const [kind, setKind] = useState<MonitorKind>('POST');
+  // 竞品帖文: every competitor post in one table instead of one target at a time
+  const [library, setLibrary] = useState(false);
   const [selected, setSelected] = useState('');
   const { data: targets, mutate, isLoading } = useMonitorTargets(kind);
   const { data: platforms } = useMonitorPlatforms();
-  const { data: integrations } = useIntegrationList();
+  const { data: integrations, isLoading: loadingChannels } = useIntegrationList();
   const canManage = canManageChannels(user?.role);
   const canWrite = canWritePosts(user?.role);
   const list = targets || [];
@@ -128,18 +138,27 @@ export const MonitorComponent: FC = () => {
     }
   }, [mutate]);
 
-  const openAdd = useCallback(
-    () =>
+  const openAddFor = useCallback(
+    (what: MonitorKind) =>
       modal.openModal({
-        title: t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind]),
+        title: t(`monitor_add_${what.toLowerCase()}`, ADD_LABEL[what]),
         withCloseButton: true,
         classNames: { modal: 'bg-transparent text-textColor w-[640px] max-w-[95vw]' },
         children: (close: () => void) => (
-          <AddTargetModal kind={kind} platforms={platforms || []} channels={channels} close={close} onAdded={firstRead} />
+          <AddTargetModal kind={what} platforms={platforms || []} channels={channels} close={close} onAdded={firstRead} />
         ),
       }),
-    [kind, platforms, channels, firstRead]
+    [platforms, channels, firstRead]
   );
+  const openAdd = useCallback(() => openAddFor(kind), [kind, openAddFor]);
+
+  // 「新建」 › 添加监控 from another page: /monitor?add=POST (or ACCOUNT / KEYWORD)
+  useOpenFromQuery('add', canManage && !!platforms && !loadingChannels, (value) => {
+    const what = KIND_TABS.find((tab) => tab.kind === value)?.kind ?? 'POST';
+    setKind(what);
+    setLibrary(false);
+    openAddFor(what);
+  });
 
   // 竞品 › 搜索: platforms that cannot search lead to the paste-a-link form
   const openSearch = useCallback(
@@ -200,18 +219,21 @@ export const MonitorComponent: FC = () => {
             <button
               key={tab.kind}
               type="button"
-              onClick={() => setKind(tab.kind)}
-              aria-current={kind === tab.kind}
-              className={clsx(
-                'px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',
-                kind === tab.kind ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
-              )}
+              onClick={() => {
+                setKind(tab.kind);
+                setLibrary(false);
+              }}
+              aria-current={!library && kind === tab.kind}
+              className={tabClass(!library && kind === tab.kind)}
             >
               {t(`monitor_tab_${tab.kind.toLowerCase()}`, tab.label)}
             </button>
           ))}
+          <button type="button" onClick={() => setLibrary(true)} aria-current={library} className={tabClass(library)}>
+            {t('competitor_posts', '竞品帖文')}
+          </button>
         </nav>
-        <div className="md:ms-auto flex gap-[8px] flex-wrap">
+        <div className={clsx('md:ms-auto flex gap-[8px] flex-wrap', library && 'hidden')}>
           {canWrite && (
             <Button secondary={true} onClick={openRemake}>
               {t('monitor_remake_link', '复刻一条链接')}
@@ -231,7 +253,12 @@ export const MonitorComponent: FC = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 min-h-0 border-t border-newTableBorder">
+      {library && (
+        <div className="flex flex-1 min-h-0 border-t border-newTableBorder">
+          <CompetitorPosts platforms={platforms || []} channels={channels} canWrite={canWrite} />
+        </div>
+      )}
+      <div className={clsx('flex flex-1 min-h-0 border-t border-newTableBorder', library && 'hidden')}>
         <ul
           className={clsx(
             'w-full md:w-[340px] md:max-w-[42%] md:border-e border-newTableBorder overflow-y-auto',
