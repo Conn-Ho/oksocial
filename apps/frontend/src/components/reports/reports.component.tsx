@@ -1,183 +1,96 @@
 'use client';
 
-import React, { FC, useCallback, useState } from 'react';
-import useSWR from 'swr';
-import clsx from 'clsx';
-import dayjs from 'dayjs';
-import copy from 'copy-to-clipboard';
-import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
+import React, { FC, useCallback, useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { Button } from '@gitroom/react/form/button';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
-import { ChannelReport, ReportView } from '@gitroom/frontend/components/reports/report.view';
+import { useReportCall } from '@gitroom/frontend/components/reports/reports.hooks';
+import { PillTabs, usePlatformNames } from '@gitroom/frontend/components/reports/report.ui';
+import { PlatformReportTab } from '@gitroom/frontend/components/reports/platform.report';
+import { PostReportTab } from '@gitroom/frontend/components/reports/post.report';
+import { CompetitorReportTab } from '@gitroom/frontend/components/reports/competitor.report';
+import { AudienceReportTab } from '@gitroom/frontend/components/reports/audience.report';
+import { WeeklyReportTab } from '@gitroom/frontend/components/reports/weekly.report';
 
-type Share = { id: string; url: string; days: number; expiresAt: string | null; createdAt: string; hasPassword: boolean };
-const PERIODS = [7, 30, 90] as const;
+const TABS = [
+  { key: 'platform', label: '平台报告' },
+  { key: 'posts', label: '帖文报告' },
+  { key: 'competitor', label: '竞品报告' },
+  { key: 'audience', label: '受众分析' },
+  { key: 'weekly', label: 'AI 周报' },
+] as const;
+type Tab = (typeof TABS)[number]['key'];
+// tabs whose numbers 立即更新 reads (audiences are read once a day by the scheduled collection)
+const REFRESHABLE: Tab[] = ['platform', 'posts'];
+const tabOf = (value: string | null): Tab => TABS.find((x) => x.key === value)?.key || 'platform';
 
-const useReport = (days: number) => {
-  const fetch = useFetch();
-  const key = `/reports/overview?days=${days}`;
-  const load = useCallback(async () => (await fetch(key)).json(), [key]);
-  return useSWR<ChannelReport>(key, load);
-};
-
-const useShares = () => {
-  const fetch = useFetch();
-  const load = useCallback(async () => (await fetch('/reports/shares')).json(), []);
-  return useSWR<Share[]>('/reports/shares', load);
-};
-
-const useWeeklyEmail = () => {
-  const fetch = useFetch();
-  const load = useCallback(async () => (await fetch('/reports/weekly-email')).json(), []);
-  return useSWR<{ weeklyReportEmail: boolean }>('/reports/weekly-email', load);
-};
-
-/** 报告: cross-channel KPIs and table, share links, weekly email. */
+/** 报告: 平台报告 / 帖文报告 / 竞品报告 / 受众分析 / AI 周报. The tab lives in the URL (?tab=). */
 export const ReportsComponent: FC = () => {
-  const fetch = useFetch();
   const t = useT();
   const toaster = useToaster();
   const user = useUser();
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const call = useReportCall();
+  const { mutate } = useSWRConfig();
+  const platformName = usePlatformNames();
   const canManage = canManageChannels(user?.role);
-  const [days, setDays] = useState<(typeof PERIODS)[number]>(7);
-  const { data: report, mutate: mutateReport } = useReport(days);
+  const [tab, setTab] = useState<Tab>(tabOf(params.get('tab')));
   const [refreshing, setRefreshing] = useState(false);
-  const { data: shares, mutate: mutateShares } = useShares();
-  const { data: weekly, mutate: mutateWeekly } = useWeeklyEmail();
-  const [password, setPassword] = useState('');
-  const [expires, setExpires] = useState<number>(7);
 
-  // 立即更新: read the accounts now instead of waiting for the 3-hourly collection
+  // back / forward and links to another tab while the page is open
+  useEffect(() => setTab(tabOf(params.get('tab'))), [params]);
+
+  const open = useCallback(
+    (next: Tab) => {
+      setTab(next);
+      const query = new URLSearchParams(params.toString());
+      query.set('tab', next);
+      router.replace(`${pathname}?${query.toString()}`, { scroll: false });
+    },
+    [pathname, params, router]
+  );
+
+  // 立即更新: read the accounts (totals and posts) now instead of waiting for the 3-hourly collection
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    const res = await fetch('/reports/refresh', { method: 'POST' });
-    setRefreshing(false);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toaster.show(body?.message || t('refresh_failed', '更新失败，请稍后再试'), 'warning');
-      return;
+    try {
+      const body = await call('/reports/refresh');
+      toaster.show(t('refresh_done', '已更新 {{n}} 个账号的数据', { n: body.collected ?? 0 }), 'success');
+      mutate((key) => typeof key === 'string' && key.startsWith('/reports/'));
+    } catch (e) {
+      toaster.show((e as Error).message || t('refresh_failed', '更新失败，请稍后再试'), 'warning');
+    } finally {
+      setRefreshing(false);
     }
-    toaster.show(t('refresh_done', '已更新 {{n}} 个账号的数据', { n: body.collected ?? 0 }), 'success');
-    mutateReport();
-  }, [mutateReport]);
-
-  const createShare = useCallback(async () => {
-    const res = await fetch('/reports/shares', {
-      method: 'POST',
-      body: JSON.stringify({ days, expiresInDays: expires || undefined, password: password || undefined }),
-    });
-    if (!res.ok) {
-      // 402: the plan has no share links, the upgrade dialog already explained it
-      if (res.status !== 402) {
-        toaster.show(t('share_failed', '创建失败（密码至少 4 位）'), 'warning');
-      }
-      return;
-    }
-    const share = await res.json();
-    copy(share.url);
-    toaster.show(t('share_copied', '分享链接已复制'), 'success');
-    setPassword('');
-    mutateShares();
-  }, [days, expires, password]);
-
-  const removeShare = useCallback(async (id: string) => {
-    await fetch(`/reports/shares/${id}`, { method: 'DELETE' });
-    mutateShares();
   }, []);
 
-  const toggleWeekly = useCallback(async () => {
-    await fetch('/reports/weekly-email', {
-      method: 'PUT',
-      body: JSON.stringify({ enabled: !weekly?.weeklyReportEmail }),
-    });
-    mutateWeekly();
-  }, [weekly]);
-
   return (
-    <div className="flex flex-col gap-[20px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
+    <div className="flex flex-col gap-[16px] p-[16px] md:p-[24px] flex-1 min-w-0 overflow-y-auto">
       <header className="flex items-center gap-[12px] flex-wrap">
         <h2 className="sr-only">{t('reports', '报告')}</h2>
-        <div className="flex gap-[4px] md:ms-auto max-w-full overflow-x-auto" role="tablist" aria-label={t('period', '周期')}>
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              role="tab"
-              aria-selected={days === p}
-              onClick={() => setDays(p)}
-              className={clsx('px-[14px] h-[34px] rounded-full text-[14px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary', days === p ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder' : 'text-textItemBlur hover:text-textColor hover:bg-boxHover')}
-            >
-              {t('last_n_days', '近 {{n}} 天', { n: p })}
-            </button>
-          ))}
-        </div>
-        {canManage && (
-          <Button className="shrink-0" secondary={true} loading={refreshing} onClick={refresh}>
+        <PillTabs
+          label={t('report_tabs', '报告类型')}
+          value={tab}
+          options={TABS.map((x) => ({ key: x.key, label: t(`report_tab_${x.key}`, x.label) }))}
+          onChange={open}
+        />
+        {canManage && REFRESHABLE.includes(tab) && (
+          <Button className="shrink-0 md:ms-auto" secondary={true} loading={refreshing} onClick={refresh}>
             {t('refresh_now', '立即更新')}
           </Button>
         )}
       </header>
-
-      {report ? <ReportView report={report} /> : <p className="text-textColor/60">{t('loading', '加载中…')}</p>}
-
-      <section className="rounded-[10px] border border-newTableBorder p-[18px] flex flex-col gap-[12px]">
-        <h3 className="text-[16px] font-semibold">{t('share_report', '分享报告')}</h3>
-        <p className="text-[13px] text-textColor/60">
-          {t('share_report_intro', '生成一个免登录的只读链接（当前周期），可设置有效期和密码，随时撤销。')}
-        </p>
-        {canManage && (
-          <div className="flex gap-[8px] flex-wrap items-center">
-            <select
-              aria-label={t('expires', '有效期')}
-              value={expires}
-              onChange={(e) => setExpires(Number(e.target.value))}
-              className="bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[13px]"
-            >
-              <option value={7}>{t('expires_7', '7 天有效')}</option>
-              <option value={30}>{t('expires_30', '30 天有效')}</option>
-              <option value={0}>{t('expires_never', '永久有效')}</option>
-            </select>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t('share_password', '访问密码（可选）')}
-              autoComplete="new-password"
-              className="bg-newTableHeader rounded-[4px] h-[36px] px-[8px] text-[13px] w-[180px] min-w-0 flex-1 sm:flex-initial"
-            />
-            <Button onClick={createShare}>{t('create_share', '生成并复制链接')}</Button>
-          </div>
-        )}
-        <ul className="flex flex-col gap-[6px]">
-          {(shares || []).map((s) => (
-            <li key={s.id} className="flex items-center flex-wrap md:flex-nowrap gap-x-[10px] gap-y-[4px] text-[13px] bg-newTableHeader rounded-[6px] px-[10px] py-[8px]">
-              <span className="truncate font-mono min-w-0 max-w-full">{s.url}</span>
-              <span className="text-textColor/50 shrink-0">
-                {t('last_n_days', '近 {{n}} 天', { n: s.days })} · {s.expiresAt ? `${dayjs(s.expiresAt).format('MM-DD')} 到期` : '永久'}
-                {s.hasPassword ? ' · 有密码' : ''}
-              </span>
-              <button type="button" className="ms-auto shrink-0 hover:underline" onClick={() => { copy(s.url); toaster.show(t('copied', '已复制'), 'success'); }}>
-                {t('copy', '复制')}
-              </button>
-              {canManage && (
-                <button type="button" className="shrink-0 text-red-400 hover:underline" onClick={() => removeShare(s.id)}>
-                  {t('revoke', '撤销')}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-[10px] border border-newTableBorder p-[18px]">
-        <label className="flex items-center gap-[10px] text-[14px] cursor-pointer">
-          <input type="checkbox" disabled={!canManage} checked={!!weekly?.weeklyReportEmail} onChange={toggleWeekly} />
-          {t('weekly_email', '每周一 9:00 把近 7 天报告发到管理员和运营主管的邮箱')}
-        </label>
-      </section>
+      {tab === 'platform' && <PlatformReportTab canManage={canManage} platformName={platformName} />}
+      {tab === 'posts' && <PostReportTab platformName={platformName} />}
+      {tab === 'competitor' && <CompetitorReportTab platformName={platformName} />}
+      {tab === 'audience' && <AudienceReportTab />}
+      {tab === 'weekly' && <WeeklyReportTab canManage={canManage} />}
     </div>
   );
 };
