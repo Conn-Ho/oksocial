@@ -338,7 +338,7 @@ export const AddOrEditWebhook: FC<{
             <label className="flex items-center gap-[10px] my-[12px] cursor-pointer select-none">
               <input
                 type="checkbox"
-                className="w-[18px] h-[18px] accent-[#612BD3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                className="w-[18px] h-[18px] accent-btnPrimary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 {...form.register('notifications')}
               />
               <span>

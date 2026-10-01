@@ -50,7 +50,7 @@ export const Button: FC<
         // pill buttons: primary is the one brand-colored call to action, secondary sits on hairlines
         secondary
           ? 'bg-btnSimple text-textColor border border-newTableBorder hover:bg-boxHover'
-          : 'bg-forth text-white hover:brightness-110',
+          : 'bg-btnPrimary text-white hover:bg-btnPrimaryHover',
         'px-[20px] h-[40px] rounded-full font-[600] text-[14px] cursor-pointer items-center justify-center flex relative whitespace-nowrap',
         'transition-[filter,background-color,transform] duration-150 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-btnPrimary',
         props?.className

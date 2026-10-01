@@ -47,7 +47,7 @@ const ROWS: Array<{ key: keyof Side; label: string }> = [
   { key: 'avgCollects', label: '平均收藏' },
 ];
 const PERIODS = [7, 30, 90];
-const OURS = 'rgb(97, 43, 211)';
+const OURS = 'rgb(10, 108, 251)';
 const THEIRS = 'rgb(245, 166, 35)';
 
 /** 互动帖文 Top 5 of one side. */

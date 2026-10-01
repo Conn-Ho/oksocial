@@ -3120,8 +3120,9 @@
   "browser_exit_none_option": "No exit IP",
   "browser_exit_none_detail": "Use the oksocial server's own IP (Hong Kong data center)",
   "browser_exit_title": "Pick an exit IP first",
-  "browser_exit_intro": "The {{name}} account's browser goes through this IP from the first page on, and so do its posts and interactions later. Pick one in the region where you usually use this account.",
+  "browser_exit_intro": "This account's browser goes through this IP from the first page on, and so do its posts and interactions later. Pick one in the region where you usually use this account.",
   "browser_exit_empty": "Your team has no exit IP yet. You can add one in Settings → Outbound proxies, then come back to log in.",
   "browser_exit_add": "Add an exit IP",
-  "browser_exit_start": "Start login"
+  "browser_exit_start": "Start login",
+  "refresh_started": "Updating every account in the background; the report refreshes when it is done"
 }

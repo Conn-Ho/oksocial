@@ -365,7 +365,7 @@ table td {
 }
 //
 //:root {
-//  --copilot-kit-primary-color: #612ad5 !important;
+//  --copilot-kit-primary-color: #0A6CFB !important;
 //  --copilot-kit-background-color: #0b0f1c !important;
 //  --copilot-kit-separator-color: #1f2941 !important;
 //  --copilot-kit-contrast-color: #ffffff !important;
@@ -643,7 +643,7 @@ html[dir='rtl'] [dir='ltr'] {
 
 .ProseMirror .mention {
   font-weight: bold;
-  color: #ae8afc;
+  color: #8AB6FF;
 }
 
 .ProseMirror ul,
@@ -743,10 +743,10 @@ html[dir='rtl'] [dir='ltr'] {
   }
 
   .mention {
-    background-color: var(--purple-light);
+    background-color: var(--new-boxFocused);
     border-radius: 0.4rem;
     box-decoration-break: clone;
-    color: #ae8afc;
+    color: #8AB6FF;
     &::after {
       content: '\200B';
     }
@@ -873,10 +873,10 @@ html[dir='rtl'] [dir='ltr'] {
 // Auth brand panel: a purple paper gradient with fine grain (okchat's login panel, in our color)
 .auth-panel {
   background:
-    radial-gradient(120% 90% at 15% 0%, #b9a6f7 0%, transparent 55%),
-    radial-gradient(90% 70% at 100% 30%, #8a63ee 0%, transparent 60%),
-    radial-gradient(120% 80% at 30% 100%, #2a1470 0%, transparent 65%),
-    linear-gradient(170deg, #9b80f2 0%, #6a3ee0 45%, #3b1a9c 100%);
+    radial-gradient(120% 90% at 15% 0%, #8AB6FF 0%, transparent 55%),
+    radial-gradient(90% 70% at 100% 30%, #4C90FD 0%, transparent 60%),
+    radial-gradient(120% 80% at 30% 100%, #0A2E66 0%, transparent 65%),
+    linear-gradient(170deg, #8AB6FF 0%, #0A6CFB 45%, #0548B5 100%);
   isolation: isolate;
 }
 .auth-panel::before {
@@ -900,4 +900,15 @@ html[dir='rtl'] [dir='ltr'] {
   background: rgba(20, 8, 60, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(6px);
+}
+
+/* okchat: text selection and caret in the brand blue */
+::selection {
+  background: rgb(10 108 251 / 0.18);
+}
+
+input,
+textarea,
+[contenteditable] {
+  caret-color: var(--new-btn-primary);
 }

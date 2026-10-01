@@ -66,10 +66,10 @@ export const CreationMethodBadge: FC<Props> = ({
         sizeClasses,
         creationMethod === 'WEB' && 'bg-[#6b7280]',
         creationMethod === 'API' && 'bg-[#2563eb]',
-        creationMethod === 'MCP' && 'bg-[#9333ea]',
+        creationMethod === 'MCP' && 'bg-[#4C90FD]',
         creationMethod === 'AUTOPOST' && 'bg-[#d97706]',
         creationMethod === 'CLI' && 'bg-[#0f766e]',
-        creationMethod === 'AUTOMATION' && 'bg-[#612BD3]',
+        creationMethod === 'AUTOMATION' && 'bg-btnPrimary',
         creationMethod === 'BULK_IMPORT' && 'bg-[#0891b2]',
         creationMethod === 'AI' && 'bg-[#db2777]',
         className

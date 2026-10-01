@@ -11,7 +11,7 @@ import { ChannelTagRef, TAG_NAME_MAX } from '@gitroom/helpers/utils/channel.tags
 import { useChannelTags } from '@gitroom/frontend/components/launches/posts.list.hooks';
 
 // a few distinguishable colours for the dot of a tag
-export const TAG_COLORS = ['#6d4cff', '#2563eb', '#0891b2', '#16a34a', '#ca8a04', '#ea580c', '#e11d48', '#64748b'];
+export const TAG_COLORS = ['#0A6CFB', '#2563eb', '#0891b2', '#16a34a', '#ca8a04', '#ea580c', '#e11d48', '#64748b'];
 
 export const TagDot: FC<{ color?: string | null }> = ({ color }) => (
   <span

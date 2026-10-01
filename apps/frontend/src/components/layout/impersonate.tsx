@@ -822,7 +822,7 @@ const ViewStats = () => {
   }, []);
   return (
     <div
-      className="px-[10px] rounded-[4px] bg-purple-700 text-white cursor-pointer whitespace-nowrap"
+      className="px-[10px] rounded-[4px] bg-btnPrimary text-white cursor-pointer whitespace-nowrap"
       onClick={handleClick}
     >
       {t('view_stats', 'View Stats')}

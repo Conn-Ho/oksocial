@@ -70,7 +70,7 @@ const PlanCard: FC<{ tier: TierDef; pricing: PricingConfig; highlight?: boolean 
       aria-labelledby={`plan-${tier.tier}`}
       className={clsx(
         'relative rounded-[10px] border bg-newBgColorInner p-[22px] flex flex-col gap-[16px]',
-        highlight ? 'border-textColor/25 shadow-[0_18px_40px_-24px_rgba(38,24,94,0.35)] lg:-translate-y-[8px]' : 'border-newBorder'
+        highlight ? 'border-textColor/25 shadow-[0_18px_40px_-24px_rgba(7,29,64,0.35)] lg:-translate-y-[8px]' : 'border-newBorder'
       )}
     >
       <div className="flex items-center justify-between gap-[8px]">
@@ -262,7 +262,7 @@ export const PricingPage: FC<{ data: PublicPricing | null }> = ({ data }) => {
                 </div>
                 <a
                   href={`mailto:${data.pricing.salesContact}`}
-                  className="md:ms-auto inline-flex items-center justify-center h-[44px] px-[22px] rounded-full bg-white text-[#2a1470] text-[14px] font-[700] hover:bg-white/90 shrink-0"
+                  className="md:ms-auto inline-flex items-center justify-center h-[44px] px-[22px] rounded-full bg-white text-[#0A2E66] text-[14px] font-[700] hover:bg-white/90 shrink-0"
                 >
                   {t('contact_sales', '联系销售')}
                 </a>

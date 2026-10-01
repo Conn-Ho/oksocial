@@ -121,14 +121,14 @@ export const ApiKeysComponent: FC = () => {
             type="button"
             disabled={saving}
             onClick={create}
-            className="cursor-pointer px-[16px] h-[36px] bg-[#612BD3] hover:bg-[#5520CB] disabled:opacity-50 text-white transition-colors rounded-[8px] text-[13px] font-[600]"
+            className="cursor-pointer px-[16px] h-[36px] bg-btnPrimary hover:bg-[#0459E0] disabled:opacity-50 text-white transition-colors rounded-[8px] text-[13px] font-[600]"
           >
             {t('api_keys_create', '新建密钥')}
           </button>
         </div>
 
         {created && (
-          <div className="rounded-[8px] border border-[#612BD3] p-[14px] flex flex-col gap-[8px]" role="status">
+          <div className="rounded-[8px] border border-btnPrimary p-[14px] flex flex-col gap-[8px]" role="status">
             <span className="text-[13px] font-[600]">{t('api_keys_shown_once', '新密钥只显示这一次，请现在复制保存')}</span>
             <div className="flex gap-[8px] items-center">
               <code className="flex-1 truncate text-[13px] bg-newBgColorInner rounded-[6px] px-[10px] h-[36px] leading-[36px]">{created}</code>

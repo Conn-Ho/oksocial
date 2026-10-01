@@ -106,6 +106,7 @@ module.exports = {
         btnSimple: 'var(--new-btn-simple)',
         btnText: 'var(--new-btn-text)',
         btnPrimary: 'var(--new-btn-primary)',
+        btnPrimaryHover: 'var(--new-btn-primary-hover)',
         ai: 'var(--new-ai-btn)',
         boxHover: 'var(--new-box-hover)',
         newTableBorder: 'var(--new-table-border)',

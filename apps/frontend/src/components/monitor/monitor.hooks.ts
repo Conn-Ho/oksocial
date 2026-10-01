@@ -126,7 +126,7 @@ export const INTERVALS: Array<{ minutes: number; label: string }> = [
 // The series of the trend chart and the tiles, in display order, with their chart colours.
 export const METRICS: Array<{ key: keyof MonitorMetrics; label: string; color: string }> = [
   { key: 'views', label: '曝光', color: 'rgb(148, 148, 160)' },
-  { key: 'likes', label: '点赞', color: 'rgb(97, 43, 211)' },
+  { key: 'likes', label: '点赞', color: 'rgb(10, 108, 251)' },
   { key: 'comments', label: '评论', color: 'rgb(29, 155, 240)' },
   { key: 'shares', label: '转发', color: 'rgb(50, 213, 131)' },
   { key: 'collects', label: '收藏', color: 'rgb(245, 166, 35)' },

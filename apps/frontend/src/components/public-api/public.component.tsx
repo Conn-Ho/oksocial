@@ -333,7 +333,7 @@ const McpSection = ({
         </div>
         <div className="flex gap-[6px] shrink-0 pt-[2px]">
           <a
-            className="cursor-pointer px-[16px] h-[36px] bg-[#612BD3] hover:bg-[#5520CB] text-white transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
+            className="cursor-pointer px-[16px] h-[36px] bg-btnPrimary hover:bg-[#0459E0] text-white transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
             href="/api/docs"
             target="_blank"
           >
@@ -356,7 +356,7 @@ const McpSection = ({
                   className={clsx(
                     'cursor-pointer px-[14px] h-[36px] text-[13px] font-[500] rounded-[8px] transition-colors',
                     auth === m
-                      ? 'bg-[#612BD3] text-white'
+                      ? 'bg-btnPrimary text-white'
                       : 'bg-btnSimple text-customColor18 hover:bg-boxHover hover:text-textColor'
                   )}
                   onClick={() => setAuth(m)}
@@ -384,7 +384,7 @@ const McpSection = ({
                 className={clsx(
                   'cursor-pointer px-[14px] h-[36px] text-[13px] font-[500] rounded-[8px] transition-colors flex items-center gap-[8px]',
                   activeClient === client
-                    ? 'bg-[#612BD3] text-white'
+                    ? 'bg-btnPrimary text-white'
                     : 'bg-btnSimple text-customColor18 hover:bg-boxHover hover:text-textColor'
                 )}
                 onClick={() =>
@@ -528,7 +528,7 @@ const PublicApiContent = () => {
           </div>
           <div className="flex gap-[6px] shrink-0 pt-[2px]">
             <a
-              className="cursor-pointer px-[16px] h-[36px] bg-[#612BD3] hover:bg-[#5520CB] text-white transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
+              className="cursor-pointer px-[16px] h-[36px] bg-btnPrimary hover:bg-[#0459E0] text-white transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
               href="/api/docs"
               target="_blank"
             >
@@ -677,7 +677,7 @@ export const PublicComponent = () => {
             className={clsx(
               'cursor-pointer px-[20px] h-[44px] text-[15px] font-[600] rounded-[8px] transition-colors',
               subTab === tab
-                ? 'bg-[#612BD3] text-white'
+                ? 'bg-btnPrimary text-white'
                 : 'bg-btnSimple text-customColor18 hover:bg-boxHover hover:text-textColor'
             )}
             onClick={() => setSubTab(tab)}

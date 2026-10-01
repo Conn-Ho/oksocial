@@ -57,7 +57,7 @@ export const SelectChannelTag: FC<{
         onClick={openClose}
         className={clsx(
           'relative z-[20] cursor-pointer h-[42px] rounded-[8px] ps-[14px] pe-[12px] gap-[8px] border flex items-center text-textColor',
-          open ? 'border-[#612BD3]' : 'border-newColColor'
+          open ? 'border-btnPrimary' : 'border-newColColor'
         )}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden={true}>
