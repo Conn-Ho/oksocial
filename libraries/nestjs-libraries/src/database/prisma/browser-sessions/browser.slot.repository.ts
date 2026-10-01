@@ -49,6 +49,20 @@ export class BrowserSlotRepository {
     });
   }
 
+  /** The browser of every connected channel of an org with its exit proxy (the 账号 page). */
+  channelSlots(orgId: string) {
+    return this._slots.model.browserSlot.findMany({
+      where: { organizationId: orgId, deletedAt: null, integrationId: { not: null } },
+      select: {
+        integrationId: true,
+        brakeUntil: true,
+        brakeReason: true,
+        notice: true,
+        proxy: { select: { id: true, name: true, url: true, region: true, deletedAt: true } },
+      },
+    });
+  }
+
   stalePending(before: Date) {
     return this._slots.model.browserSlot.findMany({
       where: { status: 'PENDING', createdAt: { lt: before }, deletedAt: null },

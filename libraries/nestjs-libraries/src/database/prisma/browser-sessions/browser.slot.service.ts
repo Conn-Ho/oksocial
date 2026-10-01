@@ -63,6 +63,18 @@ const assertSimulatedAllowed = (superAdmin: boolean | undefined) => {
   }
 };
 
+/**
+ * What the 账号 page shows about a channel's browser: its exit IP (name, and host:port for members
+ * who manage channels; never the URL or its credentials), a risk-control pause still in force and
+ * what the team has to fix.
+ */
+export type ChannelBrowser = {
+  proxy: { id: string; name: string; region: string | null; host?: string } | null;
+  brakeUntil: Date | null;
+  brakeReason: string | null;
+  notice: string | null;
+};
+
 /** What the login dialog embeds; a simulated account has no screen to show. */
 export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true };
 
@@ -399,6 +411,40 @@ export class BrowserSlotService {
         host: safeHost(AuthService.fixedDecryption(url)),
         slots: _count.slots,
       }))
+    );
+  }
+
+  /**
+   * The browser of each connected channel, by integration id. A deleted proxy counts as none (its
+   * accounts were told they go direct) and a pause that is over is left out.
+   */
+  async channelBrowsers(
+    orgId: string,
+    options: { withHost: boolean; now?: number }
+  ): Promise<Record<string, ChannelBrowser>> {
+    const now = options.now ?? Date.now();
+    const rows = await this._repository.channelSlots(orgId);
+    return Object.fromEntries(
+      rows
+        .filter((row) => !!row.integrationId)
+        .map((row) => {
+          const proxy = row.proxy && !row.proxy.deletedAt ? row.proxy : null;
+          const paused = !!row.brakeUntil && row.brakeUntil.getTime() > now;
+          const browser: ChannelBrowser = {
+            proxy: proxy
+              ? {
+                  id: proxy.id,
+                  name: proxy.name,
+                  region: proxy.region ?? null,
+                  ...(options.withHost ? { host: safeHost(AuthService.fixedDecryption(proxy.url)) } : {}),
+                }
+              : null,
+            brakeUntil: paused ? row.brakeUntil : null,
+            brakeReason: paused ? row.brakeReason ?? null : null,
+            notice: row.notice ?? null,
+          };
+          return [row.integrationId as string, browser];
+        })
     );
   }
 
