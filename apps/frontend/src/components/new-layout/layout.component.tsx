@@ -45,6 +45,7 @@ import { TrialTracker } from '@gitroom/frontend/components/layout/gtm.component'
 import { MobileNav } from '@gitroom/frontend/components/new-layout/mobile.nav';
 import { SetupChecklist } from '@gitroom/frontend/components/onboarding/setup.checklist';
 import { QuickCreate } from '@gitroom/frontend/components/layout/quick.create';
+import { TopBarCheckin } from '@gitroom/frontend/components/usage/checkin.button';
 import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
 
 
@@ -134,6 +135,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         <div className="flex items-center md:items-stretch gap-[12px] md:gap-[16px] text-textItemBlur">
                           <QuickCreate />
                           <div className="hidden md:contents">
+                            <TopBarCheckin />
                             <StreakComponent />
                             <div className="w-[1px] h-[20px] self-center bg-newBorder" />
                           </div>
