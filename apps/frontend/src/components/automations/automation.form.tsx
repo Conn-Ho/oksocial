@@ -256,7 +256,12 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
         </>
       )}
       {type === 'DM_ASSISTANT' && (
-        <Chips label={t('strategy', '回复策略')} options={{ once: '只回第一次', continuous: '持续回复' }} value={[config.strategy]} onChange={(v) => set({ strategy: v[v.length - 1] || 'once' })} />
+        <>
+          <Chips label={t('strategy', '回复策略')} options={{ once: '只回第一次', continuous: '持续回复' }} value={[config.strategy]} onChange={(v) => set({ strategy: v[v.length - 1] || 'once' })} />
+          <p className="text-[12px] text-textColor/50 -mt-[4px]">
+            {t('strategy_team_override', '如果在「设置 › 同步与 AI」里选了团队的私信自动回复策略，以团队设置为准。')}
+          </p>
+        </>
       )}
       {(type === 'COMMENT_ASSISTANT' || type === 'DM_ASSISTANT' || MONITOR_TYPES.includes(type)) && (
         <Row label={t('keywords', '关键词（可选，逗号分隔，命中任意一个即可）')}>

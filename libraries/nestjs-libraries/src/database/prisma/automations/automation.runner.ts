@@ -21,6 +21,7 @@ import { BRAKE_HOURS, CHALLENGE_RE } from '@gitroom/nestjs-libraries/browser/ris
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 import { InteractCapabilities } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+import { SyncSettingsService, dmStrategyFor } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 dayjs.extend(utc);
 
 export { BRAKE_HOURS, CHALLENGE_RE };
@@ -89,7 +90,8 @@ export class AutomationRunner {
     private _ai: AutomationAiService,
     private _brands: BrandService,
     private _integrationManager: IntegrationManager,
-    private _credits: CreditsService
+    private _credits: CreditsService,
+    private _syncSettings: SyncSettingsService
   ) {}
 
   async run(automation: Automation): Promise<RunResult> {
@@ -264,12 +266,14 @@ export class AutomationRunner {
     const org = ctx.automation.organizationId;
     const since = dayjs().subtract(c.lookbackDays, 'day').toDate();
     const threadKey = (i: InboxItem) => `thread:${i.integrationId}:${i.threadId}`;
+    // 团队设置 › 私信自动回复策略 overrides the automation's own strategy when the team set one
+    const strategy = dmStrategyFor((await this._syncSettings.get(org)).dmReplyPolicy, c.strategy);
     const candidates = (await this._repository.inboxCandidates(org, ctx.automation.integrationIds, ['DM'], since, true)).filter(
       (i) => i.threadId && matchesTriggers(i, c)
     );
     // continuous: answer the latest message of each conversation; once: only conversations never answered
     const latest = [...new Map(candidates.map((i) => [threadKey(i), i])).values()];
-    const answered = c.strategy === 'once' ? await this._repository.actedTargets(ctx.automation.id, latest.map(threadKey)) : new Set<string>();
+    const answered = strategy === 'once' ? await this._repository.actedTargets(ctx.automation.id, latest.map(threadKey)) : new Set<string>();
     for (const item of await this.fresh(ctx, latest, (i) => i.id)) {
       if (ctx.remaining <= 0) {
         break;
@@ -283,7 +287,7 @@ export class AutomationRunner {
         { integrationId: item.integrationId, targetKey: item.id, targetLabel: item.threadTitle || item.authorName, kind: 'dm', content },
         () => this._inboxService.reply(org, null, item.id, content, 'AUTOMATION')
       );
-      if (c.strategy === 'once' && (outcome === 'done' || outcome === 'held')) {
+      if (strategy === 'once' && (outcome === 'done' || outcome === 'held')) {
         await this._repository.recordAction({
           automationId: ctx.automation.id,
           integrationId: item.integrationId,

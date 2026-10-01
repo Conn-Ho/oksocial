@@ -4,6 +4,8 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/posts/posts.service', () =>
 jest.mock('@gitroom/nestjs-libraries/database/prisma/monitor/monitor.repository', () => ({ MonitorRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/monitor/monitor.ai.service', () => ({ MonitorAiService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/brands/brand.service', () => ({ BrandService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository', () => ({ SyncSettingsRepository: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => {
   // Two fake monitor platforms: "xhs" (paced, full capability) and "wb" (no search, no own posts).
   const monitor = (site: string, extra: Record<string, unknown> = {}) => ({
@@ -27,7 +29,7 @@ jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => {
   return {
     IntegrationManager: class {},
     socialIntegrationList: [
-      { identifier: 'xhs', name: '小红书', maxLength: () => 1000, monitor: monitor('xhs', { readGapMs: [8000, 15000] }) },
+      { identifier: 'xhs', name: '小红书', maxLength: () => 1000, monitor: monitor('xhs', { readGapMs: [8000, 15000], searchAccounts: jest.fn() }) },
       { identifier: 'wb', name: '微博', maxLength: () => 2000, monitor: monitor('wb', { search: undefined, ownPosts: undefined }) },
       { identifier: 'linkedin', name: 'LinkedIn' },
     ],
@@ -40,8 +42,11 @@ import {
   extractUrl,
   freshPosts,
   metricsOf,
+  parseAccountLines,
+  rankCandidates,
   summarizePosts,
 } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.service';
+import { DEFAULT_SYNC_SETTINGS, SyncSettingsValues } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 
 const providers = socialIntegrationList as any[];
 const xhs = providers[0].monitor;
@@ -49,7 +54,9 @@ const wb = providers[1].monitor;
 
 const BRAND = { system: '品牌：小鹿咖啡', banned: ['最便宜'] };
 
-const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean; affordable?: number } = {}) => {
+const setup = (
+  opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean; affordable?: number; settings?: Partial<SyncSettingsValues> } = {}
+) => {
   const repo = {
     countTargets: jest.fn(async () => 0),
     findSame: jest.fn(async (): Promise<any> => null),
@@ -58,7 +65,7 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean;
     finishRun: jest.fn(async () => ({})),
     brake: jest.fn(async () => ({ count: 1 })),
     savePostReading: jest.fn(async () => ({})),
-    addComments: jest.fn(async () => ({})),
+    addComments: jest.fn(async (_t: string, comments: any[], _post?: any) => comments.map((c, i) => ({ id: `m${i}`, content: c.content }))),
     setTitleIfEmpty: jest.fn(async () => ({})),
     // everything not marked old is new
     addPosts: jest.fn(async (_t: string, _k: string, posts: any[]) =>
@@ -108,6 +115,7 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean;
     withCredits: jest.fn(async (_o: string, _a: string, _r: string | undefined, work: () => Promise<any>, _q?: number) => work()),
   };
   const brands = { promptFor: jest.fn(async () => BRAND) };
+  const syncSettings = { get: jest.fn(async () => ({ ...DEFAULT_SYNC_SETTINGS, ...(opts.settings || {}) })) };
   const service = new MonitorService(
     repo as any,
     integrationService as any,
@@ -117,11 +125,12 @@ const setup = (opts: { channels?: any[]; aiEnabled?: boolean; billing?: boolean;
     posts as any,
     plan as any,
     credits as any,
-    brands as any
+    brands as any,
+    syncSettings as any
   );
   const sleep = jest.fn(async (_ms: number) => undefined);
   (service as any).sleep = sleep;
-  return { service, repo, ai, notifications, posts, sleep, plan, credits };
+  return { service, repo, ai, notifications, posts, sleep, plan, credits, syncSettings };
 };
 
 const target = (over: Record<string, unknown> = {}): any => ({
@@ -144,8 +153,8 @@ beforeEach(() => jest.clearAllMocks());
 describe('platforms and link detection', () => {
   it('lists the platforms that implement monitoring, with what each supports', () => {
     expect(setup().service.platforms()).toEqual([
-      { identifier: 'xhs', name: '小红书', search: true, vs: true },
-      { identifier: 'wb', name: '微博', search: false, vs: false },
+      { identifier: 'xhs', name: '小红书', search: true, vs: true, searchAccounts: true },
+      { identifier: 'wb', name: '微博', search: false, vs: false, searchAccounts: false },
     ]);
   });
 
@@ -396,6 +405,209 @@ describe('runTarget', () => {
   });
 });
 
+describe('sync settings in monitor reads', () => {
+  it('without comment sync a monitored post is read for its numbers only', async () => {
+    const { service, repo } = setup({ settings: { monitorCommentSync: false } });
+    xhs.readPost.mockResolvedValueOnce({ post: { externalId: 'n1', url: 'u', likes: 3 }, comments: [] });
+    expect(await service.runTarget(target())).toEqual({ ok: true, added: 0 });
+    expect(xhs.readPost).toHaveBeenLastCalledWith('slot1', { externalId: 'n1', url: 'https://xhs.com/p/n1' }, 0);
+    expect(repo.savePostReading).toHaveBeenCalled();
+    expect(repo.addComments).not.toHaveBeenCalled();
+  });
+
+  it('comments of monitored posts get AI tags only when the team turned it on', async () => {
+    const reading = { post: { externalId: 'n1', url: 'u' }, comments: [{ externalId: 'c', authorName: 'a', content: '太贵了' }] };
+    const off = setup();
+    xhs.readPost.mockResolvedValueOnce(reading);
+    await off.service.runTarget(target());
+    expect(off.ai.tag).not.toHaveBeenCalled();
+
+    const on = setup({ settings: { monitorAiTag: true } });
+    xhs.readPost.mockResolvedValueOnce(reading);
+    await on.service.runTarget(target());
+    expect(on.ai.tag).toHaveBeenCalledWith([{ id: 'm0', content: '太贵了' }]);
+    expect(on.repo.setItemTags).toHaveBeenCalledWith('m0', 'negative', 'other');
+  });
+
+  it('competitor comments: the newest few recent posts are read, paced and charged per read', async () => {
+    const { service, repo, sleep, credits } = setup({ settings: { competitorCommentSync: true } });
+    const now = Date.now();
+    xhs.readAccount.mockResolvedValueOnce({
+      posts: [
+        { externalId: 'p1', url: 'https://xhs.com/p/p1', title: '新品', publishedAt: new Date(now) },
+        { externalId: 'p2', url: 'https://xhs.com/p/p2', title: '活动', publishedAt: new Date(now - 3600_000) },
+        { externalId: 'p3', url: 'https://xhs.com/p/p3', content: '日常分享', publishedAt: new Date(now - 7200_000) },
+        { externalId: 'p4', url: 'https://xhs.com/p/p4', title: '第四条', publishedAt: new Date(now - 10800_000) },
+        { externalId: 'old', url: 'https://xhs.com/p/old', title: '去年', publishedAt: new Date(now - 30 * 86_400_000) },
+      ],
+    });
+    xhs.readPost
+      .mockResolvedValueOnce({ post: { externalId: 'p1', url: 'u' }, comments: [{ externalId: 'c1', authorName: 'a', content: '求链接' }] })
+      .mockRejectedValueOnce(new Error('笔记已删除'))
+      .mockResolvedValueOnce({ post: { externalId: 'p3', url: 'u' }, comments: [{ externalId: 'c3', authorName: 'b', content: '好看' }] });
+    const res = await service.runTarget(target({ kind: 'ACCOUNT', query: 'rival', url: 'https://xhs.com/u/rival' }));
+    expect(res.ok).toBe(true);
+    expect(xhs.readPost).toHaveBeenCalledTimes(3);
+    expect(xhs.readPost).toHaveBeenNthCalledWith(1, 'slot1', { externalId: 'p1', url: 'https://xhs.com/p/p1' }, 20);
+    expect(repo.addComments).toHaveBeenCalledWith('t1', [expect.objectContaining({ content: '求链接' })], { url: 'https://xhs.com/p/p1', title: '新品' });
+    expect(repo.addComments).toHaveBeenCalledWith('t1', [expect.objectContaining({ content: '好看' })], { url: 'https://xhs.com/p/p3', title: '日常分享' });
+    expect(sleep).toHaveBeenCalledTimes(2);
+    // the account read plus one charge per comment read
+    expect(credits.withCredits.mock.calls.filter((c: any[]) => c[1] === 'monitor_sync')).toHaveLength(4);
+    xhs.readPost.mockReset();
+  });
+
+  it('competitor comments stop when the credits run out, and a risk-control block fails the read', async () => {
+    const posts = [
+      { externalId: 'p1', url: 'u1', title: 'a' },
+      { externalId: 'p2', url: 'u2', title: 'b' },
+    ];
+    const broke = setup({ settings: { competitorCommentSync: true } });
+    broke.credits.withCredits
+      .mockImplementationOnce(async (_o: string, _a: string, _r: any, work: () => Promise<any>) => work())
+      .mockRejectedValueOnce(Object.assign(new Error('积分不足'), { status: 402 }));
+    wb.readAccount.mockResolvedValueOnce({ posts });
+    expect((await broke.service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'r' }))).ok).toBe(true);
+    expect(wb.readPost).not.toHaveBeenCalled();
+
+    const blocked = setup({ settings: { competitorCommentSync: true } });
+    wb.readAccount.mockResolvedValueOnce({ posts });
+    wb.readPost.mockRejectedValueOnce(new Error('平台风控拦截了这次操作'));
+    const res = await blocked.service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'r', integrationId: 'c2' }));
+    expect(res).toEqual(expect.objectContaining({ ok: false, error: '平台风控拦截了这次操作' }));
+    expect(blocked.repo.brake).toHaveBeenCalledWith('c2', expect.any(Date), '平台风控拦截了这次操作');
+    wb.readPost.mockReset();
+  });
+
+  it('competitor AI tags cover the new posts and the comments read', async () => {
+    const { service, ai } = setup({ settings: { competitorCommentSync: true, competitorAiTag: true } });
+    wb.readAccount.mockResolvedValueOnce({ posts: [{ externalId: 'p1', url: 'u1', title: '新品', content: '新品上市' }] });
+    wb.readPost.mockResolvedValueOnce({ post: { externalId: 'p1', url: 'u1' }, comments: [{ externalId: 'c', authorName: 'a', content: '想要' }] });
+    await service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'r' }));
+    expect(ai.tag).toHaveBeenCalledWith([
+      { id: 'i0', content: '新品上市' },
+      { id: 'm0', content: '想要' },
+    ]);
+    const off = setup({ settings: { competitorCommentSync: true } });
+    wb.readAccount.mockResolvedValueOnce({ posts: [{ externalId: 'p1', url: 'u1', title: '新品' }] });
+    wb.readPost.mockResolvedValueOnce({ post: { externalId: 'p1', url: 'u1' }, comments: [] });
+    await off.service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'r' }));
+    expect(off.ai.tag).not.toHaveBeenCalled();
+    wb.readPost.mockReset();
+  });
+});
+
+describe('competitor search', () => {
+  it('rankCandidates drops repeats and puts exact and leading matches first', () => {
+    const rows = [
+      { handle: 'coffee_fan', url: 'u', name: '咖啡爱好者' },
+      { handle: 'LuluCoffee', url: 'u', name: 'Lulu 咖啡' },
+      { handle: 'lulu', url: 'u', name: 'Lulu' },
+      { handle: 'lulucoffee', url: 'u', name: 'dup' },
+      { handle: 'abc', url: 'u', name: 'The Lulu shop' },
+    ];
+    expect(rankCandidates(rows, 'lulu').map((r) => r.handle)).toEqual(['lulu', 'LuluCoffee', 'abc', 'coffee_fan']);
+  });
+
+  it('searches through a channel of the platform and marks accounts already monitored', async () => {
+    const { service, repo } = setup();
+    xhs.searchAccounts.mockResolvedValueOnce([
+      { handle: 'amy', url: 'https://xhs.com/u/amy', name: 'Amy' },
+      { handle: 'bob', url: 'https://xhs.com/u/bob', name: 'Amy 的朋友' },
+    ]);
+    repo.listTargets.mockResolvedValueOnce([{ platform: 'xhs', externalId: 'AMY', query: 'AMY' }]);
+    expect(await service.searchAccounts('o1', 'xhs', ' amy ')).toEqual([
+      { handle: 'amy', url: 'https://xhs.com/u/amy', name: 'Amy', monitored: true },
+      { handle: 'bob', url: 'https://xhs.com/u/bob', name: 'Amy 的朋友', monitored: false },
+    ]);
+    expect(xhs.searchAccounts).toHaveBeenCalledWith('slot1', 'amy', 20);
+    expect(repo.listTargets).toHaveBeenCalledWith('o1', 'ACCOUNT');
+  });
+
+  it('explains platforms that cannot search, empty queries and a missing channel', async () => {
+    await expect(setup().service.searchAccounts('o1', 'wb', 'amy')).rejects.toThrow('这个平台暂不支持搜索，请粘贴主页链接');
+    await expect(setup().service.searchAccounts('o1', 'xhs', '  ')).rejects.toMatchObject({ status: 400 });
+    await expect(setup({ channels: [] }).service.searchAccounts('o1', 'xhs', 'amy')).rejects.toThrow(/需要先连接一个小红书账号/);
+  });
+
+  it('a failing search says so, and a risk-control block brakes the channel', async () => {
+    const { service, repo } = setup();
+    xhs.searchAccounts.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.searchAccounts('o1', 'xhs', 'amy')).rejects.toMatchObject({ status: 502, message: '搜索失败：timeout' });
+    xhs.searchAccounts.mockRejectedValueOnce(new Error('平台风控拦截了这次操作'));
+    await expect(service.searchAccounts('o1', 'xhs', 'amy')).rejects.toMatchObject({ status: 502 });
+    expect(repo.brake).toHaveBeenCalledWith('c1', expect.any(Date), '平台风控拦截了这次操作');
+  });
+});
+
+describe('competitor 批量导入', () => {
+  const platforms = [
+    { identifier: 'xweb', name: 'X（浏览器）' },
+    { identifier: 'xiaohongshu', name: '小红书' },
+  ];
+
+  it('parseAccountLines reads one account per line, with an optional platform before a comma', () => {
+    expect(
+      parseAccountLines(
+        ['https://x.com/elonmusk', '', '  小红书，5f1e3c  ', 'X, @jack', 'xiaohongshu,abc', 'weibo,123', 'https://a.com/x,y'].join('\n'),
+        platforms
+      )
+    ).toEqual([
+      { line: 1, input: 'https://x.com/elonmusk' },
+      { line: 3, input: '5f1e3c', platform: 'xiaohongshu' },
+      { line: 4, input: '@jack', platform: 'xweb' },
+      { line: 5, input: 'abc', platform: 'xiaohongshu' },
+      { line: 6, input: 'weibo,123' },
+      { line: 7, input: 'https://a.com/x,y' },
+    ]);
+  });
+
+  it('imports line by line through the same checks as one competitor, and says why a line failed', async () => {
+    const { service, repo } = setup();
+    repo.findSame.mockImplementation(async (_o: string, _k: string, _p: string, key: any) => (key.externalId === 'dup' ? { id: 'old' } : null));
+    repo.channels.mockImplementation(async (_o: string, platform: string) => (platform === 'wb' ? [] : [{ id: 'c1', token: 'slot1' }]));
+    const res = await service.importAccounts('o1', {
+      text: ['https://xhs.com/u/amy', 'dup', 'https://nowhere.com/u/x', '微博,rival', 'bob'].join('\n'),
+      platform: 'xhs',
+      intervalMinutes: 180,
+    });
+    expect(res).toEqual({
+      total: 5,
+      created: 3,
+      failed: 2,
+      results: [
+        { line: 1, input: 'https://xhs.com/u/amy', ok: true, targetId: 't1', platform: 'xhs', name: 'amy' },
+        { line: 2, input: 'dup', ok: false, error: '这个竞品账号已经在监控里了' },
+        { line: 3, input: 'https://nowhere.com/u/x', ok: false, error: '请粘贴主页链接，或先选平台再填账号 ID' },
+        { line: 4, input: 'rival', ok: true, targetId: 't1', platform: 'wb', name: 'rival', warning: '还没有连接微博账号，连接后才能读取' },
+        { line: 5, input: 'bob', ok: true, targetId: 't1', platform: 'xhs', name: 'bob' },
+      ],
+    });
+    expect(repo.createTarget).toHaveBeenCalledWith('o1', expect.objectContaining({ kind: 'ACCOUNT', platform: 'wb', query: 'rival', intervalMinutes: 180 }));
+    repo.findSame.mockReset();
+    repo.channels.mockReset();
+  });
+
+  it('stops each line at the plan limit with its message, and refuses empty or oversized batches', async () => {
+    const { service, plan } = setup({ billing: true });
+    plan.assertWithinLimit.mockRejectedValue(Object.assign(new Error('竞品账号已达免费版上限（5 个），请升级套餐后再添加。'), { status: 402 }));
+    const res = await service.importAccounts('o1', { text: 'https://xhs.com/u/a\nhttps://xhs.com/u/b' });
+    expect(res.created).toBe(0);
+    expect(res.results.map((r) => r.error)).toEqual([expect.stringContaining('上限'), expect.stringContaining('上限')]);
+    await expect(service.importAccounts('o1', { text: ' \n ' })).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.importAccounts('o1', { text: Array.from({ length: 101 }, (_, i) => `https://xhs.com/u/a${i}`).join('\n') })
+    ).rejects.toThrow(/最多/);
+  });
+
+  it('passes the chosen reader only to accounts of its platform', async () => {
+    const { service, repo } = setup();
+    await service.importAccounts('o1', { text: 'https://xhs.com/u/amy\nhttps://wb.com/u/rival', platform: 'xhs', integrationId: 'c2' });
+    expect(repo.createTarget).toHaveBeenNthCalledWith(1, 'o1', expect.objectContaining({ platform: 'xhs', integrationId: 'c2' }));
+    expect(repo.createTarget).toHaveBeenNthCalledWith(2, 'o1', expect.objectContaining({ platform: 'wb', integrationId: undefined }));
+  });
+});
+
 describe('runDue', () => {
   it('reads due targets in order and pauses between reads of a paced platform only', async () => {
     const { service, repo, sleep } = setup();
@@ -549,7 +761,7 @@ describe('一键复刻', () => {
     expect(body.type).toBe('draft');
     expect(body.posts[0].integration).toEqual({ id: 'mine' });
     expect(body.posts[0].value[0].image).toEqual([]);
-    expect(posts.createPost).toHaveBeenCalledWith('o1', body, 'WEB');
+    expect(posts.createPost).toHaveBeenCalledWith('o1', body, 'AI');
     expect(res.postId).toBe('p1');
     expect(res.date.getTime()).toBeGreaterThan(Date.now());
   });

@@ -87,6 +87,28 @@ export const stripBanned = <T>(value: T, banned: string[]): T => {
   return strip(value) as T;
 };
 
+const HAN = /\p{Script=Han}/gu;
+const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+// runs of letters of any other script (Latin, Cyrillic, Hangul...): one word each
+const OTHER_WORDS = /[^\P{L}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
+
+/**
+ * Whether a text reads as Chinese: Han characters are most of its words (a Latin word counts as
+ * one, so brand names do not tip it), links and @handles aside. Japanese (kana) is not Chinese.
+ * Text without any word needs no translation, so it counts as Chinese. Pure.
+ */
+export const looksChinese = (text: string) => {
+  const words = (text || '').replace(/https?:\/\/\S+/g, ' ').replace(/@\S+/g, ' ');
+  const han = words.match(HAN)?.length ?? 0;
+  const kana = words.match(KANA)?.length ?? 0;
+  const other = words.match(OTHER_WORDS)?.length ?? 0;
+  if (kana >= 2 && kana * 4 >= han) {
+    return false;
+  }
+  const total = han + kana + other;
+  return total === 0 || han / total >= 0.5;
+};
+
 /** Keep only labels we know; anything else becomes null. Pure. */
 export const normalizeTags = (raw: { sentiment?: string; intent?: string } | undefined) => ({
   sentiment: (SENTIMENTS as readonly string[]).includes(raw?.sentiment ?? '') ? (raw!.sentiment as Sentiment) : null,
@@ -197,6 +219,15 @@ export class InboxAiService {
       `${input.kind === 'DM' ? '私信' : '评论'}${input.threadTitle ? `（在「${input.threadTitle}」下）` : ''}：${input.content}\n只输出回复正文。`,
       0.7,
       brand
+    );
+  }
+
+  /** A reply put into the language the customer wrote in (unchanged when it already is). */
+  async translateLike(reply: string, customerText: string) {
+    return this.complete(
+      '你是翻译。把「回复」翻译成与「客户消息」同一种语言；如果回复已经是那种语言，原样输出。只输出译文，不要解释。',
+      `客户消息：${customerText.slice(0, 500)}\n\n回复：${reply}`,
+      0
     );
   }
 

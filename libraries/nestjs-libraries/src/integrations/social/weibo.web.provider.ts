@@ -3,6 +3,7 @@ import {
   CreationCapabilities,
   InboxCapabilities,
   InboxFetched,
+  MonitorAccountCandidate,
   MonitorAccountRef,
   MonitorCapabilities,
   MonitorPost,
@@ -24,6 +25,9 @@ import { ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abs
 const IMAGES_MAX = 9;
 // Own posts whose comments are read per sync.
 const POSTS_PER_SYNC = 5;
+// 竞品 › 搜索: profiles read per search (the query itself and the first post authors), paced
+const SEARCH_PROFILES = 4;
+const SEARCH_GAP_MS: [number, number] = [1_000, 2_500];
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 // weibo.com/<uid>/<mblogid>, m.weibo.cn/detail/<id>, m.weibo.cn/status/<id>
 const POST_LINK = /weibo\.(?:com|cn)\/(?:\d+|detail|status)\/([A-Za-z0-9]+)(?:[?#/]|$)/i;
@@ -208,6 +212,43 @@ export class WeiboWebProvider
           authorName: r.author || undefined,
           platformTime: r.time || undefined,
         }));
+    },
+    // 竞品 › 搜索: the exact screen name first, then the authors of posts matching the query,
+    // each resolved to its uid through the profile read (a handful: one read each).
+    searchAccounts: async (slot, query, limit) => {
+      const names = [query.trim()];
+      const rows = await this.list<{ author: string }>(
+        slot,
+        ['weibo', 'search', query.trim(), '--limit', '20'],
+        90_000
+      );
+      for (const r of rows) {
+        if (r.author && !names.includes(r.author) && names.length < Math.min(limit, SEARCH_PROFILES)) {
+          names.push(r.author);
+        }
+      }
+      const found: MonitorAccountCandidate[] = [];
+      for (const [i, name] of names.entries()) {
+        if (i > 0) {
+          await this.pause(SEARCH_GAP_MS);
+        }
+        // a name that is not an account is not a failed search
+        const u = await this.exec(slot, ['weibo', 'user', name], 60_000).then(
+          (res) => firstRow<Record<string, any>>(res),
+          () => null
+        );
+        if (u?.uid) {
+          found.push({
+            handle: String(u.uid),
+            url: `https://weibo.com/u/${u.uid}`,
+            name: String(u.screen_name || name),
+            bio: u.description || undefined,
+            avatar: u.avatar || undefined,
+            followers: countFrom(u.followers),
+          });
+        }
+      }
+      return found;
     },
   };
 

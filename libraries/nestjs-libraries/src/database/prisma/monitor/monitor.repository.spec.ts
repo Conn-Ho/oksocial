@@ -68,10 +68,19 @@ describe('MonitorRepository', () => {
       })
     );
     await repo.addComments('t1', [{ externalId: 'c', authorName: 'x', content: 'y' }]);
-    expect(monitorItem.createMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ kind: 'COMMENT', externalId: 'c', likes: null })],
+    expect(monitorItem.createManyAndReturn).toHaveBeenLastCalledWith({
+      data: [expect.not.objectContaining({ url: expect.anything() })],
       skipDuplicates: true,
+      select: { id: true, content: true },
     });
+    expect(monitorItem.createManyAndReturn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ kind: 'COMMENT', externalId: 'c', likes: null })] })
+    );
+    // a competitor's comments remember the post they are under
+    await repo.addComments('t1', [{ externalId: 'd', authorName: 'x', content: 'z' }], { url: 'https://p', title: '新品' });
+    expect(monitorItem.createManyAndReturn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ externalId: 'd', url: 'https://p', title: '新品' })] })
+    );
     await repo.refreshMetrics('t1', 'POST', [{ externalId: 'a', url: 'u', likes: 9 }, { externalId: 'b', url: 'u' }]);
     expect(monitorItem.updateMany).toHaveBeenCalledTimes(2);
     expect(monitorItem.updateMany).toHaveBeenCalledWith({

@@ -190,8 +190,9 @@ export class MonitorRepository {
     });
   }
 
-  addComments(targetId: string, comments: MonitorComment[]) {
-    return this._items.model.monitorItem.createMany({
+  /** Inserts the new comments and returns them; a competitor's comments carry the post they are under. */
+  addComments(targetId: string, comments: MonitorComment[], post?: { url: string; title: string | null }) {
+    return this._items.model.monitorItem.createManyAndReturn({
       data: comments.map((c) => ({
         targetId,
         kind: 'COMMENT' as const,
@@ -200,8 +201,10 @@ export class MonitorRepository {
         content: c.content,
         likes: c.likes ?? null,
         platformTime: c.platformTime,
+        ...(post ? { url: post.url, title: post.title } : {}),
       })),
       skipDuplicates: true,
+      select: { id: true, content: true },
     });
   }
 

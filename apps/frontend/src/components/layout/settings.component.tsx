@@ -28,6 +28,7 @@ import { Webhooks } from '@gitroom/frontend/components/webhooks/webhooks';
 import { Sets } from '@gitroom/frontend/components/sets/sets';
 import { SignaturesComponent } from '@gitroom/frontend/components/settings/signatures.component';
 import { BrowserProxiesComponent } from '@gitroom/frontend/components/settings/browser.proxies.component';
+import { SyncAiSettings } from '@gitroom/frontend/components/settings/sync.ai.settings';
 import { Autopost } from '@gitroom/frontend/components/autopost/autopost';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { SVGLine } from '@gitroom/frontend/components/launches/launches.component';
@@ -82,12 +83,14 @@ export const SettingsPopup: FC<{
     close();
   }, []);
 
-  const [tab, setTab] = useState('global_settings');
+  // ?tab= opens a section directly (e.g. 同步与 AI from the inbox and monitor pages)
+  const [tab, setTab] = useState(url.get('tab') || 'global_settings');
 
   const t = useT();
   const list = useMemo(() => {
     const arr = [];
     arr.push({ tab: 'global_settings', label: t('global_settings', 'Global Settings') });
+    arr.push({ tab: 'sync_ai', label: t('sync_ai', '同步与 AI') });
     arr.push({ tab: 'proxies', label: t('browser_proxies', '出口代理') });
     // Populate tabs based on user permissions
     if (user?.tier?.team_members && isGeneral) {
@@ -168,6 +171,7 @@ export const SettingsPopup: FC<{
                   <GlobalSettings />
                 </div>
               )}
+              {tab === 'sync_ai' && <SyncAiSettings />}
               {tab === 'proxies' && <BrowserProxiesComponent />}
               {tab === 'teams' && !!user?.tier?.team_members && isGeneral && (
                 <div>

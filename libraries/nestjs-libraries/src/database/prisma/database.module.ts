@@ -81,6 +81,8 @@ import { AiCreationService } from '@gitroom/nestjs-libraries/database/prisma/cre
 import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.ai.service';
 import { ChannelTagsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.repository';
 import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
+import { SyncSettingsRepository } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository';
+import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 
 @Global()
 @Module({
@@ -131,6 +133,8 @@ import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/ch
     InboxRepository,
     InboxService,
     InboxAiService,
+    SyncSettingsRepository,
+    SyncSettingsService,
     ChannelStatsRepository,
     ChannelStatsService,
     ReportService,

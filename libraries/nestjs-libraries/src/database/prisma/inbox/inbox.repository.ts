@@ -62,7 +62,7 @@ export class InboxRepository {
         platformTime: i.platformTime,
       })),
       skipDuplicates: true,
-      select: { id: true, content: true },
+      select: { id: true, kind: true, content: true, authorName: true },
     });
   }
 
@@ -147,9 +147,16 @@ export class InboxRepository {
     });
   }
 
-  logReply(inboxItemId: string, userId: string | null, content: string, source: ReplySource, error?: string) {
+  /** content is what was sent; original what the operator wrote when it went out translated. */
+  logReply(
+    inboxItemId: string,
+    userId: string | null,
+    content: string,
+    source: ReplySource,
+    extra: { error?: string; original?: string } = {}
+  ) {
     return this._logs.model.replyLog.create({
-      data: { inboxItemId, userId, content, source, error: error ?? null },
+      data: { inboxItemId, userId, content, source, error: extra.error ?? null, original: extra.original ?? null },
     });
   }
 

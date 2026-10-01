@@ -15,7 +15,33 @@ export type MonitorMetrics = {
   collects: number | null;
 };
 
-export type MonitorPlatform = { identifier: string; name: string; search: boolean; vs: boolean };
+export type MonitorPlatform = { identifier: string; name: string; search: boolean; vs: boolean; searchAccounts: boolean };
+
+// 竞品 › 搜索: an account a platform search found
+export type AccountCandidate = {
+  handle: string;
+  url: string;
+  name: string;
+  bio?: string;
+  avatar?: string;
+  followers?: number | null;
+  monitored: boolean;
+};
+
+// 竞品 › 批量导入: what happened to each line
+export type ImportLineResult = {
+  line: number;
+  input: string;
+  ok: boolean;
+  // added: the new competitor, and what still stops it from being read
+  targetId?: string;
+  platform?: string;
+  name?: string;
+  warning?: string;
+  // not added: why
+  error?: string;
+};
+export type ImportResult = { total: number; created: number; failed: number; results: ImportLineResult[] };
 
 export type MonitorTarget = {
   id: string;

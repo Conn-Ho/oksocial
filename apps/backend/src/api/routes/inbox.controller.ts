@@ -70,7 +70,7 @@ export class InboxController {
   }
 
   @Post('/sync')
-  @ApiOperation({ summary: '立即同步收件箱', description: '在后台同步（不传 integrationId 时同步全部账号），马上返回；用 GET /inbox/sync 查看是否完成。新条目会打 AI 标签（每条 1 积分）。' })
+  @ApiOperation({ summary: '立即同步收件箱', description: '在后台同步（不传 integrationId 时同步全部账号），马上返回；用 GET /inbox/sync 查看是否完成。按「设置 › 同步与 AI」同步各类内容，并按设置打 AI 标签、翻译（各按条计费）。' })
   sync(@GetOrgFromRequest() org: Organization, @Body('integrationId') integrationId?: string) {
     return this._inboxService.startSync(org.id, integrationId);
   }

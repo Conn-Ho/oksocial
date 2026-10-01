@@ -96,6 +96,9 @@ export const MonitorItems: FC<{
               </span>
             </div>
             {kind !== 'COMMENT' && item.title && item.title !== item.content && <p className="text-[14px] font-medium">{item.title}</p>}
+            {kind === 'COMMENT' && item.title && (
+              <p className="text-[12px] text-textColor/50 truncate">{t('monitor_comment_on', '评论于「{{title}}」', { title: item.title, interpolation: { escapeValue: false } })}</p>
+            )}
             {item.content && <p className="text-[14px] text-textColor/85 whitespace-pre-wrap line-clamp-4 leading-[1.6]">{item.content}</p>}
             <div className="flex items-center gap-[12px]">
               <ItemMetrics item={item} />

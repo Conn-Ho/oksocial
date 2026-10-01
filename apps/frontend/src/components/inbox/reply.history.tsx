@@ -41,6 +41,9 @@ export const ReplyHistoryModal: FC = () => {
                 </td>
                 <td className="p-[8px] max-w-[260px] whitespace-pre-wrap">
                   {log.content}
+                  {log.original && (
+                    <div className="text-textColor/60 text-[12px] mt-[2px]">{t('reply_original', '原文')}：{log.original}</div>
+                  )}
                   {log.error && <div className="text-red-400 text-[12px]">{t('send_failed', '发送失败')}：{log.error}</div>}
                 </td>
                 <td className="p-[8px]">{SOURCE_LABEL[log.source] ?? log.source}</td>

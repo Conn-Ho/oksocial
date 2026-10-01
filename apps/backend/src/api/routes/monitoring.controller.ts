@@ -11,11 +11,13 @@ import {
 import { MonitorService } from '@gitroom/nestjs-libraries/database/prisma/monitor/monitor.service';
 import {
   CreateMonitorTargetDto,
+  ImportMonitorAccountsDto,
   MonitorItemsQueryDto,
   MonitorTargetsQueryDto,
   MonitorVsQueryDto,
   RemakeDraftDto,
   RemakeRewriteDto,
+  SearchMonitorAccountsDto,
   UpdateMonitorTargetDto,
 } from '@gitroom/nestjs-libraries/dtos/monitor/monitor.dto';
 
@@ -41,6 +43,20 @@ export class MonitoringController {
   @RequireRoles('ADMIN', 'MANAGER')
   create(@GetOrgFromRequest() org: Organization, @Body() body: CreateMonitorTargetDto) {
     return this._monitorService.createTarget(org.id, body);
+  }
+
+  // 竞品 › 搜索: accounts of a platform by name, through one of our channels of that platform
+  @Get('/accounts/search')
+  @RequireRoles('ADMIN', 'MANAGER')
+  searchAccounts(@GetOrgFromRequest() org: Organization, @Query() query: SearchMonitorAccountsDto) {
+    return this._monitorService.searchAccounts(org.id, query.platform, query.q);
+  }
+
+  // 竞品 › 批量导入: one competitor per line; the answer says which lines failed and why
+  @Post('/targets/import')
+  @RequireRoles('ADMIN', 'MANAGER')
+  importAccounts(@GetOrgFromRequest() org: Organization, @Body() body: ImportMonitorAccountsDto) {
+    return this._monitorService.importAccounts(org.id, body);
   }
 
   @Get('/targets/:id')
