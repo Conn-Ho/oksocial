@@ -16,6 +16,7 @@ import {
   MonitorKind,
   MonitorTarget,
   formatCount,
+  platformsFor,
   useMonitorCall,
   useMonitorPlatforms,
   useMonitorTargets,
@@ -110,6 +111,9 @@ export const MonitorComponent: FC = () => {
     [integrations]
   );
 
+  // 竞品 search and import: the platforms whose accounts can be monitored
+  const accountPlatforms = useMemo(() => platformsFor(platforms || [], 'ACCOUNT'), [platforms]);
+
   useEffect(() => setSelected(''), [kind]);
 
   // the first reading starts at once; the detail view polls the target until it is done
@@ -146,7 +150,7 @@ export const MonitorComponent: FC = () => {
         classNames: { modal: 'bg-transparent text-textColor w-[640px] max-w-[95vw]' },
         children: (close: () => void) => (
           <CompetitorSearchModal
-            platforms={platforms || []}
+            platforms={accountPlatforms}
             onAdded={firstRead}
             onPasteLink={() => {
               close();
@@ -155,7 +159,7 @@ export const MonitorComponent: FC = () => {
           />
         ),
       }),
-    [platforms, firstRead, openAdd]
+    [accountPlatforms, firstRead, openAdd]
   );
 
   const openImport = useCallback(
@@ -165,10 +169,10 @@ export const MonitorComponent: FC = () => {
         withCloseButton: true,
         classNames: { modal: 'bg-transparent text-textColor w-[720px] max-w-[95vw]' },
         children: (close: () => void) => (
-          <CompetitorImportModal platforms={platforms || []} channels={channels} close={close} onImported={() => mutate()} />
+          <CompetitorImportModal platforms={accountPlatforms} channels={channels} close={close} onImported={() => mutate()} />
         ),
       }),
-    [platforms, channels, mutate]
+    [accountPlatforms, channels, mutate]
   );
 
   const openRemake = useCallback(

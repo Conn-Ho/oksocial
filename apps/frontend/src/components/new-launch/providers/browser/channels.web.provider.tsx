@@ -4,6 +4,7 @@ import {
   PostComment,
   withProvider,
 } from '@gitroom/frontend/components/new-launch/providers/high.order.provider';
+import PinterestWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/pinterest.web.provider';
 
 // Browser channels added together: single posts, no platform-specific settings yet.
 const single = (maximumCharacters: number) =>
@@ -28,4 +29,7 @@ export const BROWSER_CHANNEL_EDITORS = [
   { identifier: 'youtubeweb', component: single(5000) },
   { identifier: 'linkedinweb', component: single(3000) },
   { identifier: 'redditweb', component: single(10000) },
+  { identifier: 'pinterestweb', component: PinterestWebProvider },
+  // the first line is the article title
+  { identifier: 'gongzhonghao', component: single(20000) },
 ];

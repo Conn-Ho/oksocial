@@ -21,9 +21,10 @@ export const AUTOMATION_META: Record<AutomationType, { label: string; descriptio
   LEAD_COLLECTOR: { label: '线索收集助手', description: '按你的提示词给评论和私信打分，高分的人进入线索库', defaultCap: 500 },
   REWRITE_SYNC: { label: '改写与同步', description: '把一个账号新发的帖子改写后同步到其他账号', defaultCap: 10 },
   AUTO_POST: { label: 'AI 按日发帖', description: '按主题每天生成原创帖，存草稿或定时发布', defaultCap: 10 },
-  POST_ACTIONS: { label: '帖文操作助手', description: '对监控到的关键词帖、竞品帖按条件自动点赞、收藏或关注作者（目前支持 X）', defaultCap: 30 },
-  FOLLOW_BACK: { label: '回关助手', description: '回关最近关注了你、而你还没关注的人，可按名字和简介关键词排除（目前支持 X）', defaultCap: 20 },
-  PROSPECTING: { label: '帖文拓客助手', description: '在监控帖子的评论区找潜在客户，AI 判断后在评论下回复并存入线索库（目前支持 X）', defaultCap: 20 },
+  // which platforms can do these is shown where they are set up (each platform's channel decides)
+  POST_ACTIONS: { label: '帖文操作助手', description: '对监控到的关键词帖、竞品帖按条件自动点赞、收藏、关注作者或 AI 评论', defaultCap: 30 },
+  FOLLOW_BACK: { label: '回关助手', description: '回关最近关注了你、而你还没关注的人，可按名字和简介关键词排除', defaultCap: 20 },
+  PROSPECTING: { label: '帖文拓客助手', description: '在监控帖子的评论区找潜在客户，AI 判断后在评论下回复并存入线索库', defaultCap: 20 },
 };
 
 export const POST_ACTION_TYPES = ['like', 'bookmark', 'follow', 'comment'] as const;

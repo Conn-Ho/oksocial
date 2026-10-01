@@ -15,7 +15,29 @@ export type MonitorMetrics = {
   collects: number | null;
 };
 
-export type MonitorPlatform = { identifier: string; name: string; search: boolean; vs: boolean; searchAccounts: boolean };
+// what automations can do on a platform (followBack: it reads follower lists and follows)
+export type PlatformAction = 'like' | 'bookmark' | 'follow' | 'comment' | 'replyToComment' | 'followBack';
+
+// What 监控 can read on a platform: single posts (and their comments), competitor accounts, keyword
+// search, account search, our own posts (竞品 VS), and the interactions automations can use there.
+export type MonitorPlatform = {
+  identifier: string;
+  name: string;
+  posts: boolean;
+  comments: boolean;
+  accounts: boolean;
+  search: boolean;
+  vs: boolean;
+  searchAccounts: boolean;
+  interact: PlatformAction[];
+};
+
+/** The platforms that can be monitored for a kind of target. */
+export const platformsFor = (platforms: MonitorPlatform[], kind: MonitorKind) =>
+  platforms.filter((p) => (kind === 'POST' ? p.posts : kind === 'ACCOUNT' ? p.accounts : p.search));
+
+/** Platform names, for 支持… lines. */
+export const platformNames = (platforms: MonitorPlatform[]) => platforms.map((p) => p.name).join('、');
 
 // 竞品 › 搜索: an account a platform search found
 export type AccountCandidate = {

@@ -287,7 +287,13 @@ export const MonitorDetail: FC<{
             </details>
           )}
           <h4 className="text-[15px] font-semibold pt-[4px]">{t('monitor_comments', '评论')}</h4>
-          <MonitorItems targetId={target.id} kind="COMMENT" />
+          {platform && !platform.comments ? (
+            <p className="text-[13px] text-textColor/60">
+              {t('monitor_no_comments', '{{name}}读不到帖子的评论，这里只记录数据变化。', { name: platform.name, interpolation: { escapeValue: false } })}
+            </p>
+          ) : (
+            <MonitorItems targetId={target.id} kind="COMMENT" />
+          )}
         </>
       )}
       {target.kind === 'ACCOUNT' && (
