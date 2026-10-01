@@ -38,7 +38,8 @@ export const startMcp = async (app: INestApplication) => {
   const resolveAuth = async (token: string) => {
     if (token.startsWith('pos_')) {
       const authorization = await oauthService.getOrgByOAuthToken(token);
-      if (!authorization) return null;
+      // first-party tokens (okchat) are for sign-in and the account list only
+      if (!authorization || authorization.oauthApp?.firstParty) return null;
       return authorization.organization;
     }
     return organizationService.getOrgByApiKey(token);

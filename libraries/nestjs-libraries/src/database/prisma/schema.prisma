@@ -81,6 +81,8 @@ model Organization {
   referralCode        ReferralCode?
   referralsMade       Referral[]           @relation("referrer")
   referredBy          Referral?            @relation("referred")
+  okchatLink          OkchatLink?
+  okchatUsers         OkchatUser[]
 
   @@index([apiKey])
   @@index([streakSince])
@@ -155,6 +157,7 @@ model User {
   sendStreakEmails      Boolean              @default(true)
   oauthAuthorizations   OAuthAuthorization[]
   notificationReads     NotificationRead[]
+  okchatUsers           OkchatUser[]
 
   @@unique([email, providerName])
   @@index([lastReadNotifications])
@@ -444,6 +447,7 @@ model Integration {
   audience              ChannelAudience?
   monitorTargets        MonitorTarget[]
   channelTags           ChannelTagLink[]
+  okchatBinding         OkchatBinding?
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -1764,6 +1768,9 @@ model OAuthApp {
   clientSecret            String?
   dynamic                 Boolean              @default(false)
   tokenEndpointAuthMethod String?
+  // oksocial's own products (okchat): strict redirect_uri and PKCE like dynamic clients, the
+  // profile claims, and a member who approved once for a team is not asked again for it
+  firstParty              Boolean              @default(false)
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
   deletedAt               DateTime?
@@ -2661,4 +2668,146 @@ model NotificationRead {
 
   @@id([notificationId, userId])
   @@index([userId])
+}
+
+// okchat: the team's direct messages are handled in okchat (customer service); oksocial is the
+// channel that reads them in each account's browser, pushes them to okchat and sends its replies.
+enum OkchatLinkStatus {
+  LINKED
+  // either side unlinked (phase 2): nothing is pushed, the history stays
+  UNLINKED
+}
+
+// The okchat space an organization is linked to (one per organization), set by okchat's /link.
+model OkchatLink {
+  id              String           @id @default(uuid())
+  organizationId  String           @unique
+  // okchat's public space id ("w…")
+  okchatAccountId String
+  status          OkchatLinkStatus @default(LINKED)
+  linkedAt        DateTime         @default(now())
+  // the member whose okchat sign-in made the link
+  createdById     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+}
+
+// A member of the organization and their okchat user (from /link).
+model OkchatUser {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String
+  okchatUserId   String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// An account's channel in okchat: its DMs are read and pushed to hookUrl while it is active.
+model OkchatBinding {
+  id              String      @id @default(uuid())
+  integrationId   String      @unique
+  organizationId  String
+  bindingId       String      @unique
+  hookUrl         String
+  active          Boolean     @default(true)
+  // why okchat refused the last push (shown with the account); null once a push goes through
+  lastError       String?
+  lastPushAt      DateTime?
+  // when the account's conversations were last read
+  lastReadAt      DateTime?
+  // the platform pushed back on a DM (risk control, too frequent): no DM reads or sends until then
+  pausedUntil     DateTime?
+  pauseReason     String?
+  // the site the account's DMs live on is logged out; null once a read works again
+  loggedOutReason String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  integration     Integration @relation(fields: [integrationId], references: [id])
+
+  @@index([organizationId])
+  @@index([active])
+}
+
+// One DM conversation of an account, as last read. The web IM gives messages no id: the tail of
+// what was read is matched against the next read, and only what follows it is new.
+model OkchatThread {
+  id            String   @id @default(uuid())
+  integrationId String
+  threadId      String
+  displayName   String?
+  // the last read messages (at most 30, ours included): [{ from, mine, text }]
+  tail          Json     @default("[]")
+  // the last message number given out: a pushed message's id is threadId:seq
+  seq           Int      @default(0)
+  // false until the conversation has been read once
+  initialized   Boolean  @default(false)
+  // the conversation list's preview of its last message at that read: a change means activity
+  lastSummary   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([integrationId, threadId])
+}
+
+enum OkchatOutboxKind {
+  MESSAGES
+  DELIVERY
+  STATUS
+}
+
+// What is to be pushed to an account's okchat hook, retried until it is delivered or given up.
+model OkchatOutbox {
+  id            String           @id @default(uuid())
+  integrationId String
+  kind          OkchatOutboxKind
+  batchId       String
+  // MESSAGES: the conversation, whose batches go out in order
+  threadId      String?
+  payload       Json
+  attempts      Int              @default(0)
+  // null once delivered or given up
+  nextAttemptAt DateTime?        @default(now())
+  deliveredAt   DateTime?
+  lastError     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([integrationId, batchId])
+  @@index([nextAttemptAt])
+  @@index([createdAt])
+}
+
+enum OkchatReplyStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+}
+
+// A reply okchat asked oksocial to send (POST /public/okchat/replies), one per okchat message.
+model OkchatReply {
+  id              String            @id @default(uuid())
+  okchatMessageId String            @unique
+  integrationId   String
+  threadId        String
+  conversationId  String
+  text            String
+  status          OkchatReplyStatus @default(QUEUED)
+  // what the agent reads on the failed message in okchat (Chinese, no codes)
+  error           String?
+  // when it was typed into the platform (pacing and the daily cap count these)
+  attemptedAt     DateTime?
+  sentAt          DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([integrationId, status])
+  @@index([integrationId, attemptedAt])
+  @@index([integrationId, threadId, sentAt])
 }

@@ -5,8 +5,41 @@ import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/pris
 export class OAuthRepository {
   constructor(
     private _oauthApp: PrismaRepository<'oAuthApp'>,
-    private _oauthAuth: PrismaRepository<'oAuthAuthorization'>
+    private _oauthAuth: PrismaRepository<'oAuthAuthorization'>,
+    private _members: PrismaRepository<'userOrganization'>
   ) {}
+
+  /** Whether the user is an active member of the organization. */
+  async isMember(userId: string, organizationId: string) {
+    return !!(await this._members.model.userOrganization.findFirst({
+      where: { userId, organizationId, disabled: false, organization: { deletedAt: null } },
+      select: { id: true },
+    }));
+  }
+
+  /** A grant the user made for the organization and has not revoked (rows exist only once approved). */
+  async hasApproved(oauthAppId: string, userId: string, organizationId: string) {
+    return !!(await this._oauthAuth.model.oAuthAuthorization.findFirst({
+      where: { oauthAppId, userId, organizationId, revokedAt: null },
+      select: { id: true },
+    }));
+  }
+
+  getFirstPartyApp(name: string) {
+    return this._oauthApp.model.oAuthApp.findFirst({
+      where: { name, firstParty: true, deletedAt: null },
+    });
+  }
+
+  createFirstPartyApp(data: { name: string; redirectUrl: string; redirectUris: string; clientId: string; clientSecret: string }) {
+    return this._oauthApp.model.oAuthApp.create({
+      data: { ...data, firstParty: true, tokenEndpointAuthMethod: 'client_secret_post' },
+    });
+  }
+
+  updateFirstPartyApp(id: string, data: { redirectUrl: string; redirectUris: string; clientSecret?: string }) {
+    return this._oauthApp.model.oAuthApp.update({ where: { id }, data });
+  }
 
   getAppByOrgId(orgId: string) {
     return this._oauthApp.model.oAuthApp.findFirst({
@@ -238,6 +271,7 @@ export class OAuthRepository {
             clientId: true,
             dynamic: true,
             redirectUris: true,
+            firstParty: true,
           },
         },
         organization: {
@@ -256,6 +290,10 @@ export class OAuthRepository {
             id: true,
             email: true,
             activated: true,
+            providerName: true,
+            name: true,
+            lastName: true,
+            picture: { select: { path: true } },
           },
         },
       },
