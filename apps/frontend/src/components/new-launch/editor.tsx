@@ -569,8 +569,9 @@ export const Editor: FC<{
     if (!emojiPickerOpen || emojiData) {
       return;
     }
-    import('emoji-picker-react/dist/data/emojis-zh')
-      .then((data) => setEmojiData(data.default))
+    import('emoji-picker-react/dist/data/emojis-zh.json')
+      // the JSON's category names are plain strings; the picker's type wants its enum
+      .then((data) => setEmojiData(data.default as unknown as React.ComponentProps<typeof EmojiPicker>['emojiData']))
       .catch(() => {
         // the picker keeps its built-in names
       });
