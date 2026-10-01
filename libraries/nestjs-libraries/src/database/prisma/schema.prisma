@@ -63,6 +63,8 @@ model Organization {
   creditEntries       CreditEntry[]
   billingOrders       BillingOrder[]
   apiKeys             ApiKey[]
+  channelTags         ChannelTag[]
+  syncSettings        SyncSettings?
 
   @@index([apiKey])
   @@index([streakSince])
@@ -136,6 +138,7 @@ model User {
   sendFailureEmails     Boolean              @default(true)
   sendStreakEmails      Boolean              @default(true)
   oauthAuthorizations   OAuthAuthorization[]
+  notificationReads     NotificationRead[]
 
   @@unique([email, providerName])
   @@index([lastReadNotifications])
@@ -167,6 +170,8 @@ model UserOrganization {
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id])
   user           User         @relation(fields: [userId], references: [id])
+  // 新手任务: the member closed the checklist card in this team
+  hideChecklist  Boolean      @default(false)
 
   @@unique([userId, organizationId])
   @@index([organizationId])
@@ -247,6 +252,8 @@ model Media {
   thumbnailTimestamp Int?
   status             String              @default("ready")
   processingError    String?
+  // 网盘 回收站: moved to the trash at; restored by clearing it, purged (deletedAt) after 30 days
+  trashedAt          DateTime?
   organization       Organization        @relation(fields: [organizationId], references: [id])
   agencies           SocialMediaAgency[]
   userPicture        User[]
@@ -255,6 +262,7 @@ model Media {
   @@index([name])
   @@index([organizationId])
   @@index([type])
+  @@index([trashedAt])
 }
 
 model SocialMediaAgency {
@@ -417,6 +425,7 @@ model Integration {
   inboxItems            InboxItem[]
   channelSnapshots      ChannelSnapshot[]
   monitorTargets        MonitorTarget[]
+  channelTags           ChannelTagLink[]
 
   @@unique([organizationId, internalId])
   @@index([rootInternalId])
@@ -546,10 +555,14 @@ model Notifications {
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id])
+  // 通知中心 category, set where the notification is created (null: older rows, shown as 系统)
+  category       NotificationCategory?
+  reads          NotificationRead[]
 
   @@index([createdAt])
   @@index([organizationId])
   @@index([deletedAt])
+  @@index([organizationId, category])
 }
 
 model MessagesGroup {
@@ -1845,6 +1858,10 @@ enum CreationMethod {
   AUTOPOST
   CLI
   AUTOMATION
+  // Excel 批量发布
+  BULK_IMPORT
+  // drafts written by AI 创作 / 一键复刻 / the post generator
+  AI
 }
 
 enum ShortLinkPreference {
@@ -1986,6 +2003,8 @@ model ReplyLog {
   source      ReplySource @default(MANUAL)
   error       String?
   createdAt   DateTime    @default(now())
+  // what the operator wrote when the reply was sent translated (content is what was sent)
+  original    String?
   inboxItem   InboxItem   @relation(fields: [inboxItemId], references: [id])
 
   @@index([inboxItemId])
@@ -2126,6 +2145,8 @@ model Lead {
   summary        String?
   createdAt      DateTime     @default(now())
   deletedAt      DateTime?
+  // 入库: the team took the lead into its customer list
+  storedAt       DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id])
   automation     Automation?  @relation(fields: [automationId], references: [id])
 
@@ -2376,4 +2397,97 @@ model AiGeneration {
   user           User?        @relation(fields: [userId], references: [id])
 
   @@index([organizationId, createdAt])
+}
+
+// oksocial 账号标签: labels a team puts on its channels, several per channel, to filter the
+// calendar's channel list and pick channels in the editor. Customer stays the one-group grouping.
+model ChannelTag {
+  id             String           @id @default(uuid())
+  organizationId String
+  name           String
+  color          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  channels       ChannelTagLink[]
+
+  @@index([organizationId, deletedAt])
+}
+
+model ChannelTagLink {
+  integrationId String
+  tagId         String
+  createdAt     DateTime    @default(now())
+  integration   Integration @relation(fields: [integrationId], references: [id])
+  tag           ChannelTag  @relation(fields: [tagId], references: [id])
+
+  @@id([integrationId, tagId])
+  @@index([tagId])
+}
+
+// 私信自动回复策略 of a team: null lets every AI 私信助手 follow its own setting.
+enum DmReplyPolicy {
+  // answer a conversation once; later messages of the customer are left to people
+  ONCE
+  // answer whenever the customer wrote last
+  CONTINUOUS
+}
+
+// 团队设置 › 同步与 AI: what the background sync reads and which AI work runs on what it reads.
+// No row means the defaults, which are what oksocial did before the panel existed.
+model SyncSettings {
+  id                    String         @id @default(uuid())
+  organizationId        String         @unique
+  // 授权账户: comments (and @mentions as comments), DMs, mentions
+  commentSync           Boolean        @default(true)
+  dmSync                Boolean        @default(true)
+  mentionSync           Boolean        @default(true)
+  commentAiTag          Boolean        @default(true)
+  dmAiTag               Boolean        @default(true)
+  // incoming text translated to Chinese and stored under the original; outgoing replies
+  // translated into the language the customer wrote in
+  commentTranslateIn    Boolean        @default(false)
+  commentTranslateOut   Boolean        @default(false)
+  dmTranslateIn         Boolean        @default(false)
+  dmTranslateOut        Boolean        @default(false)
+  dmReplyPolicy         DmReplyPolicy?
+  // 监控帖文: comments under monitored posts
+  monitorCommentSync    Boolean        @default(true)
+  monitorAiTag          Boolean        @default(false)
+  // 竞品: comments under the competitors' new posts
+  competitorCommentSync Boolean        @default(false)
+  competitorAiTag       Boolean        @default(false)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  organization          Organization   @relation(fields: [organizationId], references: [id])
+}
+
+// 通知中心 categories.
+enum NotificationCategory {
+  // 发布: published, failed, waiting for approval
+  PUBLISH
+  // 互动 / 被提及
+  ENGAGEMENT
+  // 监控: competitors, keywords
+  MONITOR
+  // 社媒账号: disconnected, risk control
+  CHANNEL
+  // 自动化
+  AUTOMATION
+  // 系统
+  SYSTEM
+}
+
+// A notification one member opened in the 通知中心 (everything before User.lastReadNotifications
+// counts as read too: 全部标为已读 moves that mark).
+model NotificationRead {
+  notificationId String
+  userId         String
+  createdAt      DateTime      @default(now())
+  notification   Notifications @relation(fields: [notificationId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+
+  @@id([notificationId, userId])
+  @@index([userId])
 }
