@@ -189,7 +189,7 @@ export const LeadsLibrary: FC = () => {
       <div className="flex flex-wrap items-center gap-[8px]">
         <label className="flex items-center gap-[8px] text-[13px] cursor-pointer select-none h-[40px] pe-[6px]">
           <input type="checkbox" checked={allOnPage} onChange={toggleAll} disabled={!leads.length} />
-          {t('select_page', '全选当前页')}
+          {t('select_current_page', '全选当前页')}
         </label>
         {selected.length > 0 && (
           <span className="text-[13px] text-textItemBlur">{t('selected_count', '已选 {{n}} 条', { n: selected.length })}</span>
