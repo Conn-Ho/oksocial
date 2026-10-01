@@ -5,6 +5,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.servic
 
 import { INestApplication, Module, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { OkchatPublicController } from '@gitroom/backend/api/routes/okchat.public.controller';
 import { OkchatLinkService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.link.service';
 import { OkchatReplyService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.reply.service';
@@ -44,6 +45,8 @@ const link = new OkchatLinkService(repo as any, {} as any, manager as any, {} as
 const replies = new OkchatReplyService(repo as any, manager as any, {} as any);
 
 @Module({
+  // as app.module (in-memory storage here)
+  imports: [ThrottlerModule.forRoot({ throttlers: [{ ttl: 3600000, limit: 90 }], errorMessage: '请求太频繁了，请稍后再试' })],
   controllers: [OkchatPublicController],
   providers: [
     { provide: OkchatLinkService, useValue: link },
@@ -75,13 +78,14 @@ afterAll(async () => {
   }
 });
 
-/** POSTs these exact bytes, signed (or not) as okchat would. */
-const call = async (path: string, raw: string, sign: { secret?: string; ts?: number } | false = {}) => {
+/** POSTs these exact bytes, signed (or not) as okchat would; `ip` is the client address the proxy forwards. */
+const call = async (path: string, raw: string, sign: { secret?: string; ts?: number } | false = {}, ip?: string) => {
   const ts = sign ? sign.ts ?? Math.floor(Date.now() / 1000) : 0;
   const res = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      ...(ip ? { 'x-forwarded-for': ip } : {}),
       ...(sign ? { 'x-okchat-timestamp': String(ts), 'x-okchat-signature': signOkchat(sign.secret ?? SECRET, ts, raw) } : {}),
     },
     body: raw,
@@ -183,5 +187,29 @@ describe('GET /accounts', () => {
     });
     expect((await fetch(`${base}/accounts`, { headers: { authorization: 'Bearer pos_revoked' } })).status).toBe(401);
     expect((await fetch(`${base}/accounts`)).status).toBe(401);
+  });
+});
+
+describe('rate limit (per client address)', () => {
+  it('okchat\'s 15-minute verify sweep (one request per binding, back to back) goes through', async () => {
+    const raw = JSON.stringify({ bindingId: 'b_9', integrationId: 'i1' });
+    for (let i = 0; i < 600; i++) {
+      expect((await call('/verify', raw, {}, '10.0.0.1')).status).toBe(200);
+    }
+  });
+
+  it('a flood from one address is answered 429; other addresses are not held up', async () => {
+    const accounts = (ip: string) => fetch(`${base}/accounts`, { headers: { authorization: 'Bearer pos_unknown', 'x-forwarded-for': ip } });
+    for (let i = 0; i < 120; i++) {
+      expect((await accounts('10.0.0.2')).status).toBe(401);
+    }
+    expect((await accounts('10.0.0.2')).status).toBe(429);
+    expect((await accounts('10.0.0.3')).status).toBe(401);
+    // unsigned calls count too
+    const raw = JSON.stringify({ oksocialOrgId: 'o1', okchatAccountId: 'w_abc', bindings: [] });
+    for (let i = 0; i < 120; i++) {
+      expect((await call('/link', raw, false, '10.0.0.4')).status).toBe(401);
+    }
+    expect((await call('/link', raw, false, '10.0.0.4')).status).toBe(429);
   });
 });
