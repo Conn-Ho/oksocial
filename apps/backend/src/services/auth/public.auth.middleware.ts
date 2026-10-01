@@ -36,7 +36,9 @@ export class PublicAuthMiddleware implements NestMiddleware {
 
       if (isOAuthApp) {
         const authorization = await this._oauthService.getOrgByOAuthToken(auth);
-        if (!authorization) {
+        // a first-party app's token (okchat) only signs the member in and reads the team's
+        // accounts (/public/okchat/accounts); it does not open the public API
+        if (!authorization || authorization.oauthApp?.firstParty) {
           res
             .status(HttpStatus.UNAUTHORIZED)
             .json({ msg: 'OAuth Token 无效' });

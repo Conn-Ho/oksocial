@@ -298,19 +298,11 @@ describe('inbox fetch mapping', () => {
     expect(fleet.calls[1]).toEqual(['xq', 'reply', 'https://x.com/i/status/111', '谢谢']);
   });
 
-  it('Xiaohongshu hashes notifications and reads unread DM conversations, skipping our own messages', async () => {
+  it('Xiaohongshu hashes notifications; DMs are not read into the inbox', async () => {
     const fleet = fakeFleet([
       { ok: true, data: [
         { user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' },
         { user: '小B', action: '在评论中@了你', content: '@WenWen 看这个', note: '别人的笔记', time: '09-28' },
-      ] },
-      { ok: true, data: [
-        { id: 'c1', name: '小C', unread: 2, group: false },
-        { id: 'g1', name: '群', unread: 9, group: true },
-      ] },
-      { ok: true, data: [
-        { time: '10:00', from: '小C', mine: false, text: '在吗' },
-        { time: '10:01', from: 'me', mine: true, text: '在' },
       ] },
     ]);
     const p = withFleet(new XiaohongshuWebProvider(), fleet);
@@ -318,71 +310,86 @@ describe('inbox fetch mapping', () => {
     expect(items.map((i: any) => [i.kind, i.authorName, i.content])).toEqual([
       ['COMMENT', '小A', '求链接'],
       ['MENTION', '小B', '@WenWen 看这个'],
-      ['DM', '小C', '在吗'],
     ]);
-    expect(fleet.calls[2]).toEqual(['xhsdm', 'read', 'c1', '--limit', '10']);
+    expect(fleet.calls).toEqual([['xiaohongshu', 'notifications', '--type', 'mentions', '--limit', '30']]);
     expect(items[0].externalId).toMatch(/^[0-9a-f]{24}$/);
     expect(((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
       { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' }] },
-      { ok: true, data: [] },
     ])).inbox.fetch('s1', {} as any)) as any).items[0].externalId).toBe(items[0].externalId);
     expect(p.inbox.reply?.COMMENT).toBeUndefined();
-    expect(typeof p.inbox.reply?.DM).toBe('function');
+    // a DM item an older oksocial stored still answers through the DM channel
+    await p.inbox.reply!.DM!('s1', {} as any, { replyTarget: 'c1', threadId: 'c1' }, '在的');
+    expect(fleet.calls.at(-1)).toEqual(['xhsdm', 'send', '-f', 'json', '--', 'c1', '在的']);
   });
 
-  it('Xiaohongshu says what a DM the web IM cannot show is, instead of its 暂不支持 placeholder', async () => {
-    const placeholder = '暂不支持该消息类型，请到手机端查看';
+  it('Xiaohongshu DM channel: conversations without group chats, messages with ours marked', async () => {
     const fleet = fakeFleet([
-      { ok: true, data: [] },
-      { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
-      { ok: true, data: [{ time: '10:00', from: '小C', mine: false, text: placeholder }] },
+      { ok: true, data: [
+        { id: 'c1', name: '小C', unread: 2, summary: '在吗', group: false },
+        { id: 'g1', name: '群', unread: 9, summary: '大家好', group: true },
+        { id: 'c2', name: '小D', unread: '', summary: '谢谢', group: 'false' },
+      ] },
+      { ok: true, data: [
+        { time: '10:00', from: '小C', mine: false, text: '在吗' },
+        { time: '10:01', from: 'me', mine: 'true', text: '在' },
+        { time: '10:02', from: '小C', mine: false, text: '' },
+      ] },
+      { ok: true, data: [{ status: 'success' }] },
     ]);
-    const { items } = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
-    expect(items[0].content).toBe('（对方发来一条网页版看不到的消息，比如图片、表情或卡片，请在小红书 App 里查看）');
-    // the id still comes from what the platform shows, so earlier syncs don't duplicate it
-    const again = fakeFleet([
-      { ok: true, data: [] },
-      { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
-      { ok: true, data: [{ time: '昨天 10:00', from: '小C', mine: false, text: placeholder }] },
+    const p = withFleet(new XiaohongshuWebProvider(), fleet);
+    expect(await p.dm.conversations('s1')).toEqual([
+      { id: 'c1', name: '小C', unread: 2, summary: '在吗' },
+      { id: 'c2', name: '小D', unread: 0, summary: '谢谢' },
     ]);
-    expect(((await withFleet(new XiaohongshuWebProvider(), again).inbox.fetch('s1', {} as any)) as any).items[0].externalId).toBe(items[0].externalId);
+    expect(await p.dm.read('s1', 'c1', 20)).toEqual([
+      { from: '小C', mine: false, text: '在吗', time: '10:00' },
+      { from: 'me', mine: true, text: '在', time: '10:01' },
+    ]);
+    await p.dm.send('s1', 'c1', '您好，在的');
+    expect(fleet.calls).toEqual([
+      ['xhsdm', 'list', '--limit', '30'],
+      ['xhsdm', 'read', 'c1', '--limit', '20'],
+      // the format first (the worker appends one only when there is none), then -- : the
+      // conversation id and the text are never read as options
+      ['xhsdm', 'send', '-f', 'json', '--', 'c1', '您好，在的'],
+    ]);
+    expect(p.dm.maxLength).toBe(500);
+    expect(p.dm.checkText!('--help')).toMatch(/不能以「-」开头/);
+    expect(p.dm.checkText!('好的 -_-')).toBeNull();
+    expect(p.dm.loggedOutReason).toMatch(/小红书网页版已退出登录/);
   });
 
-  it('Xiaohongshu stores notification unix times as text and keeps DM ids stable across days', async () => {
-    const read = async (dmTime: string) =>
-      ((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
-        { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: 1790740800 }] },
-        { ok: true, data: [{ id: 'c1', name: '小C', unread: 1, group: false }] },
-        { ok: true, data: [{ time: dmTime, from: '小C', mine: false, text: '在吗' }] },
-      ])).inbox.fetch('s1', {} as any)) as any).items;
-    const today = await read('10:00');
-    expect(typeof today[0].platformTime).toBe('string');
-    expect(today[0].platformTime).toMatch(/^2026-09-30 \d{2}:\d{2}$/);
-    const tomorrow = await read('昨天 10:00');
-    expect(tomorrow[1].externalId).toBe(today[1].externalId);
+  it('Xiaohongshu describes a DM the web IM cannot show in the okchat contract\'s words', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [{ time: '10:00', from: '小C', mine: false, text: '暂不支持该消息类型，请到手机端查看' }] }]);
+    const [m] = await withFleet(new XiaohongshuWebProvider(), fleet).dm.read('s1', 'c1', 20);
+    expect(m.text).toBe('［对方发来一条网页版看不到的消息，请在小红书 App 查看］');
   });
 
-  it('Xiaohongshu says when the web site (DMs, notifications) is not logged in instead of returning nothing', async () => {
-    const fleet = fakeFleet([
-      { ok: true, data: [{ rank: 1 }] },
-      { ok: false, code: 'NOT_LOGGED_IN', message: 'Not logged in to www.xiaohongshu.com' } as any,
-    ]);
+  it('Xiaohongshu DM channel: a logged-out web site is a RefreshToken, an empty chat is no messages', async () => {
+    const out = fakeFleet([{ ok: false, code: 'NOT_LOGGED_IN', message: 'Not logged in to www.xiaohongshu.com' } as any]);
+    await expect(withFleet(new XiaohongshuWebProvider(), out).dm.conversations('s1')).rejects.toBeInstanceOf(RefreshToken);
+    const empty = fakeFleet([{ ok: false, code: 'EMPTY', message: 'nothing' } as any]);
+    expect(await withFleet(new XiaohongshuWebProvider(), empty).dm.read('s1', 'c1', 20)).toEqual([]);
+    const blocked = fakeFleet([{ ok: false, code: 'CHALLENGE', message: '发送太频繁' } as any]);
+    await expect(withFleet(new XiaohongshuWebProvider(), blocked).dm.send('s1', 'c1', 'hi')).rejects.toThrow(/风控/);
+  });
+
+  it('Xiaohongshu stores notification unix times as text', async () => {
+    const items = ((await withFleet(new XiaohongshuWebProvider(), fakeFleet([
+      { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: 1790740800 }] },
+    ])).inbox.fetch('s1', {} as any)) as any).items;
+    expect(typeof items[0].platformTime).toBe('string');
+    expect(items[0].platformTime).toMatch(/^2026-09-30 \d{2}:\d{2}$/);
+  });
+
+  it('Xiaohongshu says when the web site (notifications) is not logged in instead of returning nothing', async () => {
+    const fleet = fakeFleet([{ ok: false, code: 'NOT_LOGGED_IN', message: 'Not logged in to www.xiaohongshu.com' } as any]);
     const res = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
     expect(res.items).toEqual([]);
     expect(res.warnings).toEqual([expect.stringContaining('小红书网页版')]);
-    // a failure that leaves nothing read fails the sync
-    const broken = fakeFleet([{ ok: true, data: [] }, { ok: false, code: 'TIMEOUT', message: 'slow' } as any]);
+    // another failure fails the sync
+    const broken = fakeFleet([{ ok: false, code: 'TIMEOUT', message: 'slow' } as any]);
     await expect(withFleet(new XiaohongshuWebProvider(), broken).inbox.fetch('s1', {} as any)).rejects.toThrow(/TIMEOUT/);
-  });
-
-  it('Xiaohongshu keeps the notifications it read when the DM list fails', async () => {
-    const fleet = fakeFleet([
-      { ok: true, data: [{ user: '小A', action: '评论了你的笔记', content: '求链接', note: '今天的第一篇', time: '09-28' }] },
-      { ok: false, code: 'TIMEOUT', message: 'slow' } as any,
-    ]);
-    const res = (await withFleet(new XiaohongshuWebProvider(), fleet).inbox.fetch('s1', {} as any)) as any;
-    expect(res.items.map((i: any) => i.content)).toEqual(['求链接']);
-    expect(res.warnings).toEqual([]);
   });
 
   it('Weibo reads comments only for posts that have some', async () => {

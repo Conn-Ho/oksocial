@@ -16,6 +16,11 @@ export const AUTOMATION_TYPES = [
 ] as const;
 export type AutomationType = (typeof AUTOMATION_TYPES)[number];
 
+// DMs are handled in okchat now: no new AI 私信助手, and existing ones no longer run.
+export const DM_IN_OKCHAT = '私信已改到 okchat 处理，AI 私信助手不再运行；请在 okchat 里设置私信的 AI 接待。';
+/** What 新建自动化 offers. */
+export const CREATABLE_AUTOMATION_TYPES: AutomationType[] = AUTOMATION_TYPES.filter((type) => type !== 'DM_ASSISTANT');
+
 export const AUTOMATION_META: Record<AutomationType, { label: string; description: string; defaultCap: number }> = {
   COMMENT_ASSISTANT: { label: 'AI 评论助手', description: '按情绪、意向、关键词筛出新评论和 @提及，用 AI 或话术自动回复', defaultCap: 50 },
   DM_ASSISTANT: { label: 'AI 私信助手', description: '自动回复私信，可只回第一句或持续对话', defaultCap: 100 },

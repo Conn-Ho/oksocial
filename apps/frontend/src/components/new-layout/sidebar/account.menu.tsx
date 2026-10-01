@@ -5,6 +5,8 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { useClickAway } from '@uidotdev/usehooks';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { useVariables } from '@gitroom/react/helpers/variable.context';
+import { okchatEntryUrl } from '@gitroom/helpers/utils/okchat';
 import { useLogout } from '@gitroom/frontend/components/layout/logout.component';
 import { useThemeMode } from '@gitroom/frontend/components/layout/mode.component';
 import { useCurrentTeam } from '@gitroom/frontend/components/teams/teams.hooks';
@@ -81,6 +83,7 @@ export const AccountMenu: FC = () => {
   const logout = useLogout();
   const { name, email, picture } = useAccountIdentity();
   const team = useCurrentTeam();
+  const { okchatUrl } = useVariables();
 
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -165,6 +168,16 @@ export const AccountMenu: FC = () => {
             </ItemIcon>
             <span className="text-[14px] text-textColor">{t('account_personal_settings', '个人设置')}</span>
           </Link>
+          {okchatUrl && team && (
+            // okchat signs the member in with oksocial (silently once approved) in a new tab
+            <a href={okchatEntryUrl(okchatUrl, team.id)} target="_blank" rel="noopener noreferrer" onClick={done} className={menuItemClass}>
+              <ItemIcon>
+                <path d="M4 8h13l-3.5-3.5" />
+                <path d="M20 16H7l3.5 3.5" />
+              </ItemIcon>
+              <span className="flex-1 text-[14px] text-textColor">{t('account_switch_okchat', '切换到 okchat')}</span>
+            </a>
+          )}
           <ThemeItem />
           <Separator />
           <button

@@ -6,6 +6,8 @@ interface VariableContextInterface {
   billingEnabled: boolean;
   // oksocial plans / credits are on (XorPay configured): shows the 用量 page
   usageBilling?: boolean;
+  // okchat handles the team's DMs: its address when the bridge is configured, else empty
+  okchatUrl?: string;
   isChatBase: boolean;
   isGeneral: boolean;
   genericOauth: boolean;
@@ -42,6 +44,7 @@ const VariableContext = createContext({
   stripeClient: '',
   billingEnabled: false,
   usageBilling: false,
+  okchatUrl: '',
   isGeneral: true,
   genericOauth: false,
   isChatBase: false,

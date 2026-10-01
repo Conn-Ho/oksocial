@@ -49,6 +49,8 @@ export class OAuthController {
         picture: app.picture,
         clientId: app.clientId,
         redirectUrl: app.redirectUrl,
+        // oksocial's own product (okchat): asked once per member and team, then silent
+        firstParty: app.firstParty,
       },
       state: query.state,
     };
@@ -119,9 +121,20 @@ export class OAuthAuthorizedController {
       }
     );
 
-    // Dynamic clients redirect to their validated redirect_uri,
+    // Dynamic and first-party clients redirect to their validated redirect_uri,
     // static apps keep using the one stored on the app
-    const redirectTarget = app.dynamic ? body.redirect_uri! : app.redirectUrl;
+    const strict = app.dynamic || app.firstParty;
+    const redirectTarget = strict ? body.redirect_uri! : app.redirectUrl;
+    // the team chosen on the consent page when the member belongs to it, else the current one
+    const organizationId =
+      body.organization_id && body.organization_id !== org.id && (await this._oauthService.isMember(user.id, body.organization_id))
+        ? body.organization_id
+        : org.id;
+
+    // the consent page asks first whether a first-party app was approved for this team before
+    if (body.action === 'silent' && !(await this._oauthService.approvedBefore(app, user.id, organizationId))) {
+      return { consent: true };
+    }
 
     if (body.action === 'deny') {
       const redirectUrl = new URL(redirectTarget);
@@ -135,8 +148,8 @@ export class OAuthAuthorizedController {
     const code = await this._oauthService.createAuthorizationCode(
       app.id,
       user.id,
-      org.id,
-      app.dynamic
+      organizationId,
+      strict
         ? {
             codeChallenge: body.code_challenge,
             codeChallengeMethod: body.code_challenge_method,

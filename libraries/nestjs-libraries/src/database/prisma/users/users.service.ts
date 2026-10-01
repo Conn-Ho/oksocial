@@ -128,6 +128,10 @@ export class UsersService {
     return this._usersRepository.activateUser(id);
   }
 
+  markEmailVerified(id: string) {
+    return this._usersRepository.markEmailVerified(id);
+  }
+
   updatePassword(id: string, password: string) {
     return this._usersRepository.updatePassword(id, password);
   }

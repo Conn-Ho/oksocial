@@ -69,6 +69,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             !!process.env.OKSOCIAL_XORPAY_AID &&
             !!process.env.OKSOCIAL_XORPAY_APP_SECRET
           }
+          // the okchat bridge is on with both its address and the partner secret (never sent here)
+          okchatUrl={
+            process.env.OKCHAT_URL?.trim() && process.env.OKCHAT_PARTNER_SECRET?.trim()
+              ? process.env.OKCHAT_URL.trim().replace(/\/+$/, '')
+              : ''
+          }
           discordUrl={process.env.NEXT_PUBLIC_DISCORD_SUPPORT!}
           frontEndUrl={process.env.FRONTEND_URL!}
           isGeneral={!!process.env.IS_GENERAL}

@@ -288,6 +288,10 @@ export class AuthController {
     return response.status(200).json({ can: true });
   }
 
+  // public and mails any registered address (an activation, or a verification link for an
+  // account activated unchecked), so cap it per client
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 20, ttl: 3600000 } })
   @Post('/resend-activation')
   async resendActivation(@Body() body: ResendActivationDto) {
     try {

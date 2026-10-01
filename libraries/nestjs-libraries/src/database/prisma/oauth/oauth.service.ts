@@ -21,7 +21,31 @@ const isVerifiedHost = (host: string, verifiedDomains: string[]) =>
     (domain) => host === domain || host.endsWith('.' + domain)
   );
 
-type EmailClaimsApp = Pick<OAuthApp, 'clientId' | 'dynamic' | 'redirectUris'>;
+type EmailClaimsApp = Pick<OAuthApp, 'clientId' | 'dynamic' | 'redirectUris'> & Partial<Pick<OAuthApp, 'firstParty'>>;
+
+// Sign-in methods whose address is not an email (wallets, Farcaster ids)
+const NO_EMAIL_PROVIDERS = ['WALLET', 'FARCASTER'];
+
+// Sign-ins that can check the address: the activation mail (email sign-ups), Google and Apple when
+// they say they verified it. GitHub and generic OIDC may hand over an unchecked one.
+const VERIFYING_PROVIDERS = ['LOCAL', 'GOOGLE', 'APPLE'];
+
+/**
+ * Whether the user's email address is verified: the check recorded on the user (emailVerifiedAt:
+ * the activation mail's link, or Google / Apple verifying it). Activation alone is not one: without
+ * an email provider sign-ups activate unchecked. Wallets and Farcaster ids are never emails. Pure.
+ */
+export const isVerifiedEmail = (user: { email: string; activated: boolean; providerName?: string | null; emailVerifiedAt?: Date | null }) => {
+  const provider = String(user.providerName || '');
+  if (!user.activated || NO_EMAIL_PROVIDERS.includes(provider) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email || '')) {
+    return false;
+  }
+  return VERIFYING_PROVIDERS.includes(provider) && !!user.emailVerifiedAt;
+};
+
+/** An uploaded picture's address as another site loads it. Pure. */
+const absolutePicture = (path?: string | null) =>
+  !path ? null : path.startsWith('/') ? `${(process.env.FRONTEND_URL || '').replace(/\/+$/, '')}${path}` : path;
 
 // Schemes a browser would execute instead of navigating away from the
 // consent screen, so they can never be a redirect_uri
@@ -218,6 +242,10 @@ export class OAuthService {
   // dynamic client on a self-hosted install with no verified domains, only
   // gets the mcp scopes
   private allowsEmailClaims(app: EmailClaimsApp) {
+    // oksocial's own products (okchat) sign members in with these claims
+    if (app.firstParty) {
+      return true;
+    }
     if (!enableOidcEmailClaims()) {
       return false;
     }
@@ -252,6 +280,9 @@ export class OAuthService {
   }
 
   private grantedScope(app: EmailClaimsApp) {
+    if (app.firstParty) {
+      return 'openid email profile';
+    }
     return [
       ...(this.allowsEmailClaims(app) ? ['openid', 'email'] : []),
       'mcp:read',
@@ -270,6 +301,17 @@ export class OAuthService {
     const app = await this._oauthRepository.getAppByClientId(clientId);
     if (!app) {
       throw new HttpException('client_id 无效', HttpStatus.BAD_REQUEST);
+    }
+
+    // oksocial's own products: registered redirect_uris and PKCE (S256) always
+    if (app.firstParty) {
+      const registered: string[] = JSON.parse(app.redirectUris || '[]');
+      if (!options?.redirectUri || !registered.includes(options.redirectUri)) {
+        throw new HttpException('redirect_uri 无效', HttpStatus.BAD_REQUEST);
+      }
+      if (!options?.codeChallenge || options?.codeChallengeMethod !== 'S256') {
+        throw new HttpException('这个客户端必须提供 S256 的 code_challenge', HttpStatus.BAD_REQUEST);
+      }
     }
 
     // Dynamically registered clients must use their registered redirect_uris
@@ -400,13 +442,22 @@ export class OAuthService {
 
     const token = 'pos_' + makeSecureId(40);
     const encryptedToken = AuthService.fixedEncryption(token);
+    const exchanged = await this._oauthRepository.exchangeCodeForToken(
+      auth.id,
+      encryptedCode,
+      encryptedToken
+    );
+    // another request with the same code got the token first
+    if (!exchanged) {
+      throw new HttpException(
+        { error: 'invalid_grant' },
+        HttpStatus.BAD_REQUEST
+      );
+    }
     const {
       organizationId,
       organization: { paymentId },
-    } = await this._oauthRepository.exchangeCodeForToken(
-      auth.id,
-      encryptedToken
-    );
+    } = exchanged;
 
     return {
       id: organizationId,
@@ -423,7 +474,10 @@ export class OAuthService {
   }
 
   async getUserInfo(authorization?: string) {
-    if (!enableOidcEmailClaims()) {
+    const token = extractBearerToken(authorization);
+    const authorizationRecord = token ? await this.getOrgByOAuthToken(token) : null;
+    // first-party apps (okchat) always get userinfo; other clients only with OIDC email claims on
+    if (!authorizationRecord?.oauthApp?.firstParty && !enableOidcEmailClaims()) {
       throw new HttpException(
         {
           error: 'not_found',
@@ -433,7 +487,6 @@ export class OAuthService {
       );
     }
 
-    const token = extractBearerToken(authorization);
     if (!token) {
       throw new HttpException(
         { error: 'invalid_token', error_description: 'Bearer token required' },
@@ -441,7 +494,6 @@ export class OAuthService {
       );
     }
 
-    const authorizationRecord = await this.getOrgByOAuthToken(token);
     if (!authorizationRecord) {
       throw new HttpException(
         { error: 'invalid_token', error_description: 'Token is invalid or revoked' },
@@ -460,12 +512,72 @@ export class OAuthService {
       );
     }
 
-    const { user } = authorizationRecord;
+    const { user, organization } = authorizationRecord;
+    const firstParty = !!authorizationRecord.oauthApp?.firstParty;
+    // a first-party grant lasts only while the member is in the team
+    if (firstParty && !(await this._oauthRepository.isMember(user.id, organization.id))) {
+      throw new HttpException(
+        { error: 'invalid_token', error_description: 'The member is no longer in this team' },
+        HttpStatus.UNAUTHORIZED
+      );
+    }
     return {
       sub: user.id,
       email: user.email,
-      email_verified: user.activated,
+      // first-party apps create accounts from it: only an address that was really checked
+      email_verified: firstParty ? isVerifiedEmail(user) : user.activated,
+      name: [user.name, user.lastName].filter(Boolean).join(' ') || user.email,
+      picture: absolutePicture(user.picture?.path),
+      // the team chosen on the consent page
+      org: { id: organization.id, name: organization.name },
     };
+  }
+
+  /** Whether a member of the organization signed a first-party app (okchat) in and holds its token. */
+  hasFirstPartyGrant(organizationId: string) {
+    return this._oauthRepository.hasFirstPartyGrant(organizationId);
+  }
+
+  /** Whether the user is an active member of the organization (the consent page's team choice). */
+  isMember(userId: string, organizationId: string) {
+    return this._oauthRepository.isMember(userId, organizationId);
+  }
+
+  /**
+   * A first-party app (okchat) the user already approved for this team is not asked again: the
+   * consent page asks for a code silently and shows itself only when this is false.
+   */
+  async approvedBefore(app: Pick<OAuthApp, 'id' | 'firstParty'>, userId: string, organizationId: string) {
+    return !!app.firstParty && this._oauthRepository.hasApproved(app.id, userId, organizationId);
+  }
+
+  /**
+   * Registers (or updates) one of oksocial's own products as a first-party OAuth app: idempotent by
+   * name. A client secret is made when the app is new or `rotate` is set, and returned only then.
+   */
+  async registerFirstPartyApp(name: string, redirectUris: string[], rotate = false) {
+    if (!redirectUris.length) {
+      throw new Error('at least one redirect URI is required');
+    }
+    for (const uri of redirectUris) {
+      const parsed = new URL(uri);
+      if (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(parsed.hostname)) {
+        throw new Error(`redirect URI must be https: ${uri}`);
+      }
+    }
+    const existing = await this._oauthRepository.getFirstPartyApp(name);
+    const secret = !existing || rotate ? 'pcs_' + makeSecureId(48) : undefined;
+    const uris = { redirectUrl: redirectUris[0], redirectUris: JSON.stringify(redirectUris) };
+    if (existing) {
+      await this._oauthRepository.updateFirstPartyApp(existing.id, {
+        ...uris,
+        ...(secret ? { clientSecret: AuthService.fixedEncryption(secret) } : {}),
+      });
+      return { clientId: existing.clientId, clientSecret: secret, created: false };
+    }
+    const clientId = 'pca_' + makeSecureId(32);
+    await this._oauthRepository.createFirstPartyApp({ name, ...uris, clientId, clientSecret: AuthService.fixedEncryption(secret!) });
+    return { clientId, clientSecret: secret, created: true };
   }
 
   async getApprovedApps(userId: string) {

@@ -18,6 +18,8 @@ import {
   AUTOMATION_META,
   AUTOMATION_TYPES,
   AutomationType,
+  CREATABLE_AUTOMATION_TYPES,
+  DM_IN_OKCHAT,
   LEAD_SOURCE_GROUPS,
   LeadSourceGroup,
   POST_ACTION_TEXT,
@@ -168,6 +170,9 @@ export class AutomationService {
   }
 
   async create(orgId: string, input: AutomationInput) {
+    if (!CREATABLE_AUTOMATION_TYPES.includes(input.type)) {
+      throw new HttpException(DM_IN_OKCHAT, 400);
+    }
     const config = this.validate(input.type, input.config);
     return this._repository.create(orgId, {
       type: input.type,

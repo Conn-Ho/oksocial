@@ -43,13 +43,13 @@ const perRead = (action: PricedAction): Price => ({ action, unit: 'read' });
 const SECTIONS: Array<{ title: string; intro: string; groups: Group[] }> = [
   {
     title: '授权账户',
-    intro: '已连接账号收到的评论、私信和 @提及（互动收件箱每 10 分钟同步一次）。',
+    // DMs are handled in okchat: no DM rows here
+    intro: '已连接账号收到的评论和 @提及（互动收件箱每 10 分钟同步一次）。',
     groups: [
       {
         title: '同步',
         rows: [
           { key: 'commentSync', label: '评论同步', hint: '读取账号帖子下的新评论', price: FREE },
-          { key: 'dmSync', label: '私信同步', hint: '读取私信会话里的新消息', price: FREE },
           { key: 'mentionSync', label: '被提及采集', hint: '收集其他账号 @ 你的内容，有新提及时通知你', price: FREE },
         ],
       },
@@ -57,7 +57,6 @@ const SECTIONS: Array<{ title: string; intro: string; groups: Group[] }> = [
         title: 'AI 标签',
         rows: [
           { key: 'commentAiTag', label: '评论标签', hint: '新评论自动标注情绪和意向（@提及按评论处理）', price: perItem('ai_tag') },
-          { key: 'dmAiTag', label: '私信标签', hint: '新私信自动标注情绪和意向', price: perItem('ai_tag') },
         ],
       },
       {
@@ -65,13 +64,6 @@ const SECTIONS: Array<{ title: string; intro: string; groups: Group[] }> = [
         rows: [
           { key: 'commentTranslateIn', label: '接收翻译', hint: '非中文的评论自动翻译成中文，显示在原文下方', price: perItem('ai_translate') },
           { key: 'commentTranslateOut', label: '发送翻译', hint: '回复时自动翻译成对方使用的语言再发送', price: perRead('ai_translate') },
-        ],
-      },
-      {
-        title: '私信翻译',
-        rows: [
-          { key: 'dmTranslateIn', label: '接收翻译', hint: '非中文的私信自动翻译成中文，显示在原文下方', price: perItem('ai_translate') },
-          { key: 'dmTranslateOut', label: '发送翻译', hint: '回复时自动翻译成对方使用的语言再发送', price: perRead('ai_translate') },
         ],
       },
     ],
@@ -102,12 +94,6 @@ const SECTIONS: Array<{ title: string; intro: string; groups: Group[] }> = [
       },
     ],
   },
-];
-
-const POLICIES: Array<{ value: DmReplyPolicy; label: string; hint: string }> = [
-  { value: null, label: '按各自动化设置', hint: '每个 AI 私信助手按它自己的设置回复。' },
-  { value: 'ONCE', label: '仅回复一次', hint: '同一会话里我方回复过后，客户再发消息也不再自动回复。' },
-  { value: 'CONTINUOUS', label: '持续自动回复', hint: '会话最后一条消息来自客户时，按自动化规则继续回复。' },
 ];
 
 export const useSyncSettings = () => {
@@ -206,7 +192,6 @@ export const SyncAiSettings: FC = () => {
     return <div className="text-[14px] text-textItemBlur py-[20px]">{t('loading', '加载中…')}</div>;
   }
   const { settings } = data;
-  const policy = POLICIES.find((p) => p.value === settings.dmReplyPolicy);
 
   return (
     <div className="flex flex-col gap-[16px] min-w-0">
@@ -252,34 +237,6 @@ export const SyncAiSettings: FC = () => {
               ))}
             </div>
           ))}
-          {section.title === '授权账户' && (
-            <div className="flex flex-col gap-[8px] pt-[12px] pb-[12px]">
-              <div className="text-[12px] font-[600] text-textItemBlur">{t('sync_dm_policy', '私信自动回复策略')}</div>
-              <div role="radiogroup" aria-label={t('sync_dm_policy', '私信自动回复策略')} className="flex flex-wrap gap-[4px]">
-                {POLICIES.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    role="radio"
-                    aria-checked={settings.dmReplyPolicy === p.value}
-                    disabled={!canEdit}
-                    onClick={() => settings.dmReplyPolicy !== p.value && save({ dmReplyPolicy: p.value })}
-                    className={clsx(
-                      'px-[14px] h-[34px] rounded-full text-[14px] whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary disabled:cursor-not-allowed',
-                      settings.dmReplyPolicy === p.value
-                        ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder'
-                        : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
-                    )}
-                  >
-                    {t(`sync_dm_policy_${p.value || 'own'}`, p.label)}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[12px] text-textItemBlur leading-[1.5]">
-                {policy && t(`sync_dm_policy_${policy.value || 'own'}_hint`, policy.hint)}
-              </p>
-            </div>
-          )}
         </Card>
       ))}
     </div>

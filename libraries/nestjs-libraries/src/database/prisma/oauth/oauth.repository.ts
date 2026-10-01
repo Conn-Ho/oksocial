@@ -5,8 +5,55 @@ import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/pris
 export class OAuthRepository {
   constructor(
     private _oauthApp: PrismaRepository<'oAuthApp'>,
-    private _oauthAuth: PrismaRepository<'oAuthAuthorization'>
+    private _oauthAuth: PrismaRepository<'oAuthAuthorization'>,
+    private _members: PrismaRepository<'userOrganization'>
   ) {}
+
+  /** Whether the user is an active member of the organization. */
+  async isMember(userId: string, organizationId: string) {
+    return !!(await this._members.model.userOrganization.findFirst({
+      where: { userId, organizationId, disabled: false, organization: { deletedAt: null } },
+      select: { id: true },
+    }));
+  }
+
+  /** A grant the user made for the organization and has not revoked (rows exist only once approved). */
+  async hasApproved(oauthAppId: string, userId: string, organizationId: string) {
+    return !!(await this._oauthAuth.model.oAuthAuthorization.findFirst({
+      where: { oauthAppId, userId, organizationId, revokedAt: null },
+      select: { id: true },
+    }));
+  }
+
+  /** A first-party app's (okchat's) live grant for the organization, by a member still in it. */
+  async hasFirstPartyGrant(organizationId: string) {
+    return !!(await this._oauthAuth.model.oAuthAuthorization.findFirst({
+      where: {
+        organizationId,
+        revokedAt: null,
+        accessToken: { not: null },
+        oauthApp: { firstParty: true, deletedAt: null },
+        user: { deletedAt: null, organizations: { some: { organizationId, disabled: false } } },
+      },
+      select: { id: true },
+    }));
+  }
+
+  getFirstPartyApp(name: string) {
+    return this._oauthApp.model.oAuthApp.findFirst({
+      where: { name, firstParty: true, deletedAt: null },
+    });
+  }
+
+  createFirstPartyApp(data: { name: string; redirectUrl: string; redirectUris: string; clientId: string; clientSecret: string }) {
+    return this._oauthApp.model.oAuthApp.create({
+      data: { ...data, firstParty: true, tokenEndpointAuthMethod: 'client_secret_post' },
+    });
+  }
+
+  updateFirstPartyApp(id: string, data: { redirectUrl: string; redirectUris: string; clientSecret?: string }) {
+    return this._oauthApp.model.oAuthApp.update({ where: { id }, data });
+  }
 
   getAppByOrgId(orgId: string) {
     return this._oauthApp.model.oAuthApp.findFirst({
@@ -204,17 +251,13 @@ export class OAuthRepository {
     });
   }
 
-  exchangeCodeForToken(id: string, encryptedToken: string) {
-    return this._oauthAuth.model.oAuthAuthorization.update({
-      where: { id },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            paymentId: true,
-          }
-        }
-      },
+  /**
+   * Swaps the code for the token in one conditional write: two requests with the same code give one
+   * token, the other gets null.
+   */
+  async exchangeCodeForToken(id: string, encryptedCode: string, encryptedToken: string) {
+    const { count } = await this._oauthAuth.model.oAuthAuthorization.updateMany({
+      where: { id, authorizationCode: encryptedCode, revokedAt: null },
       data: {
         accessToken: encryptedToken,
         authorizationCode: null,
@@ -222,6 +265,20 @@ export class OAuthRepository {
         codeChallenge: null,
         codeChallengeMethod: null,
         redirectUri: null,
+      },
+    });
+    if (!count) {
+      return null;
+    }
+    return this._oauthAuth.model.oAuthAuthorization.findUnique({
+      where: { id },
+      select: {
+        organizationId: true,
+        organization: {
+          select: {
+            paymentId: true,
+          },
+        },
       },
     });
   }
@@ -238,6 +295,7 @@ export class OAuthRepository {
             clientId: true,
             dynamic: true,
             redirectUris: true,
+            firstParty: true,
           },
         },
         organization: {
@@ -256,6 +314,11 @@ export class OAuthRepository {
             id: true,
             email: true,
             activated: true,
+            providerName: true,
+            emailVerifiedAt: true,
+            name: true,
+            lastName: true,
+            picture: { select: { path: true } },
           },
         },
       },

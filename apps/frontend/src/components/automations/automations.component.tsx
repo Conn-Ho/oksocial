@@ -11,7 +11,7 @@ import { Button } from '@gitroom/react/form/button';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
-import { AUTOMATION_META, AUTOMATION_TYPES, AutomationType, describeAutomation } from '@gitroom/helpers/automations/automation.config';
+import { AUTOMATION_META, AutomationType, CREATABLE_AUTOMATION_TYPES, describeAutomation } from '@gitroom/helpers/automations/automation.config';
 import {
   Automation,
   useAutomationActions,
@@ -44,7 +44,8 @@ const TypeShelf: FC<{ onPick: (type: AutomationType) => void }> = ({ onPick }) =
   const t = useT();
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
-      {AUTOMATION_TYPES.map((type) => (
+      {/* no AI 私信助手: DMs are handled in okchat */}
+      {CREATABLE_AUTOMATION_TYPES.map((type) => (
         <button key={type} type="button" onClick={() => onPick(type)} className="text-start rounded-[10px] border border-newTableBorder hover:border-btnPrimary p-[14px] flex flex-col gap-[6px]">
           <span className="font-semibold">{t(`automation_type_${type.toLowerCase()}`, AUTOMATION_META[type].label)}</span>
           <span className="text-[13px] text-textColor/60">{t(`automation_desc_${type.toLowerCase()}`, AUTOMATION_META[type].description)}</span>

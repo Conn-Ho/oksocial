@@ -167,6 +167,7 @@ export class AuthService {
       provider
     );
     if (user) {
+      await this.recordVerifiedEmail(user, providerUser);
       return user;
     }
 
@@ -187,6 +188,7 @@ export class AuthService {
       userAgent
     );
     await this.recordReferral(create.id, body.referralCode);
+    await this.recordVerifiedEmail(create.users[0].user, providerUser);
 
     this._track('register', providerUser.email, body.datafast_visitor_id).catch(
       (err) => {}
@@ -203,6 +205,24 @@ export class AuthService {
     }
 
     return create.users[0].user;
+  }
+
+  /**
+   * A sign-in whose provider said it verified the address (Google, Apple): the address counts as
+   * checked from now on, when it is the account's own.
+   */
+  private async recordVerifiedEmail(
+    user: Pick<User, 'id' | 'email' | 'emailVerifiedAt'>,
+    providerUser: { email: string; emailVerified?: boolean }
+  ) {
+    if (
+      providerUser.emailVerified !== true ||
+      user.emailVerifiedAt ||
+      String(user.email || '').toLowerCase() !== String(providerUser.email || '').toLowerCase()
+    ) {
+      return;
+    }
+    await this._userService.markEmailVerified(user.id);
   }
 
   private async _track(
@@ -275,7 +295,13 @@ export class AuthService {
       id: string;
       activated: boolean;
       email: string;
+      verifyEmail?: string;
+      expires?: string;
     };
+    // the link of a verification mail (see resendActivationEmail), not an activation
+    if (user.verifyEmail) {
+      return this.verifyEmail(user);
+    }
     if (user.id && !user.activated) {
       const getUserAgain = await this._userService.getUserByEmail(user.email);
       if (getUserAgain.activated) {
@@ -291,11 +317,46 @@ export class AuthService {
     return false;
   }
 
+  /** A verification link: the address of an account activated without a check counts as checked. */
+  private async verifyEmail(token: { verifyEmail?: string; email?: string; expires?: string }) {
+    if (!token.expires || dayjs(token.expires).isBefore(dayjs())) {
+      return false;
+    }
+    const user = await this._userService.getUserById(token.verifyEmail!);
+    // the link checks the address it was sent to, once
+    if (
+      !user?.activated ||
+      user.emailVerifiedAt ||
+      user.email.toLowerCase() !== String(token.email || '').toLowerCase()
+    ) {
+      return false;
+    }
+    await this._userService.markEmailVerified(user.id);
+    return this.jwt(user);
+  }
+
   async resendActivationEmail(email: string) {
     const user = await this._userService.getUserByEmail(email);
 
     if (!user) {
       throw new Error('这个邮箱还没有注册');
+    }
+
+    // activated without a check (no email provider at sign-up): a link that checks the address. Its
+    // token has no `id`, so it is never a session.
+    if (user.activated && !user.emailVerifiedAt) {
+      const token = AuthChecker.signJWT({
+        verifyEmail: user.id,
+        email: user.email,
+        expires: dayjs().add(1, 'day').format('YYYY-MM-DD HH:mm:ss'),
+      });
+      await this._emailService.sendEmail(
+        user.email,
+        '验证你的 oksocial 邮箱',
+        `请在 24 小时内<a href="${process.env.FRONTEND_URL}/auth/activate/${token}">点击这里验证邮箱</a>，验证后就能用 oksocial 账号登录 okchat。<br />如果不是你本人操作，忽略这封邮件即可。`,
+        'top'
+      );
+      return true;
     }
 
     if (user.activated) {
@@ -347,6 +408,7 @@ export class AuthService {
       provider as Provider
     );
     if (checkExists) {
+      await this.recordVerifiedEmail(checkExists, user);
       return { jwt: await this.jwt(checkExists) };
     }
 

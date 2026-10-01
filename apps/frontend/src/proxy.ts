@@ -92,6 +92,11 @@ export async function proxy(request: NextRequest) {
 
   const org = nextUrl.searchParams.get('org');
   const url = new URL(nextUrl).search;
+  // signing in with oksocial (okchat's OAuth) and adding its account: log in, then come back here
+  if (!authCookie && (nextUrl.pathname.startsWith('/oauth/authorize') || nextUrl.pathname.startsWith('/okchat/'))) {
+    const back = `${(process.env.FRONTEND_URL || nextUrl.origin).replace(/\/+$/, '')}${nextUrl.pathname}${nextUrl.search}`;
+    return NextResponse.redirect(new URL(`/auth/login?${new URLSearchParams({ returnUrl: back })}`, nextUrl.href));
+  }
   if (!nextUrl.pathname.startsWith('/auth') && !authCookie) {
     const providers = ['google', 'settings'];
     const findIndex = providers.find((p) => nextUrl.href.indexOf(p) > -1);
@@ -109,8 +114,9 @@ export async function proxy(request: NextRequest) {
     );
   }
 
-  // If the url is /auth and the cookie exists, redirect to /
-  if (nextUrl.pathname.startsWith('/auth') && authCookie) {
+  // If the url is /auth and the cookie exists, redirect to /. Not /auth/activate: a signed-in member
+  // asks for (and opens) the link that verifies an address activated without a check from there.
+  if (nextUrl.pathname.startsWith('/auth') && authCookie && !nextUrl.pathname.startsWith('/auth/activate')) {
     return NextResponse.redirect(new URL(`/${url}`, nextUrl.href));
   }
   if (nextUrl.pathname.startsWith('/auth') && !authCookie) {

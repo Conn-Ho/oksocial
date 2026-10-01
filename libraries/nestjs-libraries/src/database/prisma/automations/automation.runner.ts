@@ -14,6 +14,7 @@ import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validatio
 import {
   AutomationConfig,
   AutomationType,
+  DM_IN_OKCHAT,
   matchesTriggers,
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
@@ -24,7 +25,6 @@ import {
   InteractAuthor,
   InteractCapabilities,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
-import { SyncSettingsService, dmStrategyFor } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
 dayjs.extend(utc);
 
 export { BRAKE_HOURS, CHALLENGE_RE };
@@ -102,8 +102,7 @@ export class AutomationRunner {
     private _ai: AutomationAiService,
     private _brands: BrandService,
     private _integrationManager: IntegrationManager,
-    private _credits: CreditsService,
-    private _syncSettings: SyncSettingsService
+    private _credits: CreditsService
   ) {}
 
   async run(automation: Automation): Promise<RunResult> {
@@ -126,7 +125,8 @@ export class AutomationRunner {
         await this.commentAssistant(ctx, config as AutomationConfig<'COMMENT_ASSISTANT'>);
         break;
       case 'DM_ASSISTANT':
-        await this.dmAssistant(ctx, config as AutomationConfig<'DM_ASSISTANT'>);
+        // DMs are answered in okchat now: nothing is sent from here
+        ctx.result.warning = DM_IN_OKCHAT;
         break;
       case 'LEAD_COLLECTOR':
         await this.leadCollector(ctx, config as AutomationConfig<'LEAD_COLLECTOR'>);
@@ -274,47 +274,16 @@ export class AutomationRunner {
     }
   }
 
-  private async dmAssistant(ctx: Context, c: AutomationConfig<'DM_ASSISTANT'>) {
-    const org = ctx.automation.organizationId;
-    const since = dayjs().subtract(c.lookbackDays, 'day').toDate();
-    const threadKey = (i: InboxItem) => `thread:${i.integrationId}:${i.threadId}`;
-    // 团队设置 › 私信自动回复策略 overrides the automation's own strategy when the team set one
-    const strategy = dmStrategyFor((await this._syncSettings.get(org)).dmReplyPolicy, c.strategy);
-    const candidates = (await this._repository.inboxCandidates(org, ctx.automation.integrationIds, ['DM'], since, true)).filter(
-      (i) => i.threadId && matchesTriggers(i, c)
-    );
-    // continuous: answer the latest message of each conversation; once: only conversations never answered
-    const latest = [...new Map(candidates.map((i) => [threadKey(i), i])).values()];
-    const answered = strategy === 'once' ? await this._repository.actedTargets(ctx.automation.id, latest.map(threadKey)) : new Set<string>();
-    for (const item of await this.fresh(ctx, latest, (i) => i.id)) {
-      if (ctx.remaining <= 0) {
-        break;
-      }
-      if (answered.has(threadKey(item))) {
-        continue;
-      }
-      const content = await this.compose(ctx, item, c);
-      const outcome = await this.act(
-        ctx,
-        { integrationId: item.integrationId, targetKey: item.id, targetLabel: item.threadTitle || item.authorName, kind: 'dm', content },
-        () => this._inboxService.reply(org, null, item.id, content, 'AUTOMATION')
-      );
-      if (strategy === 'once' && (outcome === 'done' || outcome === 'held')) {
-        await this._repository.recordAction({
-          automationId: ctx.automation.id,
-          integrationId: item.integrationId,
-          kind: 'thread',
-          targetKey: threadKey(item),
-          status: 'SKIPPED',
-        });
-      }
-    }
-  }
-
   private async leadCollector(ctx: Context, c: AutomationConfig<'LEAD_COLLECTOR'>) {
     const org = ctx.automation.organizationId;
     const since = dayjs().subtract(c.lookbackDays, 'day').toDate();
-    const candidates = (await this._repository.inboxCandidates(org, ctx.automation.integrationIds, c.sources, since, false)).filter(
+    // DMs are handled in okchat: only comments and mentions are scored
+    const sources = c.sources.filter((source) => source !== 'DM');
+    if (!sources.length) {
+      ctx.result.warning = DM_IN_OKCHAT;
+      return;
+    }
+    const candidates = (await this._repository.inboxCandidates(org, ctx.automation.integrationIds, sources, since, false)).filter(
       (i) => matchesTriggers(i, { sentiments: c.sentiments, intents: c.intents })
     );
     const items = (await this.fresh(ctx, candidates, (i) => `lead:${i.id}`)).slice(0, ctx.remaining);

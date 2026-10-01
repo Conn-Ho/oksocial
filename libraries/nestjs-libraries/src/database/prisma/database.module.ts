@@ -95,6 +95,12 @@ import { ChannelTagsRepository } from '@gitroom/nestjs-libraries/database/prisma
 import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
 import { SyncSettingsRepository } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository';
 import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
+import { OkchatRepository } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository';
+import { OkchatLinkService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.link.service';
+import { OkchatDmService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.service';
+import { OkchatOutboxService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service';
+import { OkchatReplyService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.reply.service';
+import { OkchatClient } from '@gitroom/nestjs-libraries/okchat/okchat.client';
 
 @Global()
 @Module({
@@ -154,6 +160,12 @@ import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/s
     InboxAiService,
     SyncSettingsRepository,
     SyncSettingsService,
+    OkchatClient,
+    OkchatRepository,
+    OkchatLinkService,
+    OkchatDmService,
+    OkchatOutboxService,
+    OkchatReplyService,
     ChannelStatsRepository,
     ChannelStatsService,
     ReportService,

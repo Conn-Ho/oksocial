@@ -26,6 +26,7 @@ import {
   useInboxSync,
 } from '@gitroom/frontend/components/inbox/inbox.hooks';
 import { InboxNotices } from '@gitroom/frontend/components/inbox/inbox.notices';
+import { OkchatCard } from '@gitroom/frontend/components/okchat/okchat.card';
 import { InboxDetail, ItemTags } from '@gitroom/frontend/components/inbox/inbox.detail';
 import { ReplyTemplatesModal } from '@gitroom/frontend/components/inbox/reply.templates';
 import { ReplyHistoryModal } from '@gitroom/frontend/components/inbox/reply.history';
@@ -177,6 +178,7 @@ export const InboxComponent: FC = () => {
       </header>
 
       <div className={clsx(detailOpen && 'hidden md:block')}>
+        <OkchatCard />
         <InboxNotices canFix={canManageChannels(user?.role)} onFixed={refresh} />
       </div>
 
@@ -256,7 +258,7 @@ export const InboxComponent: FC = () => {
         >
           {!isLoading && !items.length && (
             <li className="p-[24px] text-center text-textColor/60 text-[14px]">
-              {t('inbox_empty', '没有消息。点“立即更新”拉取最新评论和私信。')}
+              {t('inbox_empty', '没有消息。点“立即更新”拉取最新评论和 @提及。')}
             </li>
           )}
           {items.map((item) => (

@@ -11,6 +11,9 @@ import { useInboxUnreplied } from '@gitroom/frontend/components/inbox/inbox.hook
 import { LanguageComponent } from '@gitroom/frontend/components/layout/language.component';
 import { useLogout } from '@gitroom/frontend/components/layout/logout.component';
 import { AccountSheetCard } from '@gitroom/frontend/components/new-layout/sidebar/account.sheet';
+import { useVariables } from '@gitroom/react/helpers/variable.context';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { okchatEntryUrl } from '@gitroom/helpers/utils/okchat';
 
 const ModeComponent = dynamic(() => import('@gitroom/frontend/components/layout/mode.component'), {
   ssr: false,
@@ -49,6 +52,8 @@ export const MobileNav: FC = () => {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const logout = useLogout();
+  const user = useUser();
+  const { okchatUrl } = useVariables();
 
   const primary = PRIMARY_PATHS.flatMap((path) => firstMenu.filter((item) => item.path === path));
   const more = [...firstMenu, ...secondMenu].filter(
@@ -152,6 +157,14 @@ export const MobileNav: FC = () => {
                 <span>{t('mobile_language', '语言')}</span>
                 <LanguageComponent />
               </div>
+              {okchatUrl && user?.orgId && (
+                <a href={okchatEntryUrl(okchatUrl, user.orgId)} target="_blank" rel="noopener noreferrer" onClick={close} className={tileClass}>
+                  <span>{t('account_switch_okchat', '切换到 okchat')}</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden={true} className="text-textItemBlur">
+                    <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </a>
+              )}
               <Link href="/settings" onClick={close} className={tileClass}>
                 <span>{t('account_personal_settings', '个人设置')}</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden={true} className="text-textItemBlur rtl:rotate-180">

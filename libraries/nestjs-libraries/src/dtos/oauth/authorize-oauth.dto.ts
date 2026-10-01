@@ -42,10 +42,16 @@ export class ApproveOAuthDto {
   @IsOptional()
   state?: string;
 
+  // silent: approve only when this first-party app was approved for the team before
   @IsString()
   @IsDefined()
-  @IsIn(['approve', 'deny'])
-  action: 'approve' | 'deny';
+  @IsIn(['approve', 'deny', 'silent'])
+  action: 'approve' | 'deny' | 'silent';
+
+  // the team the grant is for (the member's current team when absent or not theirs)
+  @IsString()
+  @IsOptional()
+  organization_id?: string;
 
   @IsString()
   @IsOptional()

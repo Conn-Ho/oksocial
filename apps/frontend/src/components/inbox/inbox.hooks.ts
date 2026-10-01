@@ -43,9 +43,9 @@ export type ReplyTemplate = {
   tags: string[];
 };
 
+// DMs are handled in okchat (the card above the list), not here
 export const KIND_TABS: Array<{ kind: InboxKind; label: string }> = [
   { kind: 'COMMENT', label: '评论' },
-  { kind: 'DM', label: '私信' },
   { kind: 'MENTION', label: '@提及' },
 ];
 

@@ -85,7 +85,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
       if (overrides.overLimit) throw Object.assign(new Error('账号数已达免费版上限（2 个），请升级套餐后再添加。'), { status: 402 });
     }),
   };
-  const service = new BrowserSlotService(repo as any, integrationService as any, manager as any, refresh as any, plans as any);
+  const service = new BrowserSlotService(repo as any, integrationService as any, manager as any, refresh as any, plans as any, { webLoggedIn: jest.fn(async () => undefined) } as any);
   (service as any).fleet = fleet;
   return { service, fleet, repo, integrationService, refresh, manager, plans };
 };
