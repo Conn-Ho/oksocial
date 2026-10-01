@@ -11,6 +11,7 @@ import {
   InboxReplyDto,
   InboxStatusDto,
   InboxTranslateDto,
+  ReplyHistoryQueryDto,
   ReplyTemplateDto,
   ReplyTemplatesBulkDto,
 } from '@gitroom/nestjs-libraries/dtos/inbox/inbox.dto';
@@ -66,13 +67,9 @@ export class InboxController {
   }
 
   @Get('/history')
-  @ApiOperation({ summary: '回复历史' })
-  history(
-    @GetOrgFromRequest() org: Organization,
-    @Query('page') page?: string,
-    @Query('source') source?: 'MANUAL' | 'AI' | 'TEMPLATE' | 'AUTOMATION'
-  ) {
-    return this._inboxService.replyHistory(org.id, page ? Number(page) : 1, source);
+  @ApiOperation({ summary: '回复历史', description: '可按来源（人工、AI、话术、自动化）和回复的类型（评论、私信、@提及）筛选。' })
+  history(@GetOrgFromRequest() org: Organization, @Query() query: ReplyHistoryQueryDto) {
+    return this._inboxService.replyHistory(org.id, query.page || 1, query.source, query.kind);
   }
 
   @Post('/sync')

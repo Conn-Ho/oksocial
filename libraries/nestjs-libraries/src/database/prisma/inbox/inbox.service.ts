@@ -395,8 +395,8 @@ export class InboxService {
     );
   }
 
-  replyHistory(orgId: string, page?: number, source?: ReplySource) {
-    return this._repository.replyHistory(orgId, page, source);
+  replyHistory(orgId: string, page?: number, source?: ReplySource, kind?: InboxKind) {
+    return this._repository.replyHistory(orgId, page, source, kind);
   }
 
   listTemplates(orgId: string, scope?: ReplyTemplateScope) {

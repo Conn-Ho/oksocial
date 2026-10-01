@@ -118,9 +118,11 @@ export const useReplyTemplates = () => {
   return useSWR<ReplyTemplate[]>('/inbox/templates', load);
 };
 
-export const useReplyHistory = (page: number) => {
+export type ReplySource = 'MANUAL' | 'AI' | 'TEMPLATE' | 'AUTOMATION';
+
+export const useReplyHistory = (page: number, source?: ReplySource, kind?: InboxKind) => {
   const fetch = useFetch();
-  const key = `/inbox/history?page=${page}`;
+  const key = `/inbox/history?page=${page}${source ? `&source=${source}` : ''}${kind ? `&kind=${kind}` : ''}`;
   const load = useCallback(async () => (await fetch(key)).json(), [key]);
   return useSWR<
     Array<{

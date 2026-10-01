@@ -160,9 +160,9 @@ export class InboxRepository {
     });
   }
 
-  replyHistory(orgId: string, page = 1, source?: ReplySource) {
+  replyHistory(orgId: string, page = 1, source?: ReplySource, kind?: InboxKind) {
     return this._logs.model.replyLog.findMany({
-      where: { inboxItem: { organizationId: orgId }, ...(source ? { source } : {}) },
+      where: { inboxItem: { organizationId: orgId, ...(kind ? { kind } : {}) }, ...(source ? { source } : {}) },
       orderBy: { createdAt: 'desc' },
       skip: (Math.max(1, page) - 1) * INBOX_PAGE_SIZE,
       take: INBOX_PAGE_SIZE,

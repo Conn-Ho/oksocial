@@ -34,6 +34,7 @@ const setup = (
     setStatus: jest.fn(async () => ({})),
     listTemplates: jest.fn(async () => [{ content: '感谢关注' }]),
     setNotice: jest.fn(async () => ({})),
+    replyHistory: jest.fn(async () => []),
     notices: jest.fn(async () => [{ id: 'i1', name: '：）', providerIdentifier: 'xiaohongshu', notice: '网页版没有登录' }]),
     inboxIntegrations: jest.fn(async () => [
       { id: 'i1', organizationId: 'o1' },
@@ -86,6 +87,12 @@ describe('InboxService', () => {
     const { service } = setup();
     expect(service.inboxProviders()).toEqual(['xweb', 'weibo', 'zhihu']);
     expect(service.replyCapabilities()).toEqual({ xweb: ['COMMENT', 'MENTION'], weibo: [], zhihu: ['COMMENT'] });
+  });
+
+  it('reply history passes the page, the source and the kind of item on', async () => {
+    const { service, repo } = setup();
+    await service.replyHistory('o1', 3, 'AI', 'COMMENT');
+    expect(repo.replyHistory).toHaveBeenCalledWith('o1', 3, 'AI', 'COMMENT');
   });
 
   it('tells the UI which kinds a platform answers with a new comment on the post', () => {
