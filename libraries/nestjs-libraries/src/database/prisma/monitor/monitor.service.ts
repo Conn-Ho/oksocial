@@ -508,6 +508,11 @@ export class MonitorService implements OnModuleInit {
     return this._repository.deleteTarget(orgId, id);
   }
 
+  /** 删除团队: none of the team's targets is read again. */
+  pauseAll(orgId: string) {
+    return this._repository.pauseAll(orgId);
+  }
+
   async items(orgId: string, id: string, kind: MonitorItemKind, page?: number, sentiment?: string) {
     await this.getTarget(orgId, id);
     return this._repository.items(id, kind, page, sentiment);

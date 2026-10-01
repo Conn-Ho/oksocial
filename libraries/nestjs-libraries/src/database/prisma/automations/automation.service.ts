@@ -201,6 +201,11 @@ export class AutomationService {
     return this._repository.remove(orgId, id);
   }
 
+  /** 删除团队: none of the team's automations runs again. */
+  disableAll(orgId: string) {
+    return this._repository.disableAll(orgId);
+  }
+
   // automations running in this process: a manual run and the schedule never act twice at once
   private _running = new Set<string>();
 

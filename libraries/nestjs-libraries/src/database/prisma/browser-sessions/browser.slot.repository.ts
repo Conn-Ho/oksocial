@@ -63,6 +63,13 @@ export class BrowserSlotRepository {
     });
   }
 
+  /** Browsers of the organization still on the fleet: connected accounts and logins in progress. */
+  liveForOrganization(orgId: string) {
+    return this._slots.model.browserSlot.findMany({
+      where: { organizationId: orgId, status: { not: 'RELEASED' }, deletedAt: null },
+    });
+  }
+
   stalePending(before: Date) {
     return this._slots.model.browserSlot.findMany({
       where: { status: 'PENDING', createdAt: { lt: before }, deletedAt: null },

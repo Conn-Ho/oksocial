@@ -6,6 +6,22 @@ import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
 
+/** What every new team starts with (registration's first team and 创建团队): free plan, trial allowed. */
+const newTeam = (name: string) => ({
+  name,
+  apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+  allowTrial: true,
+  isTrailing: true,
+});
+
+export type TeamInfoChanges = Partial<{
+  name: string;
+  avatar: string | null;
+  timezone: string;
+  code: string | null;
+  description: string | null;
+}>;
+
 @Injectable()
 export class OrganizationRepository {
   constructor(
@@ -262,6 +278,8 @@ export class OrganizationRepository {
             userId,
           },
           select: {
+            // the membership, which an impersonation session points at
+            id: true,
             disabled: true,
             role: true,
           },
@@ -466,10 +484,7 @@ export class OrganizationRepository {
   ) {
     return this._organization.model.organization.create({
       data: {
-        name: body.company,
-        apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-        allowTrial: true,
-        isTrailing: true,
+        ...newTeam(body.company),
         users: {
           create: {
             role: Role.SUPERADMIN,
@@ -498,6 +513,92 @@ export class OrganizationRepository {
           },
         },
       },
+    });
+  }
+
+  /** 创建团队: a new team owned (SUPERADMIN) by an existing user. */
+  createTeam(userId: string, name: string) {
+    return this._organization.model.organization.create({
+      data: {
+        ...newTeam(name),
+        users: {
+          create: {
+            role: Role.SUPERADMIN,
+            userId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        users: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+  }
+
+  /** Live teams the user owns. */
+  countOwnedTeams(userId: string) {
+    return this._userOrg.model.userOrganization.count({
+      where: {
+        userId,
+        role: Role.SUPERADMIN,
+        organization: {
+          deletedAt: null,
+        },
+      },
+    });
+  }
+
+  /** Teams the user created since a date, deleted ones included. */
+  countTeamsCreatedSince(userId: string, since: Date) {
+    return this._userOrg.model.userOrganization.count({
+      where: {
+        userId,
+        role: Role.SUPERADMIN,
+        createdAt: {
+          gte: since,
+        },
+      },
+    });
+  }
+
+  getTeamInfo(orgId: string) {
+    return this._organization.model.organization.findFirst({
+      where: {
+        id: orgId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        avatar: true,
+        timezone: true,
+        code: true,
+        description: true,
+        createdAt: true,
+        _count: {
+          select: {
+            users: {
+              where: {
+                disabled: false,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  updateTeamInfo(orgId: string, data: TeamInfoChanges) {
+    return this._organization.model.organization.update({
+      where: {
+        id: orgId,
+      },
+      data,
     });
   }
 

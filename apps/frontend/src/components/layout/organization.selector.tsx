@@ -6,7 +6,13 @@ import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import useSWR from 'swr';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import clsx from 'clsx';
-export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
+import { TeamSwitcher } from '@gitroom/frontend/components/teams/team.switcher';
+
+// the top bar has the team menu (切换 / 创建团队 / 团队设置); the billing pages keep this open list
+export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = (props) =>
+  props.asOpenSelect ? <OrganizationList {...props} /> : <TeamSwitcher />;
+
+const OrganizationList: FC<{ asOpenSelect?: boolean }> = ({
   asOpenSelect,
 }) => {
   const fetch = useFetch();

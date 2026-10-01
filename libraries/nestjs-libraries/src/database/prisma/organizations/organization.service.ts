@@ -101,6 +101,18 @@ export class OrganizationService {
     return this._organizationRepository.getTeam(orgId);
   }
 
+  /**
+   * Members to email about a team (streak reminders, notification digests). Those workflows sleep
+   * for hours and outlive a deleted team: its members get nothing more.
+   */
+  async getTeamToEmail(orgId: string) {
+    const [org, team] = await Promise.all([
+      this._organizationRepository.getOrgById(orgId),
+      this._organizationRepository.getTeam(orgId),
+    ]);
+    return org?.deletedAt ? { ...team, users: [] as typeof team.users } : team;
+  }
+
   async setStreak(organizationId: string, type: 'start' | 'end') {
     return this._organizationRepository.setStreak(organizationId, type);
   }

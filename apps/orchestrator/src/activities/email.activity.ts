@@ -23,7 +23,7 @@ export class EmailActivity {
 
   @ActivityMethod()
   async getUserOrgs(id: string) {
-    return this._organizationService.getTeam(id);
+    return this._organizationService.getTeamToEmail(id);
   }
 
   @ActivityMethod()

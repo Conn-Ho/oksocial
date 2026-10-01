@@ -551,6 +551,30 @@ export class BrowserSlotService {
     return { ok: true };
   }
 
+  /**
+   * 删除团队: every browser of the team goes (its accounts' and unfinished logins'), with the
+   * logins kept in it. A browser the worker no longer has counts as gone; one the worker could not
+   * remove stays listed, so deleting the team again retries it.
+   */
+  async releaseForOrganization(orgId: string) {
+    const rows = await this._repository.liveForOrganization(orgId);
+    let failed = 0;
+    for (const row of rows) {
+      await this.fleet.stopScreen(row.slot).catch(() => undefined);
+      try {
+        await this.fleet.removeSlot(row.slot, true);
+      } catch (err) {
+        if (!(err instanceof BrowserFleetError && err.status === 404)) {
+          failed++;
+          this._logger.warn(`browser ${row.slot} of ${orgId} not removed: ${(err as Error)?.message}`);
+          continue;
+        }
+      }
+      await this._repository.release(row.id);
+    }
+    return { released: rows.length - failed, failed };
+  }
+
   /** Caddy forward_auth for /screen/<slot>/...: only members of the owning org may watch it. */
   async canWatch(orgId: string, slot: string) {
     return !!(await this._repository.getBySlotName(orgId, slot));

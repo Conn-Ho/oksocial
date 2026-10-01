@@ -11,7 +11,14 @@ datasource db {
 model Organization {
   id                  String               @id @default(uuid())
   name                String
+  // 团队介绍 (team settings)
   description         String?
+  // 团队头像: an image URL (the media library's, or pasted); null shows the name's first letter
+  avatar              String?
+  // IANA zone of the team (团队时区); null reads as Asia/Shanghai
+  timezone            String?
+  // 团队编码: a short code the agency gives the client team
+  code                String?
   apiKey              String?
   paymentId           String?
   streakSince         DateTime?

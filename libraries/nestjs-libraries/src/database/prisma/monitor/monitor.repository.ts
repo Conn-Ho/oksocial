@@ -154,6 +154,14 @@ export class MonitorRepository {
     });
   }
 
+  /** Pauses every target of the organization (its team is being deleted). */
+  pauseAll(orgId: string) {
+    return this._targets.model.monitorTarget.updateMany({
+      where: { organizationId: orgId, paused: false, deletedAt: null },
+      data: { paused: true },
+    });
+  }
+
   /** Targets of every organization whose next reading is due, the longest waiting first. */
   dueTargets(now: Date, take: number) {
     return this._targets.model.monitorTarget.findMany({

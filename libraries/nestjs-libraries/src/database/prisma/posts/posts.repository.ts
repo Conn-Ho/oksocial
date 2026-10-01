@@ -512,6 +512,18 @@ export class PostsRepository {
     });
   }
 
+  /** Groups that will still publish: queued posts, and posts that repeat. */
+  scheduledGroups(orgId: string) {
+    return this._post.model.post.groupBy({
+      by: ['group'],
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        OR: [{ state: 'QUEUE' }, { intervalInDays: { not: null } }],
+      },
+    });
+  }
+
   async deletePost(orgId: string, group: string) {
     await this._post.model.post.updateMany({
       where: {

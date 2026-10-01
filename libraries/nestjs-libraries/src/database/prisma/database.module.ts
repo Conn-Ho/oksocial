@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { PrismaRepository, PrismaService, PrismaTransaction } from './prisma.service';
 import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
+import { TeamsService } from '@gitroom/nestjs-libraries/database/prisma/organizations/teams.service';
 import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
 import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { SubscriptionService } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/subscription.service';
@@ -107,6 +108,7 @@ import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/s
     UsersRepository,
     OrganizationService,
     OrganizationRepository,
+    TeamsService,
     SubscriptionService,
     SubscriptionRepository,
     NotificationService,
