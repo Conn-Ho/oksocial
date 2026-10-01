@@ -6,6 +6,7 @@ import { TemporalService } from 'nestjs-temporal-core';
 import { TypedSearchAttributes } from '@temporalio/common';
 import { organizationId } from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
 import { WebhookSender } from '@gitroom/nestjs-libraries/database/prisma/webhooks/webhook.sender';
+import { NotificationCategory } from '@prisma/client';
 
 export type NotificationType = 'success' | 'fail' | 'info';
 
@@ -46,9 +47,11 @@ export class NotificationService {
     message: string,
     sendEmail = false,
     digest = false,
-    type: NotificationType = 'success'
+    type: NotificationType = 'success',
+    // 通知中心 category; left out it is shown under 系统
+    category?: NotificationCategory
   ) {
-    await this._notificationRepository.createNotification(orgId, message);
+    await this._notificationRepository.createNotification(orgId, message, category);
     // chat group bots (飞书/企业微信/钉钉/Slack) that asked for notifications; best-effort, not awaited
     void this._webhookSender.notify(orgId, subject, message);
     if (!sendEmail) {

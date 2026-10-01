@@ -288,7 +288,7 @@ describe('runTarget', () => {
     expect(repo.brake).toHaveBeenCalledWith('c2', expect.any(Date), '平台风控拦截了这次操作');
     const until = (repo.brake.mock.calls[0] as any[])[1] as Date;
     expect(until.getTime()).toBeGreaterThanOrEqual(before + 6 * 3600_000);
-    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.stringContaining('风控'), expect.any(String), true);
+    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.stringContaining('风控'), expect.any(String), true, false, 'success', 'MONITOR');
   });
 
   it('other read failures do not brake the channel', async () => {
@@ -321,7 +321,7 @@ describe('runTarget', () => {
     await service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'rival', title: '对手', lastRunAt }));
     expect(repo.addPosts.mock.calls[0][2]).toHaveLength(2);
     expect(repo.refreshMetrics).toHaveBeenCalledWith('t1', 'POST', expect.any(Array));
-    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', '竞品「对手」发了新内容', expect.stringContaining('新品上线'));
+    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', '竞品「对手」发了新内容', expect.stringContaining('新品上线'), false, false, 'success', 'MONITOR');
   });
 
   it('counts several new posts in one notification and skips old posts scrolling in', async () => {
@@ -335,7 +335,7 @@ describe('runTarget', () => {
       ],
     });
     await service.runTarget(target({ kind: 'ACCOUNT', platform: 'wb', query: 'rival', lastRunAt }));
-    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.any(String), '竞品「rival」在微博发了 2 条新内容');
+    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.any(String), '竞品「rival」在微博发了 2 条新内容', false, false, 'success', 'MONITOR');
   });
 
   it('keyword hits are stored, tagged in batches and notified with the negative count', async () => {
@@ -346,7 +346,7 @@ describe('runTarget', () => {
     expect(xhs.search).toHaveBeenCalledWith('slot1', '露营', 20);
     expect(ai.tag).toHaveBeenCalledTimes(2);
     expect(repo.setItemTags).toHaveBeenCalledWith('i0', 'negative', 'other');
-    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', '关键词「露营」有新内容', '关键词「露营」在小红书有 21 条新内容，其中 2 条负面');
+    expect(notifications.inAppNotification).toHaveBeenCalledWith('o1', '关键词「露营」有新内容', '关键词「露营」在小红书有 21 条新内容，其中 2 条负面', false, false, 'success', 'MONITOR');
   });
 
   it('keyword runs survive the AI being off or failing, and need a searchable platform', async () => {
@@ -360,7 +360,7 @@ describe('runTarget', () => {
     broken.ai.tag.mockRejectedValueOnce(new Error('relay down'));
     xhs.search.mockResolvedValueOnce([{ externalId: 'h', url: 'u', title: '标题' }]);
     expect(await broken.service.runTarget(target({ kind: 'KEYWORD', query: '露营', lastRunAt: new Date() }))).toEqual({ ok: true, added: 1 });
-    expect(broken.notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.any(String), '关键词「露营」在小红书有 1 条新内容');
+    expect(broken.notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.any(String), '关键词「露营」在小红书有 1 条新内容', false, false, 'success', 'MONITOR');
 
     const noSearch = setup();
     expect(await noSearch.service.runTarget(target({ kind: 'KEYWORD', platform: 'wb', query: 'x' }))).toEqual(

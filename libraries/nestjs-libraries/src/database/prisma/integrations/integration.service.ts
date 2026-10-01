@@ -319,7 +319,8 @@ export class IntegrationService {
       `「${integration.name}」（${platform}）已掉线，发帖、互动和数据同步都会暂停。请到「日历」左侧账号列表里重新扫码登录：${process.env.FRONTEND_URL}/launches`,
       true,
       false,
-      'info'
+      'info',
+      'CHANNEL'
     );
   }
 

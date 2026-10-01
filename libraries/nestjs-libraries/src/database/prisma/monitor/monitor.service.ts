@@ -350,7 +350,10 @@ export class MonitorService implements OnModuleInit {
       orgId,
       '账号触发平台风控，监控已暂停',
       `监控用「${channel.name}」读取时被平台拦截（${reason.slice(0, 80)}），该账号的监控和自动化暂停 ${BRAKE_HOURS} 小时。请先在浏览器里确认账号状态。`,
-      true
+      true,
+      false,
+      'success',
+      'MONITOR'
     );
   }
 
@@ -377,7 +380,7 @@ export class MonitorService implements OnModuleInit {
   /** In-app notice; a failed notice must not turn a good read into a failed one. */
   private async notify(orgId: string, subject: string, message: string) {
     await this._notificationService
-      .inAppNotification(orgId, subject, message)
+      .inAppNotification(orgId, subject, message, false, false, 'success', 'MONITOR')
       .catch((err) => console.log('monitor notification', (err as Error)?.message));
   }
 

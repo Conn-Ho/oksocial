@@ -164,7 +164,7 @@ describe('comment assistant', () => {
     const result = await s.runner.run(automation() as any);
     expect(result).toEqual({ done: 0, held: 0, failed: 1, skipped: 1 });
     expect(s.repo.setBrake).toHaveBeenCalledWith('ch1', expect.any(Date), expect.stringContaining('风控'));
-    expect(s.notifications.inAppNotification).toHaveBeenCalled();
+    expect(s.notifications.inAppNotification).toHaveBeenCalledWith('o1', expect.stringContaining('风控'), expect.any(String), true, false, 'success', 'AUTOMATION');
   });
 
   it('does not interact through a browser channel without its own exit proxy, and says why', async () => {

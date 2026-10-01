@@ -79,7 +79,10 @@ export class PostsController {
       body.decision === 'approve'
         ? `${user.name || user.email} 通过了 ${result.count} 条帖子，已进入发布队列`
         : `${user.name || user.email} 退回了 ${result.count} 条帖子${body.note ? `：${body.note}` : ''}，已改为草稿`,
-      false
+      false,
+      false,
+      'success',
+      'PUBLISH'
     );
     return result;
   }
@@ -291,7 +294,10 @@ export class PostsController {
         org.id,
         '有帖子等待审核',
         `${user.name || user.email} 提交了 ${created.length} 条帖子，等待运营主管或管理员审核`,
-        true
+        true,
+        false,
+        'success',
+        'PUBLISH'
       );
     }
     return created;

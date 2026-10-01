@@ -1,5 +1,6 @@
 import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 import { Injectable } from '@nestjs/common';
+import { NotificationCategory } from '@prisma/client';
 
 @Injectable()
 export class NotificationsRepository {
@@ -36,11 +37,12 @@ export class NotificationsRepository {
     };
   }
 
-  async createNotification(organizationId: string, content: string) {
+  async createNotification(organizationId: string, content: string, category?: NotificationCategory) {
     await this._notifications.model.notifications.create({
       data: {
         organizationId,
         content,
+        ...(category ? { category } : {}),
       },
     });
   }

@@ -218,7 +218,10 @@ export class AutomationRunner {
       ctx.automation.organizationId,
       '账号触发平台风控，自动化已暂停',
       `「${ctx.automation.name}」在一个账号上被平台拦截（${reason.slice(0, 80)}），该账号的自动化暂停 ${BRAKE_HOURS} 小时。请先在浏览器里确认账号状态。`,
-      true
+      true,
+      false,
+      'success',
+      'AUTOMATION'
     );
   }
 
