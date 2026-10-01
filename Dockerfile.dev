@@ -20,13 +20,14 @@ WORKDIR /app
 
 # Dependencies first, from the lockfile alone: a commit that changes only code reuses this layer,
 # and the pnpm store persists across builds in a cache mount (packages are copied out of it).
+# The install prefers the store but may go online: postinstall runs `pnpm dlx prisma generate`.
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc /app/
 RUN --mount=type=cache,id=oksocial-pnpm-store,target=/root/.local/share/pnpm/store pnpm fetch
 
 COPY . /app
 COPY var/docker/nginx.conf /etc/nginx/nginx.conf
 
-RUN --mount=type=cache,id=oksocial-pnpm-store,target=/root/.local/share/pnpm/store pnpm install --offline --frozen-lockfile
+RUN --mount=type=cache,id=oksocial-pnpm-store,target=/root/.local/share/pnpm/store pnpm install --prefer-offline --frozen-lockfile
 
 # The version changes with every commit: declared here, it no longer invalidates the layers above.
 ARG NEXT_PUBLIC_VERSION
