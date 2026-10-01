@@ -164,7 +164,8 @@ describe('帖文操作助手', () => {
     expect(s.recorded).toEqual([
       expect.objectContaining({ targetKey: 'follow:xweb:https://www.zhihu.com/people/rival', payload: expect.objectContaining({ authorUrl: 'https://www.zhihu.com/people/rival' }) }),
     ]);
-    expect(result).toMatchObject({ done: 1, failed: 0 });
+    // the named author without a link is skipped with the reason, not silently
+    expect(result).toMatchObject({ done: 1, failed: 0, skipped: 1, warning: expect.stringMatching(/主页链接/) });
   });
 
   it('holds in review mode and carries what is needed to run it later', async () => {

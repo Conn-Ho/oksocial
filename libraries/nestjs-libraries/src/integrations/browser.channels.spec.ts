@@ -607,6 +607,8 @@ describe('interactions run the platform\'s opencli write command', () => {
     });
     expect(writes.calls).toEqual([['reddit', 'upvote', '1fxyz12'], ['reddit', 'save', '1fxyz12'], ['reddit', 'comment', '1fxyz12', 'Try a burr grinder']]);
     await expect(act('redditweb', [done([{ status: 'failed', message: 'HTTP 403' }])], (i) => i.like('s1', { externalId: '1fxyz12' }))).rejects.toThrow(/HTTP 403/);
+    // a success whose message mentions an error is still a success
+    await expect(act('redditweb', [done([{ status: 'success', message: 'Upvoted (no error)' }])], (i) => i.like('s1', { externalId: '1fxyz12' }))).resolves.toBeDefined();
   });
 
   it('Pinterest saves a pin to the profile', async () => {

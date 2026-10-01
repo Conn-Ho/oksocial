@@ -112,6 +112,9 @@ const ActionSupport: FC<{ actions: string[] }> = ({ actions }) => {
           {platformNames(platforms.filter((p) => p.interact.includes(action as PlatformAction))) || t('auto_no_platform', '暂时没有平台支持')}
         </li>
       ))}
+      {actions.includes('follow') && (
+        <li>{t('auto_follow_needs_profile', '有的平台只能关注带主页链接的作者（比如竞品账号的帖子），关键词结果里只有昵称的作者会被跳过。')}</li>
+      )}
     </ul>
   );
 };

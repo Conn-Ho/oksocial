@@ -111,8 +111,9 @@ type Run = (args: string[], timeoutMs?: number) => Promise<unknown>;
 
 const READ_TIMEOUT_MS = 150_000;
 const WRITE_TIMEOUT_MS = 180_000;
-// What opencli write commands answer (exit 0) when the platform did not take the action.
-const NOT_DONE = /fail|error|not found|未找到|失败/i;
+// What opencli write commands answer (exit 0) when the platform did not take the action
+// ("failed" from 即刻 / Reddit); free text after it (a message) does not count.
+const NOT_DONE = /^(failed?|error|not[ -]?found)\b|未找到|失败/i;
 
 const num = (value: unknown) => countFrom(value) ?? 0;
 const total = (rows: unknown, key: string) => (Array.isArray(rows) ? rows : []).reduce((sum: number, r: any) => sum + num(r?.[key]), 0);
@@ -199,7 +200,7 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
   /** Write commands that report a refused action in their row (exit 0) fail here instead. */
   protected written(rows: unknown) {
     const row = firstRow<Record<string, unknown>>(rows);
-    const status = String(row?.status ?? row?.result ?? '');
+    const status = String(row?.status ?? row?.result ?? '').trim();
     if (NOT_DONE.test(status)) {
       const detail = row?.message ? `${status}：${row.message}` : status;
       throw new BadBody(this.identifier, JSON.stringify({ status }), '{}', `${this.name}没有完成这次操作（${detail}）`);
@@ -329,9 +330,10 @@ class InstagramWebProvider extends ConfiguredBrowserProvider {
 const PIN_TITLE_MAX = 100;
 
 /**
- * Pinterest: one image pinned to a board (the one picked in the composer, else the account's most
- * recently used), the text as its description, a title (the first line unless set) and a link.
- * Pinterest fetches the image itself, so it goes by its public URL.
+ * Pinterest: one image pinned to a board, the text as its description, a title (the first line
+ * unless set) and a link. The composer requires a board (PinterestSettingsDto); a post made without
+ * it (public API, MCP) goes to the account's most recently used one. Pinterest fetches the image
+ * itself, so it goes by its public URL.
  */
 class PinterestWebProvider extends ConfiguredBrowserProvider {
   override publishable = true;

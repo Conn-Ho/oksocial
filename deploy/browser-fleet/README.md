@@ -201,7 +201,7 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /slots/:slot/screen` | | `{path:"/screen/<slot>/vnc.html?autoconnect=1&resize=scale&reconnect=1&path=screen/<slot>/websockify"}` once the port listens |
 | `DELETE /slots/:slot/screen` | | `{ok:true, slot}` |
 | `GET /screen/:slot/*` (+ WebSocket) | | proxied to `127.0.0.1:<screenPort>/*`; 502 while the screen is not running |
-| `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
+| `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, ≤200000 in all, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
 
 **Runs** execute `opencli <args> -f json` (unless a format is given) with `OPENCLI_PROFILE=<profileId>` and

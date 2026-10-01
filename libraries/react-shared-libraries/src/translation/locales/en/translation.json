@@ -946,6 +946,7 @@
   "auto_no_supported_platforms": " No platform supports the chosen actions yet.",
   "auto_platform_unsupported": "This platform can't do the chosen actions; it is skipped when the automation runs",
   "auto_no_platform": "no platform yet",
+  "auto_follow_needs_profile": "Some platforms can only follow authors with a profile link (e.g. posts of competitor accounts); keyword hits that only show a nickname are skipped.",
   "auto_no_monitors": "No monitors to choose from yet.",
   "save_failed": "Failed to save",
   "saved": "Saved",

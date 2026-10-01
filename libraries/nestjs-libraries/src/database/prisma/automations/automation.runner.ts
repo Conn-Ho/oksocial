@@ -454,7 +454,15 @@ export class AutomationRunner {
             return;
           }
           const targetKey = keyOf(item, action);
-          if (acted.has(targetKey) || (action === 'follow' && !this.followable(interact, item))) {
+          if (acted.has(targetKey)) {
+            continue;
+          }
+          if (action === 'follow' && !this.followable(interact, item)) {
+            // a named author the platform cannot find by name (it follows by profile link)
+            if (item.authorName) {
+              ctx.result.skipped += 1;
+              ctx.result.warning = `「${target.title || target.query}」里的作者没有主页链接，这个平台只能关注带主页链接的作者（比如竞品账号的帖子），已跳过关注。`;
+            }
             continue;
           }
           acted.add(targetKey);

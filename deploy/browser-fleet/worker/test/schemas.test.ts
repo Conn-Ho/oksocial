@@ -54,6 +54,7 @@ describe('request bodies', () => {
     fails(() => parseOrThrow(RunBody, { args: ['x'.repeat(MAX_ARG_CHARS + 1)] }), /32000/);
     // a long article (公众号 草稿) fits in one arg
     assert.equal(parseOrThrow(RunBody, { args: ['weixin', 'create-draft', '文'.repeat(20_000)] }).args[2].length, 20_000);
+    fails(() => parseOrThrow(RunBody, { args: ['weixin', ...Array(7).fill('x'.repeat(30_000))] }), /in all/);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'post', 'a\0b'] }), /NUL/);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'whoami', '--profile', 'other'] }), /--profile/);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'whoami', '--profile=other'] }), /--profile/);

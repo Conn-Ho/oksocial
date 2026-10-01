@@ -94,6 +94,8 @@ const isProfileFlag = (a: string): boolean => a === '--profile' || a.startsWith(
  * string at 128 KiB; 32k characters stay under it even when every one is 3 bytes of UTF-8.
  */
 export const MAX_ARG_CHARS = 32_000;
+// and all of them together, well under Linux's 2 MiB for argv + environment
+export const MAX_ARGS_TOTAL_CHARS = 200_000;
 
 export const RunBody = z
   .object({
@@ -101,6 +103,7 @@ export const RunBody = z
     timeoutMs: z.number().int().min(1000).max(600_000).default(120_000),
   })
   .superRefine(({ args }, ctx) => {
+    if (args.reduce((n, a) => n + a.length, 0) > MAX_ARGS_TOTAL_CHARS) ctx.addIssue({ code: 'custom', path: ['args'], message: `args must be at most ${MAX_ARGS_TOTAL_CHARS} characters in all` });
     const first = args[0] ?? '';
     if (!SITE_RE.test(first)) ctx.addIssue({ code: 'custom', path: ['args', 0], message: 'the first arg must be a site command such as "twitter" (no leading options)' });
     else if (BLOCKED_FIRST_ARGS.has(first)) ctx.addIssue({ code: 'custom', path: ['args', 0], message: `"${first}" is not a site command and is not allowed here` });
