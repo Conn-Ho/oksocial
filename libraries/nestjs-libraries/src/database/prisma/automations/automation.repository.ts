@@ -4,6 +4,16 @@ import dayjs from 'dayjs';
 import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 
 const PAGE = 30;
+// bookkeeping rows of the assistants (answered once / this conversation), not runs
+const MARKER_KINDS = ['once', 'thread'];
+
+/** 线索库 filters as the repository applies them. */
+export type LeadQuery = {
+  stored?: 'stored' | 'unstored';
+  since?: Date;
+  sources?: string[];
+  minScore?: number;
+};
 
 @Injectable()
 export class AutomationRepository {
@@ -182,6 +192,27 @@ export class AutomationRepository {
     });
   }
 
+  /** Every automation of the organization, deleted ones too (their runs still count). */
+  allForStats(orgId: string) {
+    return this._automations.model.automation.findMany({
+      where: { organizationId: orgId },
+      select: { id: true, type: true, enabled: true, deletedAt: true },
+    });
+  }
+
+  /** Runs (action records) per automation and outcome, since a moment or ever. */
+  actionCounts(orgId: string, since?: Date) {
+    return this._actions.model.automationAction.groupBy({
+      by: ['automationId', 'status'],
+      where: {
+        automation: { organizationId: orgId },
+        kind: { notIn: MARKER_KINDS },
+        ...(since ? { createdAt: { gte: since } } : {}),
+      },
+      _count: { _all: true },
+    });
+  }
+
   /** Identities of the organization's own channels (never engage with ourselves). */
   ownIdentities(orgId: string) {
     return this._integrations.model.integration.findMany({
@@ -286,20 +317,52 @@ export class AutomationRepository {
     });
   }
 
-  leads(orgId: string, page = 1, minScore = 0) {
+  private leadWhere(orgId: string, q: LeadQuery): Prisma.LeadWhereInput {
+    return {
+      organizationId: orgId,
+      deletedAt: null,
+      ...(q.minScore ? { score: { gte: q.minScore } } : {}),
+      ...(q.stored === 'stored' ? { storedAt: { not: null } } : q.stored === 'unstored' ? { storedAt: null } : {}),
+      ...(q.since ? { createdAt: { gte: q.since } } : {}),
+      ...(q.sources ? { source: { in: q.sources } } : {}),
+    };
+  }
+
+  async leads(orgId: string, q: LeadQuery, page = 1) {
+    const where = this.leadWhere(orgId, q);
+    const current = Math.max(1, page);
+    const [total, leads] = await Promise.all([
+      this._leads.model.lead.count({ where }),
+      this._leads.model.lead.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (current - 1) * PAGE,
+        take: PAGE,
+        include: { automation: { select: { id: true, name: true } } },
+      }),
+    ]);
+    return { total, page: current, pages: Math.ceil(total / PAGE), leads };
+  }
+
+  allLeads(orgId: string, q: LeadQuery) {
     return this._leads.model.lead.findMany({
-      where: { organizationId: orgId, deletedAt: null, score: { gte: minScore } },
+      where: this.leadWhere(orgId, q),
       orderBy: { createdAt: 'desc' },
-      skip: (Math.max(1, page) - 1) * PAGE,
-      take: PAGE,
+      take: 5000,
     });
   }
 
-  allLeads(orgId: string) {
+  leadsByIds(orgId: string, ids: string[]) {
     return this._leads.model.lead.findMany({
-      where: { organizationId: orgId, deletedAt: null },
+      where: { organizationId: orgId, deletedAt: null, id: { in: ids } },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+    });
+  }
+
+  setStored(orgId: string, ids: string[], storedAt: Date | null) {
+    return this._leads.model.lead.updateMany({
+      where: { organizationId: orgId, deletedAt: null, id: { in: ids } },
+      data: { storedAt },
     });
   }
 }

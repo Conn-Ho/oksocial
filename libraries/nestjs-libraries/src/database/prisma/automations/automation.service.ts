@@ -1,7 +1,12 @@
 import { HttpException, Injectable } from '@nestjs/common';
-import { Automation, AutomationActionStatus } from '@prisma/client';
+import { Automation, AutomationActionStatus, Lead } from '@prisma/client';
 import dayjs from 'dayjs';
-import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
+import utc from 'dayjs/plugin/utc';
+import { Workbook } from 'exceljs';
+import {
+  AutomationRepository,
+  LeadQuery,
+} from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
 import { AutomationRunner, InteractPayload } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
 import { editorPostBody } from '@gitroom/nestjs-libraries/database/prisma/posts/editor.post.body';
 import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/brand.service';
@@ -11,12 +16,18 @@ import { AutomationAiService } from '@gitroom/nestjs-libraries/automations/autom
 import { toCsv } from '@gitroom/nestjs-libraries/database/prisma/inbox/inbox.service';
 import {
   AUTOMATION_META,
+  AUTOMATION_TYPES,
   AutomationType,
+  LEAD_SOURCE_GROUPS,
+  LeadSourceGroup,
   POST_ACTION_TEXT,
   describeAutomation,
+  leadSourceGroup,
   matchesTriggers,
   parseAutomationConfig,
 } from '@gitroom/helpers/automations/automation.config';
+
+dayjs.extend(utc);
 
 // held interactions of 帖文操作助手 / 帖文拓客助手, run from their stored payload
 const INTERACTIONS = ['like', 'bookmark', 'follow', 'comment', 'comment_reply'];
@@ -38,6 +49,86 @@ export const RUN_EVERY_MINUTES: Record<AutomationType, number> = {
 export const isDue = (a: Pick<Automation, 'type' | 'lastRunAt'>, now = new Date()) =>
   !a.lastRunAt ||
   dayjs(now).diff(a.lastRunAt, 'minute') >= RUN_EVERY_MINUTES[a.type as AutomationType];
+
+/**
+ * Where today and this month begin for a viewer `offsetMinutes` east of UTC (UTC+8 = 480), as
+ * instants. Pure.
+ */
+export const periodStarts = (now: Date, offsetMinutes = 0) => {
+  const local = dayjs(now).utc().add(offsetMinutes, 'minute');
+  return {
+    today: local.startOf('day').subtract(offsetMinutes, 'minute').toDate(),
+    month: local.startOf('month').subtract(offsetMinutes, 'minute').toDate(),
+  };
+};
+
+export type RunCounts = { runs: number; done: number; failed: number };
+type StatusCount = { automationId: string; status: AutomationActionStatus; _count: { _all: number } };
+type Period = 'all' | 'month' | 'today';
+const PERIODS: Period[] = ['all', 'month', 'today'];
+const NO_RUNS: RunCounts = { runs: 0, done: 0, failed: 0 };
+
+/** Run counts plus `n` actions that ended in `status`. Pure. */
+const addRuns = (counts: RunCounts, status: AutomationActionStatus, n: number): RunCounts => ({
+  runs: counts.runs + n,
+  done: counts.done + (status === 'DONE' ? n : 0),
+  failed: counts.failed + (status === 'FAILED' ? n : 0),
+});
+
+/**
+ * 自动化 统计: per type, how many automations exist and are on, and how often they ran (every
+ * action record is a run; DONE is a success, FAILED a failure) over all time, this month and
+ * today. Runs of deleted automations still count; rows of unknown automations are ignored. Pure.
+ */
+export const summarizeAutomationStats = (
+  automations: Array<Pick<Automation, 'id' | 'type' | 'enabled' | 'deletedAt'>>,
+  periods: Record<Period, StatusCount[]>
+) => {
+  const typeOf = new Map(automations.map((a) => [a.id, a.type as AutomationType]));
+  const runsOf = (period: Period, type?: AutomationType) =>
+    periods[period]
+      .filter((r) => typeOf.has(r.automationId) && (!type || typeOf.get(r.automationId) === type))
+      .reduce((counts, r) => addRuns(counts, r.status, r._count._all), NO_RUNS);
+  const types = AUTOMATION_TYPES.map((type) => {
+    const live = automations.filter((a) => a.type === type && !a.deletedAt);
+    return {
+      type,
+      label: AUTOMATION_META[type].label,
+      description: AUTOMATION_META[type].description,
+      automations: live.length,
+      enabled: live.filter((a) => a.enabled).length,
+      ...(Object.fromEntries(PERIODS.map((p) => [p, runsOf(p, type)])) as Record<Period, RunCounts>),
+    };
+  });
+  return { totals: Object.fromEntries(PERIODS.map((p) => [p, runsOf(p)])) as Record<Period, RunCounts>, types };
+};
+
+export type LeadFilter = {
+  page?: number;
+  stored?: 'stored' | 'unstored';
+  // days back; absent = 全部时间
+  days?: number;
+  source?: LeadSourceGroup;
+  minScore?: number;
+};
+
+const LEAD_HEADER = ['时间', '作者', '主页', '内容', '分数', 'AI 说明', '来源', '入库状态'];
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** One lead as a download row (the time stays a Date so a spreadsheet can format it). Pure. */
+const leadRow = (l: Pick<Lead, 'createdAt' | 'authorName' | 'authorUrl' | 'content' | 'score' | 'summary' | 'source' | 'storedAt'>) => {
+  const group = leadSourceGroup(l.source);
+  return [
+    l.createdAt,
+    l.authorName,
+    l.authorUrl ?? '',
+    l.content,
+    l.score,
+    l.summary ?? '',
+    group ? LEAD_SOURCE_GROUPS[group].label : l.source,
+    l.storedAt ? '已入库' : '未入库',
+  ] as const;
+};
 
 export type AutomationInput = {
   type: AutomationType;
@@ -167,6 +258,18 @@ export class AutomationService {
     return this._repository.actions(orgId, filter);
   }
 
+  /** 统计 tab: run counts per automation type, all time / this month / today (viewer's time zone). */
+  async overview(orgId: string, offsetMinutes = 0, now = new Date()) {
+    const since = periodStarts(now, offsetMinutes);
+    const [automations, all, month, today] = await Promise.all([
+      this._repository.allForStats(orgId),
+      this._repository.actionCounts(orgId),
+      this._repository.actionCounts(orgId, since.month),
+      this._repository.actionCounts(orgId, since.today),
+    ]);
+    return { since, ...summarizeAutomationStats(automations, { all, month, today }) };
+  }
+
   async stats(orgId: string) {
     const rows = await this._repository.dailyStats(orgId);
     const out: Record<string, Record<string, number>> = {};
@@ -269,15 +372,45 @@ export class AutomationService {
     }
   }
 
-  leads(orgId: string, page?: number, minScore?: number) {
-    return this._repository.leads(orgId, page, minScore);
+  private leadQuery(filter: LeadFilter, now: Date): LeadQuery {
+    return {
+      stored: filter.stored,
+      since: filter.days ? dayjs(now).subtract(filter.days, 'day').toDate() : undefined,
+      sources: filter.source ? [...LEAD_SOURCE_GROUPS[filter.source].sources] : undefined,
+      minScore: filter.minScore ?? 0,
+    };
   }
 
-  async exportLeads(orgId: string) {
-    const rows = await this._repository.allLeads(orgId);
-    return toCsv(
-      ['时间', '作者', '主页', '内容', '分数', '说明', '来源'],
-      rows.map((r) => [r.createdAt.toISOString(), r.authorName, r.authorUrl, r.content, r.score, r.summary, r.source])
-    );
+  leads(orgId: string, filter: LeadFilter, now = new Date()) {
+    return this._repository.leads(orgId, this.leadQuery(filter, now), filter.page ?? 1);
+  }
+
+  /** 入库 / 移出: whether the team took these leads into its customer list. */
+  async storeLeads(orgId: string, ids: string[], stored: boolean) {
+    const { count } = await this._repository.setStored(orgId, ids, stored ? new Date() : null);
+    return { count };
+  }
+
+  /** 下载: the selected leads, or every lead the filters match, as CSV (Excel opens it) or .xlsx. */
+  async exportLeads(
+    orgId: string,
+    input: { ids?: string[]; filter?: LeadFilter; format: 'csv' | 'xlsx' },
+    now = new Date()
+  ) {
+    const leads = input.ids?.length
+      ? await this._repository.leadsByIds(orgId, input.ids)
+      : await this._repository.allLeads(orgId, this.leadQuery(input.filter ?? {}, now));
+    const rows = leads.map(leadRow);
+    const name = `oksocial-leads-${dayjs(now).format('YYYYMMDD')}`;
+    if (input.format === 'xlsx') {
+      const book = new Workbook();
+      const sheet = book.addWorksheet('线索');
+      sheet.columns = LEAD_HEADER.map((header, i) => ({ header, key: String(i), width: [18, 16, 28, 60, 8, 40, 16, 10][i] }));
+      sheet.getColumn(1).numFmt = 'yyyy-mm-dd hh:mm';
+      rows.forEach((r) => sheet.addRow([...r]));
+      return { filename: `${name}.xlsx`, contentType: XLSX_TYPE, body: Buffer.from(await book.xlsx.writeBuffer()) };
+    }
+    const csv = toCsv(LEAD_HEADER, rows.map(([time, ...rest]) => [time.toISOString(), ...rest]));
+    return { filename: `${name}.csv`, contentType: 'text/csv; charset=utf-8', body: Buffer.from(csv) };
   }
 }

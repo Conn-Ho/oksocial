@@ -17,9 +17,10 @@ import {
   useAutomationActions,
   useAutomationStats,
   useAutomations,
-  useLeads,
 } from '@gitroom/frontend/components/automations/automations.hooks';
 import { AutomationForm } from '@gitroom/frontend/components/automations/automation.form';
+import { AutomationStats } from '@gitroom/frontend/components/automations/automation.stats';
+import { LeadsLibrary } from '@gitroom/frontend/components/automations/leads.library';
 
 // what an action did, for actions without text (likes, follows) and the log
 const KIND_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注', comment: '评论', comment_reply: '评论区回复', reply: '回复', dm: '私信', post: '发帖' };
@@ -27,6 +28,7 @@ const HAS_TEXT = ['reply', 'dm', 'post', 'comment', 'comment_reply'];
 
 const TABS = [
   { key: 'manage', label: '管理' },
+  { key: 'stats', label: '统计' },
   { key: 'held', label: '待确认' },
   { key: 'log', label: '运行记录' },
   { key: 'leads', label: '线索库' },
@@ -237,45 +239,6 @@ const RunLog: FC = () => {
   );
 };
 
-const Leads: FC = () => {
-  const fetch = useFetch();
-  const [page, setPage] = useState(1);
-  const { data } = useLeads(page);
-  const exportCsv = useCallback(async () => {
-    const url = URL.createObjectURL(await (await fetch('/automations/leads/export')).blob());
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `oksocial-leads-${dayjs().format('YYYYMMDD')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, []);
-  return (
-    <div className="flex flex-col gap-[10px]">
-      <div>
-        <Button secondary={true} onClick={exportCsv}>导出全部线索</Button>
-      </div>
-      <ul className="flex flex-col gap-[8px]">
-        {!data?.length && <li className="text-textColor/60 text-[14px] py-[20px]">线索库还是空的。建一个“线索收集助手”后，高分的评论和私信会出现在这里。</li>}
-        {(data || []).map((l) => (
-          <li key={l.id} className="rounded-[10px] border border-newTableBorder p-[12px] flex gap-[12px]">
-            <span className={clsx('text-[20px] font-semibold tabular-nums w-[44px] shrink-0', l.score >= 80 ? 'text-green-400' : 'text-textColor/70')}>{l.score}</span>
-            <span className="flex flex-col gap-[4px] min-w-0">
-              <span className="font-semibold">{l.authorUrl ? <a href={l.authorUrl} target="_blank" rel="noreferrer" className="hover:underline">{l.authorName}</a> : l.authorName}</span>
-              <span className="text-[14px]">{l.content}</span>
-              {l.summary && <span className="text-[12px] text-textColor/60">{l.summary}</span>}
-            </span>
-            <span className="ms-auto text-[12px] text-textColor/50 shrink-0">{dayjs(l.createdAt).format('MM-DD HH:mm')}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="flex justify-between text-[13px]">
-        <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="disabled:opacity-40">上一页</button>
-        <button type="button" disabled={(data?.length || 0) < 30} onClick={() => setPage(page + 1)} className="disabled:opacity-40">下一页</button>
-      </div>
-    </div>
-  );
-};
-
 /** 自动化: assistants and jobs as named objects, with a review queue, run log and lead library. */
 export const AutomationsComponent: FC = () => {
   const t = useT();
@@ -293,9 +256,10 @@ export const AutomationsComponent: FC = () => {
         </nav>
       </header>
       {tab === 'manage' && <Manage />}
+      {tab === 'stats' && <AutomationStats />}
       {tab === 'held' && <HeldQueue />}
       {tab === 'log' && <RunLog />}
-      {tab === 'leads' && <Leads />}
+      {tab === 'leads' && <LeadsLibrary />}
     </div>
   );
 };

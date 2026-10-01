@@ -9,7 +9,11 @@ import { AutomationService } from '@gitroom/nestjs-libraries/database/prisma/aut
 import {
   ActionsQueryDto,
   CreateAutomationDto,
+  LeadsExportQueryDto,
+  LeadsQueryDto,
   ReviewActionDto,
+  StatsOverviewQueryDto,
+  StoreLeadsDto,
   TestAutomationDto,
   UpdateAutomationDto,
 } from '@gitroom/nestjs-libraries/dtos/automations/automation.dto';
@@ -31,6 +35,11 @@ export class AutomationsController {
     return this._automationService.stats(org.id);
   }
 
+  @Get('/stats/overview')
+  overview(@GetOrgFromRequest() org: Organization, @Query() query: StatsOverviewQueryDto) {
+    return this._automationService.overview(org.id, query.tz ?? 0);
+  }
+
   @Get('/actions')
   actions(@GetOrgFromRequest() org: Organization, @Query() query: ActionsQueryDto) {
     return this._automationService.actions(org.id, query);
@@ -48,15 +57,23 @@ export class AutomationsController {
   }
 
   @Get('/leads')
-  leads(@GetOrgFromRequest() org: Organization, @Query('page') page?: string, @Query('minScore') minScore?: string) {
-    return this._automationService.leads(org.id, page ? Number(page) : 1, minScore ? Number(minScore) : 0);
+  leads(@GetOrgFromRequest() org: Organization, @Query() query: LeadsQueryDto) {
+    return this._automationService.leads(org.id, query);
   }
 
   @Get('/leads/export')
-  async exportLeads(@GetOrgFromRequest() org: Organization, @Res() res: Response) {
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="oksocial-leads.csv"');
-    res.send(await this._automationService.exportLeads(org.id));
+  async exportLeads(@GetOrgFromRequest() org: Organization, @Query() query: LeadsExportQueryDto, @Res() res: Response) {
+    const { ids, format, ...filter } = query;
+    const file = await this._automationService.exportLeads(org.id, { ids, filter, format: format ?? 'csv' });
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.send(file.body);
+  }
+
+  // 入库 / 移出 (VIEWER cannot: writes are refused for read-only members)
+  @Post('/leads/store')
+  storeLeads(@GetOrgFromRequest() org: Organization, @Body() body: StoreLeadsDto) {
+    return this._automationService.storeLeads(org.id, body.ids, body.stored);
   }
 
   @Post('/test')
