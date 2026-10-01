@@ -2,6 +2,9 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', 
 
 import {
   OUTBOX_GIVE_UP_MS,
+  OUTBOX_KEEP_MS,
+  PRUNE_EVERY_MS,
+  REPLY_KEEP_MS,
   OkchatOutboxService,
   STATUS_ATTEMPTS,
   outboxBackoffMs,
@@ -37,6 +40,8 @@ const setup = (rows: any[], answers: Array<{ status: number; body?: any }>, bind
     updateOutbox: jest.fn(async () => ({})),
     updateBinding: jest.fn(async () => ({ count: 1 })),
     enqueue: jest.fn(async (r: any) => r),
+    deleteOldOutbox: jest.fn(async () => ({ count: 3 })),
+    deleteOldReplies: jest.fn(async () => ({ count: 2 })),
   };
   const client = { hook: jest.fn(async () => answers.shift() ?? { status: 200, body: null }) };
   return { service: new OkchatOutboxService(repo as any, client as any), repo, client };
@@ -166,5 +171,40 @@ describe('OkchatOutboxService queues', () => {
       batchId: `status:${NOW.getTime()}`,
       payload: { type: 'status', state: 'logged_out', reason: '小红书账号已退出登录，请在 oksocial 重新扫码' },
     });
+  });
+});
+
+describe('retention of customer DM text', () => {
+  const DAY = 24 * 60 * MIN;
+
+  it('keeps finished pushes a week and finished replies 30 days', () => {
+    expect(OUTBOX_KEEP_MS).toBe(7 * DAY);
+    expect(REPLY_KEEP_MS).toBe(30 * DAY);
+  });
+
+  it('deletes what is older than that', async () => {
+    const { service, repo } = setup([], []);
+    expect(await service.prune(NOW)).toEqual({ outbox: 3, replies: 2 });
+    expect(repo.deleteOldOutbox).toHaveBeenCalledWith(new Date(NOW.getTime() - 7 * DAY));
+    expect(repo.deleteOldReplies).toHaveBeenCalledWith(new Date(NOW.getTime() - 30 * DAY));
+  });
+
+  it('runs at most once an hour', async () => {
+    const { service, repo } = setup([], []);
+    await service.prune(NOW);
+    expect(await service.prune(new Date(NOW.getTime() + PRUNE_EVERY_MS - 1))).toBeNull();
+    expect(repo.deleteOldOutbox).toHaveBeenCalledTimes(1);
+    expect(PRUNE_EVERY_MS).toBe(60 * MIN);
+    await service.prune(new Date(NOW.getTime() + PRUNE_EVERY_MS));
+    expect(repo.deleteOldOutbox).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed cleanup is logged and does not fail the push round', async () => {
+    const { service, repo } = setup([], []);
+    repo.deleteOldOutbox.mockRejectedValueOnce(new Error('db down'));
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(await service.prune(NOW)).toBeNull();
+    expect(log).toHaveBeenCalledWith('okchat retention', 'db down');
+    log.mockRestore();
   });
 });

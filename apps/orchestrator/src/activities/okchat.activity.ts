@@ -27,9 +27,15 @@ export class OkchatActivity {
     return okchatEnabled() ? { enabled: true, replies: await this._replies.sendDue() } : { enabled: false };
   }
 
-  // what is owed to okchat (new DMs, delivery receipts, account statuses), with its retries
+  // what is owed to okchat (new DMs, delivery receipts, account statuses), with its retries; old
+  // customer DM text is deleted along the way, at most once an hour
   @ActivityMethod()
   async pushOkchat() {
-    return okchatEnabled() ? { enabled: true, pushed: await this._outbox.pushDue() } : { enabled: false };
+    if (!okchatEnabled()) {
+      return { enabled: false };
+    }
+    const pushed = await this._outbox.pushDue();
+    const pruned = await this._outbox.prune();
+    return { enabled: true, pushed, ...(pruned ? { pruned } : {}) };
   }
 }

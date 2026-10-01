@@ -14,11 +14,13 @@ const setup = () => {
     upsert: jest.fn((args: any) => ({ op: 'upsert', args })),
   };
   const integration = { findMany: jest.fn(async () => [{ id: 'i1' }, { id: 'i2' }]) };
+  const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })) };
+  const okchatReply = { deleteMany: jest.fn(async () => ({ count: 5 })) };
   const transaction = { $transaction: jest.fn(async (ops: any[]) => ops) };
-  const model = { okchatLink, okchatBinding, integration };
+  const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply };
   const r = { model } as any;
   const repo = new OkchatRepository(r, r, r, r, r, r, r, r, r, { model: transaction } as any);
-  return { repo, okchatLink, okchatBinding, integration, transaction };
+  return { repo, okchatLink, okchatBinding, integration, transaction, okchatOutbox, okchatReply };
 };
 
 const bindings = [
@@ -82,5 +84,25 @@ describe('OkchatRepository.replaceBindings', () => {
     expect(await repo.replaceBindings('o1', bindings, ['xiaohongshu'])).toBeNull();
     transaction.$transaction.mockRejectedValueOnce(new Error('connection lost'));
     await expect(repo.replaceBindings('o1', bindings, ['xiaohongshu'])).rejects.toThrow('connection lost');
+  });
+});
+
+describe('OkchatRepository retention', () => {
+  const before = new Date('2026-09-25T00:00:00Z');
+
+  it('outbox: delivered before the cutoff, or never delivered (failed, given up, abandoned) and created before it', async () => {
+    const { repo, okchatOutbox } = setup();
+    expect(await repo.deleteOldOutbox(before)).toEqual({ count: 4 });
+    expect(okchatOutbox.deleteMany).toHaveBeenCalledWith({
+      where: { OR: [{ deliveredAt: { lt: before } }, { deliveredAt: null, createdAt: { lt: before } }] },
+    });
+  });
+
+  it('replies: finished ones (sent or failed) created before the cutoff; queued and sending ones stay', async () => {
+    const { repo, okchatReply } = setup();
+    expect(await repo.deleteOldReplies(before)).toEqual({ count: 5 });
+    expect(okchatReply.deleteMany).toHaveBeenCalledWith({
+      where: { status: { notIn: ['QUEUED', 'SENDING'] }, createdAt: { lt: before } },
+    });
   });
 });

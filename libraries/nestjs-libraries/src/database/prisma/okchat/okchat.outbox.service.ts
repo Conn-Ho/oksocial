@@ -13,6 +13,12 @@ export const OUTBOX_GIVE_UP_MS = 24 * 60 * 60_000;
 export const STATUS_ATTEMPTS = 4;
 // rows looked at per round
 const PUSH_BATCH = 200;
+// customer DM text oksocial keeps (okchat has its own copy): finished pushes a week (okchat's
+// dedup window), finished replies 30 days. The conversations' tails stay (reads align on them).
+const DAY_MS = 24 * 60 * 60_000;
+export const OUTBOX_KEEP_MS = 7 * DAY_MS;
+export const REPLY_KEEP_MS = 30 * DAY_MS;
+export const PRUNE_EVERY_MS = 60 * 60_000;
 
 /** The wait after the `attempts`-th failed attempt. Pure. */
 export const outboxBackoffMs = (attempts: number) =>
@@ -30,7 +36,28 @@ type PushResult = { delivered: number; retrying: number; failed: number };
  */
 @Injectable()
 export class OkchatOutboxService {
+  private _prunedAt = 0;
+
   constructor(private _repository: OkchatRepository, private _client: OkchatClient) {}
+
+  /**
+   * Deletes old customer DM text (OUTBOX_KEEP_MS, REPLY_KEEP_MS), at most once an hour; null when it
+   * did not run. A failure is logged and waits for the next hour, it never fails the push round.
+   */
+  async prune(now = new Date()) {
+    if (now.getTime() - this._prunedAt < PRUNE_EVERY_MS) {
+      return null;
+    }
+    this._prunedAt = now.getTime();
+    try {
+      const outbox = await this._repository.deleteOldOutbox(new Date(now.getTime() - OUTBOX_KEEP_MS));
+      const replies = await this._repository.deleteOldReplies(new Date(now.getTime() - REPLY_KEEP_MS));
+      return { outbox: outbox.count, replies: replies.count };
+    } catch (err) {
+      console.log('okchat retention', (err as Error)?.message);
+      return null;
+    }
+  }
 
   queueDelivery(integrationId: string, receipt: DeliveryReceipt) {
     return this._repository.enqueue({

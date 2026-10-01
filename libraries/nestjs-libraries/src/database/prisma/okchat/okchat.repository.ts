@@ -292,6 +292,13 @@ export class OkchatRepository {
     return this._outbox.model.okchatOutbox.update({ where: { id }, data });
   }
 
+  /** Pushes delivered before `before`, and ones never delivered (failed, given up, abandoned) made before it. */
+  deleteOldOutbox(before: Date) {
+    return this._outbox.model.okchatOutbox.deleteMany({
+      where: { OR: [{ deliveredAt: { lt: before } }, { deliveredAt: null, createdAt: { lt: before } }] },
+    });
+  }
+
   // ── replies ─────────────────────────────────────────────────────────────────────────────────
 
   reply(okchatMessageId: string) {
@@ -359,6 +366,13 @@ export class OkchatRepository {
   /** Sends that never finished (the process stopped mid-send). */
   stuckReplies(before: Date) {
     return this._replies.model.okchatReply.findMany({ where: { status: 'SENDING', attemptedAt: { lt: before } } });
+  }
+
+  /** Finished replies (sent or failed) made before `before`; queued and sending ones stay. */
+  deleteOldReplies(before: Date) {
+    return this._replies.model.okchatReply.deleteMany({
+      where: { status: { notIn: ['QUEUED', 'SENDING'] }, createdAt: { lt: before } },
+    });
   }
 
   /** What was sent to a conversation since `since` (the echo filter). */
