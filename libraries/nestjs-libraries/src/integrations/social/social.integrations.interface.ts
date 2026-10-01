@@ -148,6 +148,37 @@ export type InboxCapabilities = {
   topLevelReplies?: InboxKind[];
 };
 
+// okchat 私信通道: a platform's direct messages, read and answered in the account's browser for
+// okchat (customer service). Messages carry no platform id; the conversation id is the thread.
+export type DmConversation = {
+  id: string;
+  // the other side's name
+  name: string;
+  unread: number;
+  // the list's preview of the last message: when it changes, the conversation has moved
+  summary: string;
+};
+export type DmMessage = {
+  from: string;
+  mine: boolean;
+  // what the agent reads (a message the site cannot show is described instead)
+  text: string;
+  // as the site prints it, often relative (14:05, 昨天 14:05, 09-28 14:05)
+  time: string;
+};
+export type DmCapabilities = {
+  // the longest reply the platform takes, in characters
+  maxLength: number;
+  // random pause between two page reads of the same account (risk control)
+  readGapMs: [number, number];
+  // what the agent is told while the site the DMs live on is logged out
+  loggedOutReason: string;
+  conversations(token: string): Promise<DmConversation[]>;
+  // the last `limit` messages of a conversation, oldest first
+  read(token: string, conversationId: string, limit: number): Promise<DmMessage[]>;
+  send(token: string, conversationId: string, text: string): Promise<void>;
+};
+
 export const CHANNEL_STAT_KEYS = [
   'followers',
   'following',
@@ -436,6 +467,8 @@ export interface SocialProvider
   browserSession?: BrowserSession;
   // oksocial inbox: read comments / DMs / mentions and reply to them.
   inbox?: InboxCapabilities;
+  // okchat 私信通道: the account's DMs, read and answered for okchat.
+  dm?: DmCapabilities;
   // oksocial analytics: current account totals, sampled into a time series (ChannelSnapshot).
   // `posts` is what postStats just read, so totals summed over posts need no second read.
   stats?: (token: string, integration: Integration, posts?: MonitorPost[]) => Promise<ChannelStats>;

@@ -232,6 +232,10 @@ export class IntegrationManager {
   getAllowedSocialsIntegrations() {
     return socialIntegrationList.map((p) => p.identifier);
   }
+  /** Providers whose DMs can go to okchat (identifiers). */
+  getDmProviders() {
+    return socialIntegrationList.filter((p) => p.dm).map((p) => p.identifier);
+  }
   getSocialIntegration(integration: string): SocialProvider {
     return socialIntegrationList.find((i) => i.identifier === integration)!;
   }

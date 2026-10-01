@@ -97,25 +97,38 @@ describe('xiaohongshu provider on the simulator', () => {
     expect(fleet.runs.slice(runs)).toEqual([['xhs2', 'me']]);
   });
 
-  it('inbox: comments, @mentions and DMs with stable ids, and new ones later', async () => {
+  it('inbox: comments and @mentions with stable ids, and new ones later (DMs go to okchat)', async () => {
     const first = itemsOf(await p.inbox.fetch(slot, integration('')));
     const kinds = new Set(first.map((i) => i.kind));
-    expect([...kinds].sort()).toEqual(['COMMENT', 'DM', 'MENTION']);
-    expect(first.map((i) => i.content)).toEqual(expect.arrayContaining(['请问怎么购买？多少钱', '你好，请问这个怎么购买？多少钱？']));
+    expect([...kinds].sort()).toEqual(['COMMENT', 'MENTION']);
+    expect(first.map((i) => i.content)).toEqual(expect.arrayContaining(['请问怎么购买？多少钱']));
     expect(first.some((i) => /差评/.test(i.content))).toBe(true);
     expect(first.every((i) => typeof i.platformTime === 'string' && i.authorName && i.externalId)).toBe(true);
     expect(new Set(first.map((i) => i.externalId)).size).toBe(first.length);
-    const dm = first.find((i) => i.kind === 'DM')!;
-    expect(dm.threadId).toMatch(/^[0-9a-f]{24}$/);
 
+    // a fetch is one read now: two more reads bring at least one new comment (one every 2 reads)
     const second = itemsOf(await p.inbox.fetch(slot, integration('')));
+    const third = itemsOf(await p.inbox.fetch(slot, integration('')));
     const before = new Set(first.map((i) => i.externalId));
     const again = second.filter((i) => before.has(i.externalId));
     expect(again).toHaveLength(before.size);
-    expect(second.filter((i) => i.kind === 'COMMENT' && !before.has(i.externalId)).length).toBeGreaterThan(0);
+    expect(third.filter((i) => i.kind === 'COMMENT' && !before.has(i.externalId)).length).toBeGreaterThan(0);
+  });
 
-    await p.inbox.reply!.DM!(slot, integration(''), { replyTarget: dm.replyTarget!, threadId: dm.threadId! }, '在的，发你链接');
-    expect(fleet.writes().at(-1)).toEqual({ slot, args: ['xhsdm', 'send', dm.threadId, '在的，发你链接'], time: expect.any(String) });
+  it('DM channel (okchat): conversations, messages and a reply on the simulator', async () => {
+    const conversations = await p.dm.conversations(slot);
+    expect(conversations.length).toBeGreaterThan(0);
+    const conv = conversations[0];
+    expect(conv).toMatchObject({ id: expect.stringMatching(/^[0-9a-f]{24}$/), name: expect.any(String), unread: expect.any(Number), summary: expect.any(String) });
+    const messages = await p.dm.read(slot, conv.id, 20);
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages.some((m) => m.text === '你好，请问这个怎么购买？多少钱？' || !m.mine)).toBe(true);
+    expect(messages.every((m) => typeof m.mine === 'boolean' && m.text && typeof m.time === 'string')).toBe(true);
+
+    await p.dm.send(slot, conv.id, '在的，发你链接');
+    expect(fleet.writes().at(-1)).toEqual({ slot, args: ['xhsdm', 'send', conv.id, '在的，发你链接'], time: expect.any(String) });
+    const after = await p.dm.read(slot, conv.id, 20);
+    expect(after.at(-1)).toMatchObject({ mine: true, text: '在的，发你链接' });
   });
 
   it('monitor: search, read a note with comments, read an account, own posts', async () => {

@@ -3,6 +3,7 @@ import {
   AudienceShare,
   ChannelAudienceData,
   CreationCapabilities,
+  DmCapabilities,
   InboxCapabilities,
   InboxFetched,
   MonitorCapabilities,
@@ -26,14 +27,18 @@ import {
 import { RefreshToken, ValidityMedia } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 const TITLE_MAX = 20;
-// What the web IM shows for a message it cannot render (image, sticker, card): a real message.
+// What the web IM shows for a message it cannot render (image, sticker, card): a real message,
+// described to the okchat agent in the contract's words.
 const UNSHOWN_DM = /^暂不支持该消息类型/;
-const UNSHOWN_DM_TEXT = '（对方发来一条网页版看不到的消息，比如图片、表情或卡片，请在小红书 App 里查看）';
+export const XHS_UNSHOWN_DM_TEXT = '［对方发来一条网页版看不到的消息，请在小红书 App 查看］';
+// Provisional (nothing documents the web IM's limit): xhsdm read keeps 500 characters of a message,
+// so a reply is held to what a later read can still match.
+const DM_MAX_LENGTH = 500;
+export const XHS_DM_LOGGED_OUT =
+  '小红书网页版已退出登录，私信读不到也发不出，请在 oksocial 打开这个账号的浏览器，重新扫码登录网页版';
 const DRAFT_BOX_URL = 'https://creator.xiaohongshu.com/publish/publish?source=official&target=image';
 const IMAGES_MAX = 9;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
-// DM conversations read per sync (unread first); each read is a page load in the account's browser.
-const DM_CONVERSATIONS_PER_SYNC = 5;
 // Xiaohongshu's risk control watches bursts of page reads: 8-15 s between two of them.
 const READ_GAP_MS: [number, number] = [8_000, 15_000];
 const NOTE_LINK = /xiaohongshu\.com\/(?:explore|discovery\/item|search_result|user\/profile\/[^/?#]+)\/([0-9a-f]{24})/i;
@@ -252,36 +257,63 @@ export class XiaohongshuWebProvider
     return readings.length ? audienceFromNoteDetails(readings) : null;
   };
 
-  // Comments and @mentions from 消息 (no ids: hashed), DMs through the xhsdm plugin (web IM).
+  // Comments and @mentions from 消息 (no ids: hashed). DMs are not part of the inbox: they go to
+  // okchat through `dm` (web IM, xhsdm plugin).
   inbox: InboxCapabilities = {
     fetch: async (slot) => {
-      const warnings = new Set<string>();
-      const failures: unknown[] = [];
-      // a www read that finds the site logged out becomes a notice; another failure of one source
-      // keeps what the other read, and fails the sync only when nothing was read at all
-      const web = <T>(read: () => Promise<T[]>) =>
-        read().catch((err) => {
-          if (err instanceof RefreshToken) {
-            warnings.add(XHS_WEB_LOGIN_NEEDED);
-          } else {
-            failures.push(err);
-            console.log(`xiaohongshu inbox ${slot}`, (err as Error)?.message);
-          }
-          return [] as T[];
-        });
-      const items = [...(await web(() => this.notifications(slot))), ...(await web(() => this.directMessages(slot)))];
-      if (!items.length && failures.length) {
-        throw failures[0];
+      try {
+        return { items: await this.notifications(slot), warnings: [] };
+      } catch (err) {
+        // a www read that finds the site logged out becomes a notice instead of an empty inbox
+        if (err instanceof RefreshToken) {
+          return { items: [], warnings: [XHS_WEB_LOGIN_NEEDED] };
+        }
+        throw err;
       }
-      return { items, warnings: [...warnings] };
     },
     reply: {
+      // DM items an older oksocial stored can still be answered
       DM: async (slot, _integration, item, text) => {
         if (!item.threadId) {
           throw new Error('missing conversation');
         }
-        await this.exec(slot, ['xhsdm', 'send', item.threadId, text]);
+        await this.dm.send(slot, item.threadId, text);
       },
+    },
+  };
+
+  // okchat 私信通道 through the xhsdm plugin (www.xiaohongshu.com/chat); group chats are left out.
+  dm: DmCapabilities = {
+    maxLength: DM_MAX_LENGTH,
+    readGapMs: READ_GAP_MS,
+    loggedOutReason: XHS_DM_LOGGED_OUT,
+    conversations: async (slot) =>
+      (
+        await this.list<{ id: string; name: string; unread: number | string; summary: string; group: boolean | string }>(
+          slot,
+          ['xhsdm', 'list', '--limit', '30'],
+          120_000
+        )
+      )
+        .filter((c) => c.id && String(c.group) !== 'true')
+        .map((c) => ({ id: String(c.id), name: String(c.name || ''), unread: Number(c.unread) || 0, summary: String(c.summary || '') })),
+    read: async (slot, conversationId, limit) =>
+      (
+        await this.list<{ time: string; from: string; mine: boolean | string; text: string }>(
+          slot,
+          ['xhsdm', 'read', conversationId, '--limit', String(limit)],
+          90_000
+        )
+      )
+        .filter((m) => m.text)
+        .map((m) => ({
+          from: String(m.from || ''),
+          mine: String(m.mine) === 'true',
+          text: UNSHOWN_DM.test(m.text) ? XHS_UNSHOWN_DM_TEXT : m.text,
+          time: String(m.time || ''),
+        })),
+    send: async (slot, conversationId, text) => {
+      await this.exec(slot, ['xhsdm', 'send', conversationId, text]);
     },
   };
 
@@ -300,45 +332,6 @@ export class XiaohongshuWebProvider
         // the API gives unix seconds, which the text column would reject
         platformTime: timeText(r.time),
       }));
-  }
-
-  private async directMessages(slot: string): Promise<InboxFetched[]> {
-    const conversations = await this.exec<
-      Array<{ id: string; name: string; unread: number | string; group: boolean | string }>
-    >(slot, ['xhsdm', 'list', '--limit', '30'], 120_000);
-    const recent = (conversations || [])
-      .filter((c) => String(c.group) !== 'true')
-      .sort((a, b) => Number(b.unread || 0) - Number(a.unread || 0))
-      .slice(0, DM_CONVERSATIONS_PER_SYNC);
-    const items: InboxFetched[] = [];
-    for (const conv of recent) {
-      const messages = await this.exec<
-        Array<{ time: string; from: string; mine: boolean | string; text: string }>
-      >(slot, ['xhsdm', 'read', conv.id, '--limit', '10'], 90_000).catch((err) => {
-        // one unreadable conversation is skipped; a logged-out site is reported by the caller
-        if (err instanceof RefreshToken) {
-          throw err;
-        }
-        return [];
-      });
-      for (const m of messages || []) {
-        if (String(m.mine) === 'true' || !m.text) {
-          continue;
-        }
-        items.push({
-          kind: 'DM',
-          // not the time: the web IM shows it relative (昨天 14:05), so it changes from day to day
-          externalId: contentId(conv.id, m.from, m.text),
-          threadId: conv.id,
-          threadTitle: conv.name,
-          replyTarget: conv.id,
-          authorName: m.from || conv.name,
-          content: UNSHOWN_DM.test(m.text) ? UNSHOWN_DM_TEXT : m.text,
-          platformTime: m.time,
-        });
-      }
-    }
-    return items;
   }
 
   // 监控: note pages, profiles and search on www.xiaohongshu.com (need the signed xsec_token link),
