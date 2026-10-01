@@ -24,7 +24,8 @@ const POST_REPORT_DAYS = 30;
 const POST_PAGE_SIZE = 20;
 const BAD_RANGE = '时间范围不对：开始日期要早于结束日期，不能晚于今天，最长一年';
 // readings are loaded from this long before the previous period, so its start has one
-const BASELINE_MARGIN_MS = 86_400_000;
+const DAY_MS = 86_400_000;
+const BASELINE_MARGIN_MS = DAY_MS;
 
 export type ReportFilter = { integrationId?: string; platform?: string };
 export type ReportQuery = ReportFilter & {
@@ -77,25 +78,42 @@ export class ReportService {
     private _channelStats: ChannelStatsService
   ) {}
 
-  private range(query: ReportQuery, days?: number) {
+  /** The earliest moment the plan keeps data for, or null without a limit. */
+  private async historyFloor(orgId: string) {
+    const history = await this._planService.historyDays(orgId);
+    return history < 0 ? null : { days: history, at: new Date(Date.now() - history * DAY_MS) };
+  }
+
+  /** The range asked for, cut to the days of data the plan keeps. */
+  private async range(orgId: string, query: ReportQuery, days?: number) {
     const range = resolveRange({ ...query, days: query.days ?? days });
     if (!range) {
       throw new HttpException(BAD_RANGE, 400);
     }
-    return range;
+    const floor = await this.historyFloor(orgId);
+    if (!floor || range.from >= floor.at) {
+      return range;
+    }
+    if (range.to <= floor.at) {
+      throw new HttpException(`当前套餐只能查看最近 ${floor.days} 天的数据`, 400);
+    }
+    return { ...range, from: floor.at };
   }
 
   /** 平台报告 of a preset (7 / 30 / 90 days) or custom range, one account or platform, or all. */
   async overview(orgId: string, query: ReportQuery = {}) {
-    return this.report(orgId, this.range(query), query);
+    return this.report(orgId, await this.range(orgId, query), query);
   }
 
   /** The platform report of a resolved range (also what the AI 周报 is written from). */
   async report(orgId: string, range: ReportRange, filter: ReportFilter = {}) {
     const channels = filterChannels(await this._repository.orgChannels(orgId), filter);
     const previousFrom = new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime()));
+    // the comparison period stays inside the data the plan keeps too
+    const floor = await this.historyFloor(orgId);
+    const since = new Date(Math.max(previousFrom.getTime() - BASELINE_MARGIN_MS, floor?.at.getTime() ?? 0));
     const [snapshots, posts] = await Promise.all([
-      this._repository.snapshotsSince(orgId, new Date(previousFrom.getTime() - BASELINE_MARGIN_MS), range.to),
+      this._repository.snapshotsSince(orgId, since, range.to),
       this._repository.postMetrics(orgId, range.from, range.to, channels.map((c) => c.id)),
     ]);
     return buildPlatformReport(channels, snapshots, range, posts);
@@ -106,7 +124,7 @@ export class ReportService {
    * through oksocial whose platform shows none), sorted by any column, a page at a time.
    */
   async posts(orgId: string, query: PostReportQuery) {
-    const range = this.range(query, POST_REPORT_DAYS);
+    const range = await this.range(orgId, query, POST_REPORT_DAYS);
     const channels = filterChannels(await this._repository.orgChannels(orgId), query);
     const ids = channels.map((c) => c.id);
     const [metrics, published] = await Promise.all([

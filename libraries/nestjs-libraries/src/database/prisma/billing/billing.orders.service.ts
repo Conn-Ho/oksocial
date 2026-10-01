@@ -4,24 +4,37 @@ import { randomBytes } from 'node:crypto';
 import dayjs from 'dayjs';
 import {
   BillingRepository,
+  INTERNAL_PROVIDER,
+  isUniqueViolation,
+  PaidTerm,
   TermInputs,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.repository';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
-import { isExpired, PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { ReferralService } from '@gitroom/nestjs-libraries/database/prisma/billing/referral.service';
 import { XORPAY_PROVIDER } from '@gitroom/nestjs-libraries/services/payment/payment.providers';
 import {
-  BillingProduct,
   CATALOGUE,
-  getProduct,
+  getPack,
+  isExpired,
   isStripeBilling,
   isXorPayBilling,
+  LEGACY_PLANS,
+  PackProduct,
   PaidTier,
   PayType,
   payTypesFor,
-  PLAN_TIERS,
-  PlanProduct,
+  tierOf,
+  TRIAL_ORDER_PREFIX,
   UNLIMITED,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
+import {
+  giftCreditsFor,
+  planInputError,
+  quoteAddon,
+  quotePlan,
+  toCents,
+} from '@gitroom/nestjs-libraries/database/prisma/billing/billing.pricing';
 import { SubscriptionService } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/subscription.service';
 import {
   PaymentChannelError,
@@ -35,76 +48,210 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // XorPay QR codes last 2 hours and nobody closes unpaid orders: after a day they show as expired.
 const ORDER_TTL_MS = DAY_MS;
 const QR_TTL_MS = 2 * 60 * 60 * 1000;
-// an unpaid order of the same product and method is shown again for this long instead of a new one
+// an unpaid order of the same purchase and method is shown again for this long instead of a new one
 const REUSE_ORDER_MS = 60 * 60 * 1000;
-// paid orders whose grant did not finish are retried by the workflow after this
+// paid orders whose grant did not finish are retried by the workflow after this, for a week; older
+// ones (a Stripe plan started meanwhile, a bug) are left to ops so they cannot crowd out new ones
 const SETTLE_AFTER_MS = 5 * 60 * 1000;
+const SETTLE_FOR_MS = 7 * DAY_MS;
 // channels stored on the subscription of a plan without a channel limit
 const UNLIMITED_CHANNELS = 1000000;
 const PAYMENT_CHANNEL_UNAVAILABLE = '支付通道暂时不可用，请稍后再试；一直不行的话请联系我们。';
+const NO_ONLINE_PAYMENT = '该金额不支持这种支付方式，大额请联系我们对公转账';
 
-export type CurrentTerm = { tier: PaidTier; periodEnd: Date; dailyPrice: number | null } | null;
+// --- prepaid periods ----------------------------------------------------------
+// Ported from okchat's nextTerm, with accounts: what an order does to the organization's running
+// period. Pure; fulfil runs it inside the transaction that marks the order paid, so two payments of
+// one organization chain instead of overlapping.
+
+/** The running paid period: plan, accounts, the months it was bought for, end, what each day is worth. */
+export type CurrentTerm = {
+  tier: PaidTier;
+  accounts: number;
+  months: number | null;
+  periodEnd: Date;
+  dailyPrice: number | null;
+} | null;
+
+/** A period bought (or given): calendar months, or a number of days. */
+export type TermPurchase = {
+  tier: PaidTier;
+  accounts: number;
+  priceYuan: string;
+  months?: number | null;
+  days?: number | null;
+};
+
+export type Term = { startsAt: Date; expiresAt: Date; dailyPrice: number; accounts: number };
+
+export type TermChange = 'new' | 'renew' | 'upgrade' | 'downgrade';
+
+export const periodEnd = (start: Date, p: Pick<TermPurchase, 'months' | 'days'>) =>
+  p.months ? dayjs(start).add(p.months, 'month').toDate() : new Date(start.getTime() + (p.days ?? 0) * DAY_MS);
+
+const isRunning = (current: CurrentTerm, now: Date): current is NonNullable<CurrentTerm> =>
+  !!current && current.periodEnd.getTime() > now.getTime();
 
 /**
- * What buying `plan` does to the organization's period (ported from okchat's nextTerm):
- * - no active paid period: `plan.days` from now;
- * - same tier (renewal, monthly to yearly): appended after the current end; each remaining day is
- *   then worth the paid-weighted average of the old days and the new ones;
- * - another tier (upgrade, downgrade): starts now, and the unused days of the old tier are converted
- *   at their daily value into days of the new tier and added at the end.
- * `dailyPrice` is what each day of the resulting period is worth, for the next change.
+ * What buying `p` does to the running period:
+ * - nothing running: the period starts now;
+ * - the same plan and accounts (a renewal, or monthly to yearly): appended after the current end;
+ *   each remaining day is then worth the paid-weighted average of the old days and the new ones;
+ * - another plan or another number of accounts: starts now, and the unused days of the old period
+ *   are converted at their value into days of the new one, added at the end.
  */
-export const nextTerm = (current: CurrentTerm, plan: PlanProduct, now: Date) => {
-  const base = now.getTime();
-  const unitPrice = Number(plan.priceYuan) / plan.days;
-  const fresh = { startsAt: now, expiresAt: new Date(base + plan.days * DAY_MS), dailyPrice: unitPrice };
-  if (!current || !(current.periodEnd.getTime() > base)) {
+export const nextTerm = (current: CurrentTerm, p: TermPurchase, now: Date): Term => {
+  const price = Number(p.priceYuan);
+  const freshEnd = periodEnd(now, p);
+  const lengthDays = (freshEnd.getTime() - now.getTime()) / DAY_MS;
+  const unitPrice = lengthDays > 0 ? price / lengthDays : 0;
+  const fresh = { startsAt: now, expiresAt: freshEnd, dailyPrice: unitPrice, accounts: p.accounts };
+  if (!isRunning(current, now)) {
     return fresh;
   }
-  const oldEnd = current.periodEnd.getTime();
-  const remainingDays = (oldEnd - base) / DAY_MS;
+  const oldEnd = current.periodEnd;
+  const remainingDays = (oldEnd.getTime() - now.getTime()) / DAY_MS;
   const remainingValue = current.dailyPrice == null ? null : remainingDays * current.dailyPrice;
-  if (current.tier === plan.tier) {
+  if (current.tier === p.tier && current.accounts === p.accounts) {
+    const end = periodEnd(oldEnd, p);
+    const addedDays = (end.getTime() - oldEnd.getTime()) / DAY_MS;
     return {
-      startsAt: new Date(oldEnd),
-      expiresAt: new Date(oldEnd + plan.days * DAY_MS),
-      dailyPrice:
-        remainingValue == null
-          ? unitPrice
-          : (remainingValue + Number(plan.priceYuan)) / (remainingDays + plan.days),
+      startsAt: oldEnd,
+      expiresAt: end,
+      dailyPrice: remainingValue == null ? unitPrice : (remainingValue + price) / (remainingDays + addedDays),
+      accounts: p.accounts,
     };
   }
-  if (remainingValue == null) {
+  if (remainingValue == null || unitPrice <= 0) {
     return fresh;
   }
-  return { ...fresh, expiresAt: new Date(base + (plan.days + remainingValue / unitPrice) * DAY_MS) };
+  return { ...fresh, expiresAt: new Date(freshEnd.getTime() + (remainingValue / unitPrice) * DAY_MS) };
 };
 
-/** The period a purchase would give and whether it is new, a renewal, an upgrade or a downgrade. */
-export const quoteFor = (current: CurrentTerm, plan: PlanProduct, now = new Date()) => {
-  const term = nextTerm(current, plan, now);
-  const active = !!current && current.periodEnd.getTime() > now.getTime();
-  const change = !active
-    ? 'new'
-    : current!.tier === plan.tier
-    ? 'renew'
-    : PLAN_TIERS.indexOf(plan.tier) > PLAN_TIERS.indexOf(current!.tier)
-    ? 'upgrade'
-    : 'downgrade';
-  return { change, startsAt: term.startsAt, expiresAt: term.expiresAt };
+/**
+ * Accounts added to the running period until its end; each remaining day is then worth what it was
+ * plus its share of the add-on. If the period ended before the payment arrived, the add-on is what
+ * was paid for: those accounts for the days that were charged, from now.
+ */
+export const addonTerm = (
+  current: CurrentTerm,
+  addon: { accounts: number; priceYuan: string; days: number },
+  now: Date
+): Term => {
+  const price = Number(addon.priceYuan);
+  if (!isRunning(current, now)) {
+    const days = Math.max(1, addon.days);
+    return {
+      startsAt: now,
+      expiresAt: new Date(now.getTime() + days * DAY_MS),
+      dailyPrice: price / days,
+      accounts: addon.accounts,
+    };
+  }
+  const remainingDays = (current.periodEnd.getTime() - now.getTime()) / DAY_MS;
+  return {
+    startsAt: now,
+    expiresAt: current.periodEnd,
+    dailyPrice: (current.dailyPrice ?? 0) + price / remainingDays,
+    accounts: current.accounts + addon.accounts,
+  };
 };
 
-/** The running XorPay period: the latest paid plan order, while its subscription is still on. */
+const RANK: Record<PaidTier, number> = { STANDARD: 1, TEAM: 2 };
+
+/** Whether a purchase is new, a renewal, an upgrade (higher plan, more accounts) or a downgrade. */
+export const changeOf = (current: CurrentTerm, p: Pick<TermPurchase, 'tier' | 'accounts'>, now: Date): TermChange => {
+  if (!isRunning(current, now)) {
+    return 'new';
+  }
+  if (current.tier !== p.tier) {
+    return RANK[p.tier] > RANK[current.tier] ? 'upgrade' : 'downgrade';
+  }
+  return p.accounts === current.accounts ? 'renew' : p.accounts > current.accounts ? 'upgrade' : 'downgrade';
+};
+
+/** The period a purchase would give and what kind of change it is (for the price calculator). */
+export const quoteTerm = (current: CurrentTerm, p: TermPurchase, now = new Date()) => {
+  const term = nextTerm(current, p, now);
+  return { change: changeOf(current, p, now), startsAt: term.startsAt, expiresAt: term.expiresAt };
+};
+
+/**
+ * The running paid period: the latest paid plan order, unless the organization is on another
+ * provider's subscription (or its XorPay one ended). Without a subscription row the order still
+ * counts: a second payment can be claimed before the first one's grant wrote the subscription.
+ * A trial is not a paid period: buying during a trial starts the paid period right away.
+ */
 export const termFrom = ({ lastPaid, subscription }: TermInputs, now = new Date()): CurrentTerm =>
-  subscription?.provider === XORPAY_PROVIDER &&
-  !isExpired(subscription, now) &&
+  (!subscription || (subscription.provider === XORPAY_PROVIDER && !isExpired(subscription, now))) &&
   lastPaid?.tier &&
-  lastPaid.periodEnd
-    ? { tier: lastPaid.tier as PaidTier, periodEnd: lastPaid.periodEnd, dailyPrice: lastPaid.dailyPrice }
+  lastPaid.periodEnd &&
+  lastPaid.kind !== 'trial'
+    ? {
+        tier: tierOf(lastPaid.tier) as PaidTier,
+        accounts:
+          lastPaid.totalAccounts ??
+          subscription?.totalChannels ??
+          LEGACY_PLANS[lastPaid.productId]?.accounts ??
+          CATALOGUE.pricing.minAccounts,
+        months: lastPaid.months ?? null,
+        periodEnd: lastPaid.periodEnd,
+        dailyPrice: lastPaid.dailyPrice,
+      }
     : null;
+
+/** What the usage page can buy: a plan period, accounts added to the running one, or credits. */
+export type OrderRequest =
+  | { kind: 'plan'; tier: PaidTier; accounts: number; months: number }
+  | { kind: 'addon'; accounts: number }
+  | { kind: 'pack'; productId: string };
+
+/** What an order buys, read from its row (orders from before per-account pricing included). */
+export type Purchase =
+  | { kind: 'plan'; tier: PaidTier; accounts: number; months: number | null; days: number | null; priceYuan: string }
+  | { kind: 'addon'; tier: PaidTier; accounts: number; months: number | null; days: number; priceYuan: string }
+  | { kind: 'trial' | 'coupon'; tier: PaidTier; accounts: number; days: number; priceYuan: string }
+  | { kind: 'pack'; pack: PackProduct; priceYuan: string };
+
+export const purchaseOf = (
+  order: Pick<BillingOrder, 'kind' | 'productId' | 'tier' | 'accounts' | 'months' | 'days' | 'priceYuan'>
+): Purchase | null => {
+  const tier = order.tier ? (tierOf(order.tier) as PaidTier) : null;
+  switch (order.kind) {
+    case 'plan':
+      return tier && order.accounts && (order.months || order.days)
+        ? { kind: 'plan', tier, accounts: order.accounts, months: order.months, days: order.days, priceYuan: order.priceYuan }
+        : null;
+    case 'addon':
+      return tier && order.accounts && order.days
+        ? { kind: 'addon', tier, accounts: order.accounts, months: order.months, days: order.days, priceYuan: order.priceYuan }
+        : null;
+    case 'trial':
+    case 'coupon':
+      return tier && order.accounts && order.days
+        ? { kind: order.kind, tier, accounts: order.accounts, days: order.days, priceYuan: order.priceYuan }
+        : null;
+    case 'pack':
+    case null:
+    case undefined: {
+      const pack = getPack(order.productId);
+      if (pack) {
+        return { kind: 'pack', pack, priceYuan: order.priceYuan };
+      }
+      const legacy = order.kind ? undefined : LEGACY_PLANS[order.productId];
+      return legacy
+        ? { kind: 'plan', tier: legacy.tier, accounts: legacy.accounts, months: null, days: legacy.days, priceYuan: order.priceYuan }
+        : null;
+    }
+    default:
+      return null;
+  }
+};
 
 /** Order numbers go to XorPay and onto receipts: random only, no organization id or time. */
 export const newOrderNo = () => `oks${randomBytes(10).toString('hex')}`;
+
+export const trialOrderNo = (orgId: string) => `${TRIAL_ORDER_PREFIX}${orgId}`;
 
 /** Yuan amounts compared in cents, so "99" and "99.00" are the same price. */
 const cents = (yuan: unknown) => Math.round(Number(yuan) * 100);
@@ -115,11 +262,37 @@ const quoted = (value: unknown) => JSON.stringify(String(value ?? '')).slice(0, 
 const displayStatus = (order: Pick<BillingOrder, 'status' | 'createdAt'>, now = Date.now()) =>
   order.status === 'PENDING' && now - order.createdAt.getTime() > ORDER_TTL_MS ? 'EXPIRED' : order.status;
 
+const badRequest = (message: string) => new HttpException(message, 400);
+
+/** A short name for an order (receipts, logs); the usage page builds its own from the fields. */
+export const orderName = (order: Pick<BillingOrder, 'kind' | 'productId' | 'tier' | 'accounts' | 'months' | 'days' | 'priceYuan'>) => {
+  const p = purchaseOf(order);
+  if (!p) {
+    return order.productId;
+  }
+  if (p.kind === 'pack') {
+    return p.pack.name;
+  }
+  const plan = CATALOGUE.tiers[p.tier].name;
+  switch (p.kind) {
+    case 'plan':
+      return order.kind ? `${plan} · ${p.accounts} 个账号 · ${p.months} 个月` : LEGACY_PLANS[order.productId].name;
+    case 'addon':
+      return `${plan} · 加购 ${p.accounts} 个账号`;
+    case 'trial':
+      return `${plan}试用 · ${p.accounts} 个账号 · ${p.days} 天`;
+    case 'coupon':
+      return `兑换券 · ${plan} · ${p.days} 天`;
+  }
+};
+
 /**
- * RMB orders through XorPay: create an order and its QR code, verify and apply the payment
- * notification (idempotent), expire prepaid periods. The notification arrives through
- * XorPayProvider (POST /payment/xorpay) and is treated as untrusted: signature, amount and a
- * query back to XorPay must all agree before anything is granted.
+ * RMB orders through XorPay for the per-account plans (plan x accounts x months, accounts added to
+ * the running period) and credit packs: create an order and its QR code, verify and apply the
+ * payment notification (idempotent), expire prepaid periods. Trials and coupon days go through the
+ * same path as free internal orders. The notification arrives through XorPayProvider
+ * (POST /payment/xorpay) and is treated as untrusted: signature, amount and a query back to XorPay
+ * must all agree before anything is granted.
  */
 @Injectable()
 export class BillingOrdersService {
@@ -129,7 +302,8 @@ export class BillingOrdersService {
     private _repository: BillingRepository,
     private _planService: PlanService,
     private _creditsService: CreditsService,
-    private _subscriptionService: SubscriptionService
+    private _subscriptionService: SubscriptionService,
+    private _referralService: ReferralService
   ) {}
 
   private notifyUrl() {
@@ -139,25 +313,53 @@ export class BillingOrdersService {
     );
   }
 
-  /** The organization's paid XorPay period, if one is running. */
-  async currentTerm(orgId: string): Promise<CurrentTerm> {
+  private get pricing() {
+    return CATALOGUE.pricing;
+  }
+
+  /** The organization's paid XorPay period, if one is running (a trial is not one). */
+  async currentTerm(orgId: string, now = new Date()): Promise<CurrentTerm> {
     const subscription = await this._planService.activeSubscription(orgId);
     if (subscription?.provider !== XORPAY_PROVIDER) {
       return null;
     }
-    return termFrom({ subscription, lastPaid: await this._repository.lastPaidPlanOrder(orgId) });
+    const term = termFrom({ subscription, lastPaid: await this._repository.lastPaidPlanOrder(orgId) }, now);
+    return term && term.periodEnd.getTime() > now.getTime() ? term : null;
   }
 
-  /** Plans (with the period each would give) and credit packs, when RMB payment is set up. */
-  async products(orgId: string) {
-    if (!isXorPayBilling()) {
-      return { plans: [], packs: [] };
+  /** A plan given or sold here cannot replace a card (Stripe) or lifetime subscription. */
+  private async assertXorPayManaged(orgId: string) {
+    const sub = await this._planService.activeSubscription(orgId);
+    if (sub && (sub.isLifetime || sub.provider !== XORPAY_PROVIDER)) {
+      throw badRequest('当前套餐不是通过支付宝 / 微信开通的，请在原渠道管理套餐');
     }
-    const current = await this.currentTerm(orgId);
-    const now = new Date();
+  }
+
+  async trialStatus(orgId: string) {
+    const { days, tier, accounts } = this.pricing.trial;
+    const [order, sub] = await Promise.all([
+      this._repository.getOrder(trialOrderNo(orgId)),
+      this._planService.activeSubscription(orgId),
+    ]);
+    const used = !!order?.fulfilledAt;
     return {
-      plans: CATALOGUE.plans.map((p) => ({ ...p, payTypes: payTypesFor(p.priceYuan), quote: quoteFor(current, p, now) })),
-      packs: CATALOGUE.packs.map((p) => ({ ...p, payTypes: payTypesFor(p.priceYuan) })),
+      days,
+      tier,
+      accounts,
+      used,
+      active: !!sub && sub.identifier === trialOrderNo(orgId),
+      available: isXorPayBilling() && days > 0 && !used && !sub,
+    };
+  }
+
+  /** Price list, packs, the running period and the trial, for the usage page. */
+  async catalogue(orgId: string) {
+    const term = isXorPayBilling() ? await this.currentTerm(orgId) : null;
+    return {
+      pricing: this.pricing,
+      packs: isXorPayBilling() ? CATALOGUE.packs.map((p) => ({ ...p, payTypes: payTypesFor(p.priceYuan) })) : [],
+      term,
+      trial: await this.trialStatus(orgId),
     };
   }
 
@@ -165,60 +367,131 @@ export class BillingOrdersService {
     return { xorpay: isXorPayBilling(), stripe: isStripeBilling() };
   }
 
-  private async orderResponse(orgId: string, product: BillingProduct, order: Pick<BillingOrder, 'orderNo' | 'payType' | 'qr'>, expireIn: number) {
+  /** The price list for the public pricing page (no organization). */
+  publicPricing() {
+    return { billing: isXorPayBilling(), pricing: this.pricing, packs: CATALOGUE.packs };
+  }
+
+  /** Price of a plan and the period it would give this organization. */
+  async quote(orgId: string, input: { tier: PaidTier; accounts: number; months: number }) {
+    const error = planInputError(this.pricing, input);
+    if (error) {
+      throw badRequest(error);
+    }
+    const quote = quotePlan(this.pricing, input);
+    const current = await this.currentTerm(orgId);
+    return {
+      ...quote,
+      payTypes: payTypesFor(quote.totalYuan),
+      term: quoteTerm(current, { ...input, priceYuan: quote.totalYuan }),
+    };
+  }
+
+  /** Price of accounts added to the running period, until its end. */
+  async quoteAddon(orgId: string, addAccounts: number, now = new Date()) {
+    const current = await this.currentTerm(orgId, now);
+    if (!current) {
+      throw badRequest('没有进行中的付费套餐：请直接购买套餐');
+    }
+    let quote: ReturnType<typeof quoteAddon>;
+    try {
+      quote = quoteAddon(this.pricing, {
+        tier: current.tier,
+        currentAccounts: current.accounts,
+        addAccounts,
+        months: current.months,
+        periodEnd: current.periodEnd,
+        now,
+      });
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+    return { ...quote, months: current.months, periodEnd: current.periodEnd, payTypes: payTypesFor(quote.totalYuan) };
+  }
+
+  /** The order row a request becomes (price fixed now, what it buys applied when paid). */
+  private async draft(orgId: string, request: OrderRequest) {
+    if (request.kind === 'pack') {
+      const pack = getPack(request.productId);
+      if (!pack) {
+        throw badRequest('积分包不存在');
+      }
+      return { productId: pack.id, kind: 'pack', priceYuan: pack.priceYuan };
+    }
+    await this.assertXorPayManaged(orgId);
+    if (request.kind === 'plan') {
+      const q = await this.quote(orgId, request);
+      return {
+        productId: `plan-${q.tier}-${q.accounts}-${q.months}`,
+        kind: 'plan',
+        priceYuan: q.totalYuan,
+        tier: q.tier,
+        accounts: q.accounts,
+        months: q.months,
+        giftCredits: q.giftCredits,
+      };
+    }
+    const q = await this.quoteAddon(orgId, request.accounts);
+    return {
+      productId: `addon-${q.tier}-${q.addAccounts}`,
+      kind: 'addon',
+      priceYuan: q.totalYuan,
+      tier: q.tier,
+      accounts: q.addAccounts,
+      months: q.months ?? undefined,
+      days: q.remainingDays,
+      giftCredits: q.giftCredits,
+    };
+  }
+
+  private async orderResponse(orgId: string, order: BillingOrder, expireIn: number) {
+    const purchase = purchaseOf(order);
+    let term: { change: string; startsAt: Date; expiresAt: Date } | null = null;
+    if (purchase?.kind === 'plan') {
+      term = quoteTerm(await this.currentTerm(orgId), purchase);
+    } else if (purchase?.kind === 'addon') {
+      const current = await this.currentTerm(orgId);
+      term = current ? { change: 'addon', startsAt: new Date(), expiresAt: current.periodEnd } : null;
+    }
     return {
       orderNo: order.orderNo,
-      name: product.name,
-      priceYuan: product.priceYuan,
+      name: orderName(order),
+      kind: purchase?.kind ?? null,
+      priceYuan: order.priceYuan,
       payType: order.payType as PayType,
       qr: order.qr!,
       qrImage: xorPayQrImageUrl(order.qr!),
       expireIn,
-      quote: product.kind === 'plan' ? quoteFor(await this.currentTerm(orgId), product) : null,
+      giftCredits: order.giftCredits ?? 0,
+      term,
     };
   }
 
-  async createOrder(orgId: string, userId: string | undefined, productId: string, payType: PayType) {
+  async createOrder(orgId: string, userId: string | undefined, request: OrderRequest, payType: PayType) {
     if (!isXorPayBilling()) {
-      throw new HttpException('未开通支付宝 / 微信支付', 400);
+      throw badRequest('未开通支付宝 / 微信支付');
     }
-    const product = getProduct(productId);
-    if (!product) {
-      throw new HttpException('套餐或积分包不存在', 400);
-    }
-    if (!payTypesFor(product.priceYuan).includes(payType)) {
-      throw new HttpException('该金额不支持这种支付方式，大额请联系我们对公转账', 400);
-    }
-    if (product.kind === 'plan') {
-      const sub = await this._planService.activeSubscription(orgId);
-      if (sub && (sub.isLifetime || sub.provider !== XORPAY_PROVIDER)) {
-        throw new HttpException('当前套餐不是通过支付宝 / 微信购买的，请在原渠道管理套餐', 400);
-      }
+    const draft = await this.draft(orgId, request);
+    if (!payTypesFor(draft.priceYuan).includes(payType)) {
+      throw badRequest(NO_ONLINE_PAYMENT);
     }
 
     // pressing the button again shows the same QR code instead of filling the table with orders
-    const pending = await this._repository.pendingOrder(orgId, product.id, payType, new Date(Date.now() - REUSE_ORDER_MS));
-    if (pending) {
+    const pending = await this._repository.pendingOrder(orgId, draft.productId, payType, new Date(Date.now() - REUSE_ORDER_MS));
+    if (pending && cents(pending.priceYuan) === cents(draft.priceYuan)) {
       const left = QR_TTL_MS - (Date.now() - pending.createdAt.getTime());
-      return this.orderResponse(orgId, product, pending, Math.round(left / 1000));
+      return this.orderResponse(orgId, pending, Math.round(left / 1000));
     }
 
     const orderNo = newOrderNo();
-    await this._repository.createOrder({
-      organizationId: orgId,
-      orderNo,
-      productId: product.id,
-      priceYuan: product.priceYuan,
-      payType,
-      userId,
-    });
+    const created = await this._repository.createOrder({ organizationId: orgId, orderNo, payType, userId, ...draft });
 
     let payment: Awaited<ReturnType<XorPayClient['createPayment']>>;
     try {
       payment = await this.xorpay.createPayment({
-        name: `oksocial ${product.name}`,
+        name: `oksocial ${orderName(created)}`,
         payType,
-        priceYuan: product.priceYuan,
+        priceYuan: draft.priceYuan,
         orderId: orderNo,
         notifyUrl: this.notifyUrl(),
       });
@@ -231,7 +504,76 @@ export class BillingOrdersService {
       throw new HttpException({ message: PAYMENT_CHANNEL_UNAVAILABLE, code: 'payment_channel_unavailable' }, 502);
     }
     await this._repository.attachPayment(orderNo, payment.aoid, payment.qr);
-    return this.orderResponse(orgId, product, { orderNo, payType, qr: payment.qr }, payment.expireIn);
+    return this.orderResponse(orgId, { ...created, qr: payment.qr }, payment.expireIn);
+  }
+
+  /** An order that gives a plan period without payment, applied right away; resumed when it exists. */
+  private async grantInternal(
+    orgId: string,
+    userId: string | undefined,
+    orderNo: string,
+    data: { kind: 'trial' | 'coupon'; tier: PaidTier; accounts: number; days: number }
+  ) {
+    let order = await this._repository.getOrder(orderNo);
+    if (!order) {
+      try {
+        order = await this._repository.createOrder({
+          organizationId: orgId,
+          orderNo,
+          productId: data.kind,
+          priceYuan: '0.00',
+          payType: 'none',
+          provider: INTERNAL_PROVIDER,
+          userId,
+          ...data,
+        });
+      } catch (err) {
+        if (!isUniqueViolation(err)) {
+          throw err;
+        }
+        // a concurrent request created it: apply that one
+        order = (await this._repository.getOrder(orderNo))!;
+      }
+    }
+    if (!order.fulfilledAt) {
+      await this.fulfil(order, { source: data.kind });
+    }
+    return (await this._repository.getOrder(orderNo))!;
+  }
+
+  /** 7-day 团队版 trial (from the price list), once per organization, for organizations on the free plan. */
+  async startTrial(orgId: string, userId?: string) {
+    if (!isXorPayBilling()) {
+      throw badRequest('未开启计费，所有功能已不限量');
+    }
+    const { days, tier, accounts } = this.pricing.trial;
+    if (days <= 0) {
+      throw badRequest('暂不提供免费试用');
+    }
+    const existing = await this._repository.getOrder(trialOrderNo(orgId));
+    if (existing?.fulfilledAt) {
+      throw badRequest('每个团队只能免费试用一次');
+    }
+    if (!existing && (await this._planService.activeSubscription(orgId))) {
+      throw badRequest('已经开通了套餐，无需试用');
+    }
+    const order = await this.grantInternal(orgId, userId, trialOrderNo(orgId), { kind: 'trial', tier, accounts, days });
+    return { tier, accounts, days, expiresAt: order.periodEnd };
+  }
+
+  /**
+   * Days of a plan given by a coupon: the running paid period is extended (same plan and accounts),
+   * otherwise `fallback` starts now. `orderNo` makes it happen once.
+   */
+  async grantDays(orgId: string, userId: string | undefined, orderNo: string, fallback: { tier: PaidTier; accounts: number; days: number }) {
+    await this.assertXorPayManaged(orgId);
+    const order = await this.grantInternal(orgId, userId, orderNo, { kind: 'coupon', ...fallback });
+    return { tier: tierOf(order.tier) as PaidTier, accounts: order.totalAccounts ?? fallback.accounts, expiresAt: order.periodEnd };
+  }
+
+  /** Checks a coupon's plan days can be applied (not over a card or lifetime subscription). */
+  canReceiveDays(orgId: string) {
+    return this.assertXorPayManaged(orgId);
   }
 
   async orderStatus(orgId: string, orderNo: string) {
@@ -245,11 +587,19 @@ export class BillingOrdersService {
   }
 
   async listOrders(orgId: string) {
-    return (await this._repository.listOrders(orgId)).map((o) => ({
-      ...o,
-      name: getProduct(o.productId)?.name ?? o.productId,
-      status: displayStatus(o),
-    }));
+    return (await this._repository.listOrders(orgId)).map((o) => {
+      const purchase = purchaseOf(o);
+      return {
+        ...o,
+        kind: purchase?.kind ?? o.kind,
+        tier: purchase && purchase.kind !== 'pack' ? purchase.tier : null,
+        accounts: purchase && purchase.kind !== 'pack' ? purchase.accounts : null,
+        days: purchase && 'days' in purchase ? purchase.days : o.days,
+        credits: purchase?.kind === 'pack' ? purchase.pack.credits : null,
+        name: orderName(o),
+        status: displayStatus(o),
+      };
+    });
   }
 
   verifyNotify(payload: XorPayNotify) {
@@ -258,12 +608,12 @@ export class BillingOrdersService {
 
   /**
    * A signed payment notification: amount (and XorPay's order id) must match, XorPay must confirm
-   * the order is paid, then the product is applied once. Non-2xx answers make XorPay retry
+   * the order is paid, then the purchase is applied once. Non-2xx answers make XorPay retry
    * (1/2/4/16/64/300 minutes).
    */
   async handleNotify(payload: XorPayNotify) {
     const order = await this._repository.getOrder(String(payload.order_id ?? ''));
-    if (!order) {
+    if (!order || order.provider !== XORPAY_PROVIDER) {
       console.log(`xorpay notify for unknown order ${quoted(payload.order_id)}`);
       return 'ignored';
     }
@@ -293,6 +643,32 @@ export class BillingOrdersService {
     return 'success';
   }
 
+  /** The period an order buys, from the running one (computed in the claiming transaction). */
+  private termOf(order: BillingOrder, purchase: Exclude<Purchase, { kind: 'pack' }>, now: Date) {
+    return (inputs: TermInputs): PaidTerm => {
+      const current = termFrom(inputs, now);
+      let tier = purchase.tier;
+      let term: Term;
+      if (purchase.kind === 'addon') {
+        term = addonTerm(current, purchase, now);
+        tier = current && current.periodEnd.getTime() > now.getTime() ? current.tier : tier;
+      } else if (purchase.kind === 'coupon' && current && current.periodEnd.getTime() > now.getTime()) {
+        // free days extend the running period as it is
+        tier = current.tier;
+        term = nextTerm(current, { tier, accounts: current.accounts, priceYuan: '0.00', days: purchase.days }, now);
+      } else {
+        term = nextTerm(current, purchase, now);
+      }
+      return {
+        tier,
+        periodStart: term.startsAt,
+        periodEnd: term.expiresAt,
+        dailyPrice: term.dailyPrice,
+        totalAccounts: term.accounts,
+      };
+    };
+  }
+
   /**
    * Marks the order paid and grants what it bought; returns false when that was done before.
    * Paying and granting are two steps: a paid order whose grant did not finish (crash, database
@@ -300,10 +676,10 @@ export class BillingOrdersService {
    * safe to repeat.
    */
   async fulfil(order: BillingOrder, payload: Prisma.InputJsonValue, now = new Date()) {
-    const product = getProduct(order.productId);
-    if (!product) {
+    const purchase = purchaseOf(order);
+    if (!purchase) {
       // renamed or removed from the catalogue: never mark paid without granting, let ops fix it
-      console.log(`xorpay order ${order.orderNo}: product ${order.productId} is not in the catalogue`);
+      console.log(`billing order ${order.orderNo}: product ${order.productId} is not in the catalogue`);
       throw new HttpException('unknown product', 500);
     }
 
@@ -313,17 +689,7 @@ export class BillingOrdersService {
         (await this._repository.claimPaid(
           order.orderNo,
           payload,
-          product.kind === 'plan'
-            ? (current) => {
-                const term = nextTerm(termFrom(current, now), product, now);
-                return {
-                  tier: product.tier,
-                  periodStart: term.startsAt,
-                  periodEnd: term.expiresAt,
-                  dailyPrice: term.dailyPrice,
-                };
-              }
-            : undefined
+          purchase.kind === 'pack' ? undefined : this.termOf(order, purchase, now)
         )) ??
         // paid by a concurrent notification: finish its grant if that one has not yet
         (await this._repository.getOrder(order.orderNo));
@@ -333,41 +699,64 @@ export class BillingOrdersService {
     }
 
     try {
-      await this.grant(paid, product, now);
+      await this.grant(paid, purchase, now);
       await this._repository.markFulfilled(paid.orderNo);
     } catch (err) {
-      console.log(`xorpay order ${paid.orderNo}: granting failed, will retry`, (err as Error)?.message);
+      console.log(`billing order ${paid.orderNo}: granting failed, will retry`, (err as Error)?.message);
       throw new HttpException('fulfilment failed', 500);
     }
     return true;
   }
 
-  private async grant(order: BillingOrder, product: BillingProduct, now: Date) {
-    if (product.kind === 'pack') {
+  private async grant(order: BillingOrder, purchase: Purchase, now: Date) {
+    if (purchase.kind === 'pack') {
       await this._repository.addOnce({
         organizationId: order.organizationId,
         kind: 'TOPUP',
-        amount: product.credits,
-        action: product.id,
+        amount: purchase.pack.credits,
+        action: purchase.pack.id,
         referenceId: order.orderNo,
         idempotencyKey: `order:${order.orderNo}`,
       });
+    } else {
+      await this.applySubscription(order, now);
+    }
+
+    const paidCents = toCents(order.priceYuan);
+    if (paidCents <= 0) {
       return;
     }
-    // The subscription always mirrors the latest paid plan order, so granting an older order again
-    // (a retry) can never shorten a period a later order extended.
+    // buying a plan gifts credits worth a share of the amount (the share quoted when ordering)
+    if (purchase.kind === 'plan' || purchase.kind === 'addon') {
+      await this._creditsService.bonus(
+        order.organizationId,
+        order.giftCredits ?? giftCreditsFor(paidCents, this.pricing),
+        'purchase_gift',
+        order.orderNo,
+        `gift:${order.orderNo}`
+      );
+    }
+    await this._referralService.rewardFirstPayment(order.organizationId, order.orderNo, order.priceYuan);
+  }
+
+  /**
+   * The subscription always mirrors the latest paid plan order, so granting an older order again
+   * (a retry) can never shorten a period a later order extended.
+   */
+  private async applySubscription(order: BillingOrder, now: Date) {
     const latest = (await this._repository.lastPaidPlanOrder(order.organizationId)) ?? order;
-    const tier = latest.tier as PaidTier;
-    const channels = CATALOGUE.tiers[tier].limits.channels;
-    const days = (getProduct(latest.productId) as PlanProduct | null)?.days ?? product.days;
+    const tier = tierOf(latest.tier) as PaidTier;
+    const channels =
+      latest.totalAccounts ?? LEGACY_PLANS[latest.productId]?.accounts ?? CATALOGUE.tiers[tier].limits.channels;
+    const yearly = (latest.months ?? 0) >= 12 || (latest.days ?? 0) >= 365;
     await this._subscriptionService.createOrUpdateSubscriptionByOrg(
-      false,
+      latest.kind === 'trial',
       order.organizationId,
       XORPAY_PROVIDER,
       latest.orderNo,
       channels === UNLIMITED ? UNLIMITED_CHANNELS : channels,
       tier,
-      days >= 365 ? 'YEARLY' : 'MONTHLY',
+      yearly ? 'YEARLY' : 'MONTHLY',
       dayjs(latest.periodEnd!).unix()
     );
     // createOrUpdateSubscriptionByOrg gives up quietly (another provider's or a lifetime
@@ -376,17 +765,20 @@ export class BillingOrdersService {
     if (applied?.provider !== XORPAY_PROVIDER || applied.identifier !== latest.orderNo) {
       throw new Error(`subscription of ${order.organizationId} was not updated`);
     }
-    // a new tier starts a new allowance right away; a renewal keeps the running one
+    // a new plan starts a new allowance right away; a renewal keeps the running one
     await this._creditsService.grantIfDue(order.organizationId, now);
   }
 
   /** Paid orders whose grant never finished, granted again (the billing workflow). */
   async settlePaidOrders(now = new Date()) {
-    const orders = await this._repository.paidUnfulfilled(new Date(now.getTime() - SETTLE_AFTER_MS));
+    const orders = await this._repository.paidUnfulfilled(
+      new Date(now.getTime() - SETTLE_AFTER_MS),
+      new Date(now.getTime() - SETTLE_FOR_MS)
+    );
     let settled = 0;
     for (const order of orders) {
       try {
-        settled += (await this.fulfil(order, order.notifyPayload ?? {}, now)) ? 1 : 0;
+        settled += (await this.fulfil(order, order.notifyPayload ?? { source: order.kind ?? 'settle' }, now)) ? 1 : 0;
       } catch (err) {
         console.log(`settle order ${order.orderNo}`, (err as Error)?.message);
       }
@@ -394,7 +786,7 @@ export class BillingOrdersService {
     return settled;
   }
 
-  /** Prepaid periods that ran out go back to the free plan (extra channels and members are disabled). */
+  /** Prepaid periods (and trials) that ran out go back to the free plan (extra channels and members are disabled). */
   async expirePlans(now = new Date()) {
     const expired = await this._repository.expiredSubscriptions(XORPAY_PROVIDER, now);
     const freeChannels = CATALOGUE.tiers.FREE.limits.channels;

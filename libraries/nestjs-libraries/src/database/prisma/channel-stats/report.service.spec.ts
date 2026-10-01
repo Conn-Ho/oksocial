@@ -12,7 +12,7 @@ const CHANNELS = [
   { id: 'b', name: '微博号', providerIdentifier: 'weibo' },
 ];
 
-const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email']) => {
+const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email'], historyDays = -1) => {
   const repo = {
     orgChannels: jest.fn(async () => CHANNELS),
     snapshotsSince: jest.fn(async () => []),
@@ -23,6 +23,7 @@ const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email
     getShare: jest.fn(async () => share ?? null),
   };
   const plans = {
+    historyDays: jest.fn(async () => historyDays),
     hasFeature: jest.fn(async (_o: string, f: string) => features.includes(f)),
     assertFeature: jest.fn(async (_o: string, f: string) => {
       if (!features.includes(f)) throw Object.assign(new Error('upgrade'), { status: 402 });
@@ -80,6 +81,23 @@ describe('ReportService', () => {
     }
     expect(report.topPosts[0].key).toBe('1');
     expect(report.channels.map((c) => c.id)).toEqual(['1', '2']);
+  });
+
+  it('reports only reach back as far as the plan keeps data, the comparison period too', async () => {
+    const DAY = 86400_000;
+    const sinceOf = (repo: { snapshotsSince: jest.Mock }) => (repo.snapshotsSince.mock.calls[0] as unknown as [string, Date])[1];
+    const free = setup(undefined, undefined, 30);
+    const report = await free.service.overview('o1', { days: 90 });
+    expect(Math.round((report.to.getTime() - report.from.getTime()) / DAY)).toBe(30);
+    expect(Math.round((Date.now() - sinceOf(free.repo).getTime()) / DAY)).toBe(30);
+    const week = setup(undefined, undefined, 30);
+    await week.service.overview('o1', { days: 7 });
+    // the week, the week before it and a day of margin
+    expect(Math.round((Date.now() - sinceOf(week.repo).getTime()) / DAY)).toBe(15);
+    await expect(free.service.overview('o1', { from: '2020-01-01', to: '2020-01-31' })).rejects.toMatchObject({ status: 400 });
+    const unlimited = setup();
+    const all = await unlimited.service.overview('o1', { days: 90 });
+    expect(Math.round((all.to.getTime() - all.from.getTime()) / DAY)).toBe(90);
   });
 
   it('plans without the feature cannot share', async () => {

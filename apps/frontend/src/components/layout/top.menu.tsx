@@ -226,7 +226,7 @@ export const useMenuItem = () => {
 
   const secondMenu = [
     {
-      name: t('usage', '用量'),
+      name: t('nav_subscription', '订阅'),
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="21" viewBox="0 0 24 24" fill="none">
           <path d="M12 3V12L18.5 17.5M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

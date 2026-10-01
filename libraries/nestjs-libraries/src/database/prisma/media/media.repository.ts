@@ -10,7 +10,7 @@ export const TRASH_PAGE_SIZE = 30;
  * The 网盘 library: live media out of the trash, ready (a file being normalized shows up once
  * released), optionally by original name and by kind (file extension). Pure.
  */
-export const libraryWhere = (org: string, f: { kind?: MediaKind; search?: string } = {}) => {
+export const libraryWhere = (org: string, f: { kind?: MediaKind; search?: string } = {}): Prisma.MediaWhereInput => {
   const search = f.search?.trim();
   return {
     organizationId: org,
@@ -192,7 +192,7 @@ export class MediaRepository {
   }
 
   async trashList(org: string, page: number) {
-    const where = { organizationId: org, deletedAt: null, trashedAt: { not: null } };
+    const where: Prisma.MediaWhereInput = { organizationId: org, deletedAt: null, trashedAt: { not: null } };
     const [total, rows] = await Promise.all([
       this._media.model.media.count({ where }),
       this._media.model.media.findMany({

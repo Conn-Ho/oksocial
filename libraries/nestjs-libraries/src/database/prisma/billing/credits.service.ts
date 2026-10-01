@@ -7,9 +7,13 @@ import {
   PlanService,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import {
+  BONUS_ACTIONS,
+  BonusAction,
   CATALOGUE,
   CreditAction,
+  getPack,
   isXorPayBilling,
+  tierOf,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
 
 // How many organizations the monthly grant loads at a time.
@@ -18,20 +22,23 @@ export const HISTORY_DAYS = [3, 7, 30] as const;
 
 type Spent = Pick<CreditEntry, 'id' | 'organizationId' | 'amount' | 'action' | 'referenceId'>;
 
-/** What a ledger row's action is called: a metered action, a plan (grants) or a credit pack. */
+const TIER_ACTIONS = ['FREE', 'STANDARD', 'TEAM', 'PRO', 'ULTIMATE'];
+
+/** What a ledger row's action is called: a metered action, a bonus, a plan (grants) or a credit pack. */
 const actionLabel = (action: string | null) =>
   !action
     ? ''
     : CATALOGUE.prices[action as CreditAction]?.label ??
-      CATALOGUE.tiers[action as keyof typeof CATALOGUE.tiers]?.name ??
-      CATALOGUE.packs.find((p) => p.id === action)?.name ??
+      BONUS_ACTIONS[action as BonusAction] ??
+      (TIER_ACTIONS.includes(action) ? CATALOGUE.tiers[tierOf(action === 'FREE' ? null : action)].name : undefined) ??
+      getPack(action)?.name ??
       action;
 
 /**
  * Credits: every movement is a CreditEntry row and the balance is their sum. Plans grant a monthly
- * allowance (spent first, the unused part expires when the next one is granted), packs add credits
- * that stay, and metered actions spend them. Without oksocial plans (XorPay) everything here is a
- * no-op.
+ * allowance (spent first, the unused part expires when the next one is granted), packs and bonuses
+ * (purchase gift, check-in, coupons, referrals) add credits that stay, and metered actions spend
+ * them. Without oksocial plans (XorPay) everything here is a no-op.
  */
 @Injectable()
 export class CreditsService {
@@ -86,6 +93,24 @@ export class CreditsService {
       );
     }
     return entry;
+  }
+
+  /**
+   * Credits given rather than bought (purchase gift, check-in, coupon, referral): once per
+   * idempotency key, never expiring. False when it was given before, or billing is off.
+   */
+  async bonus(orgId: string, amount: number, action: BonusAction, referenceId: string | undefined, idempotencyKey: string) {
+    if (!this.enabled || !(amount > 0)) {
+      return false;
+    }
+    return this._repository.addOnce({
+      organizationId: orgId,
+      kind: 'BONUS',
+      amount,
+      action,
+      referenceId,
+      idempotencyKey,
+    });
   }
 
   /** Gives back a charge whose action failed; refunding the same charge twice adds one row. */

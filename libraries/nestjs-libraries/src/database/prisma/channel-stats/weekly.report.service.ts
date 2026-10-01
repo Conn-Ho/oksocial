@@ -263,7 +263,13 @@ export class WeeklyReportService {
    * The week's AI report for the email: the stored one; else, for a team that asked for it and
    * while the run has time, one written now; or a line saying why there is none.
    */
-  private async aiFor(orgId: string, week: Week, now: Date, asked: boolean, inTime: boolean) {
+  private async aiFor(
+    orgId: string,
+    week: Week,
+    now: Date,
+    asked: boolean,
+    inTime: boolean
+  ): Promise<{ content: WeeklyContent | null; note: string | null }> {
     const stored = await this._repository.byWeek(orgId, week.start);
     if (stored || !this._ai.enabled) {
       return { content: (stored?.content as WeeklyContent | undefined) ?? null, note: null };

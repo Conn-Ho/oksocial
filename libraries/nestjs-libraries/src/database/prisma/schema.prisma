@@ -70,6 +70,10 @@ model Organization {
   apiKeys             ApiKey[]
   channelTags         ChannelTag[]
   syncSettings        SyncSettings?
+  couponRedemptions   CouponRedemption[]
+  referralCode        ReferralCode?
+  referralsMade       Referral[]           @relation("referrer")
+  referredBy          Referral?            @relation("referred")
 
   @@index([apiKey])
   @@index([streakSince])
@@ -2347,6 +2351,8 @@ enum CreditEntryKind {
   SPEND
   // a charged action that failed
   REFUND
+  // credits given, not bought: purchase gift, daily check-in, coupon, referral (action says which)
+  BONUS
 }
 
 model CreditEntry {
@@ -2355,7 +2361,7 @@ model CreditEntry {
   kind           CreditEntryKind
   // positive adds credits, negative removes them
   amount         Int
-  // price-table key (SPEND / REFUND) or the plan tier (GRANT / EXPIRE)
+  // price-table key (SPEND / REFUND), the plan tier (GRANT / EXPIRE) or why a BONUS was given
   action         String?
   // what was charged (inbox item, post), or the order that paid for the credits
   referenceId    String?
@@ -2404,9 +2410,85 @@ model BillingOrder {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   organization    Organization       @relation(fields: [organizationId], references: [id])
+  // per-account plans: plan (tier x accounts x months), addon (accounts added until the period
+  // end), pack, trial or coupon (free days); null on orders from before per-account pricing
+  kind            String?
+  // plan / trial / coupon: accounts of the period; addon: accounts added
+  accounts        Int?
+  // plan: months bought (addon: months of the period it adds to, for its duration discount)
+  months          Int?
+  // trial / coupon: days given; addon: days charged
+  days            Int?
+  // written when paid: the accounts of the subscription after this order
+  totalAccounts   Int?
+  // credits gifted with a paid plan (a share of the amount)
+  giftCredits     Int?
 
   @@index([organizationId, createdAt])
   @@index([status])
+}
+
+// 兑换券: created by a superadmin, gives credits and/or days of a plan; each organization redeems a
+// code once, a code serves up to maxUses organizations.
+model Coupon {
+  id           String             @id @default(uuid())
+  // what people type, stored upper-case
+  code         String             @unique
+  credits      Int                @default(0)
+  // days of a plan: extend the running paid period, or start `planTier` x `planAccounts`
+  planDays     Int                @default(0)
+  planTier     SubscriptionTier?
+  planAccounts Int?
+  maxUses      Int                @default(1)
+  usedCount    Int                @default(0)
+  expiresAt    DateTime?
+  note         String?
+  createdById  String?
+  disabledAt   DateTime?
+  createdAt    DateTime           @default(now())
+  redemptions  CouponRedemption[]
+}
+
+model CouponRedemption {
+  id             String       @id @default(uuid())
+  couponId       String
+  organizationId String
+  userId         String?
+  createdAt      DateTime     @default(now())
+  coupon         Coupon       @relation(fields: [couponId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([couponId, organizationId])
+  @@index([organizationId])
+}
+
+// 推广奖励: every organization's referral code (sign-up link ?ref=CODE), made when first shown.
+model ReferralCode {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  code           String       @unique
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// An organization that signed up through another one's link: its sign-up bonus, and the referrer's
+// reward on its first payment (once).
+model Referral {
+  id            String       @id @default(uuid())
+  referrerOrgId String
+  referredOrgId String       @unique
+  code          String
+  signupCredits Int          @default(0)
+  // the referred organization's first payment and what the referrer got for it
+  firstOrderNo  String?
+  firstPaidYuan String?
+  rewardCredits Int?
+  rewardedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  referrer      Organization @relation("referrer", fields: [referrerOrgId], references: [id])
+  referred      Organization @relation("referred", fields: [referredOrgId], references: [id])
+
+  @@index([referrerOrgId, createdAt])
 }
 
 // Named public API keys (osk_...): shown once, stored hashed, with an optional expiry and a note.

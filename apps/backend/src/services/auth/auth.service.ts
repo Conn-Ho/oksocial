@@ -11,6 +11,7 @@ import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/n
 import { ForgotReturnPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/forgot-return.password.dto';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
 import { NewsletterService } from '@gitroom/nestjs-libraries/newsletter/newsletter.service';
+import { ReferralService } from '@gitroom/nestjs-libraries/database/prisma/billing/referral.service';
 
 @Injectable()
 export class AuthService {
@@ -19,8 +20,21 @@ export class AuthService {
     private _organizationService: OrganizationService,
     private _notificationService: NotificationService,
     private _emailService: EmailService,
-    private _providerManager: AuthProviderManager
+    private _providerManager: AuthProviderManager,
+    private _referralService: ReferralService
   ) {}
+
+  /** A new organization from a referral link: never lets a bad code fail the registration. */
+  private async recordReferral(orgId: string, code?: string) {
+    if (!code) {
+      return;
+    }
+    try {
+      await this._referralService.recordSignup(orgId, code);
+    } catch (err) {
+      console.log(`referral ${orgId}`, (err as Error)?.message);
+    }
+  }
   async canRegister(provider: string) {
     if (
       process.env.DISABLE_REGISTRATION !== 'true' ||
@@ -61,6 +75,7 @@ export class AuthService {
           ip,
           userAgent
         );
+        await this.recordReferral(create.id, body.referralCode);
 
         const addedOrg =
           addToOrg && typeof addToOrg !== 'boolean'
@@ -171,6 +186,7 @@ export class AuthService {
       ip,
       userAgent
     );
+    await this.recordReferral(create.id, body.referralCode);
 
     this._track('register', providerUser.email, body.datafast_visitor_id).catch(
       (err) => {}

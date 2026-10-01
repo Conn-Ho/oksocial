@@ -8,15 +8,19 @@ import {
   FEATURE_LABELS,
   FeatureKey,
   isBillingEnabled,
+  isExpired,
   isXorPayBilling,
   LIMIT_KEYS,
   LIMIT_LABELS,
   LimitKey,
   PLAN_TIERS,
-  PlanTier,
   PlanTierDefinition,
+  tierOf,
+  TRIAL_ORDER_PREFIX,
   UNLIMITED,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
+
+export { isExpired };
 
 const GB = 1024 ** 3;
 
@@ -30,14 +34,19 @@ export class PaymentRequiredException extends HttpException {
 export type EffectivePlan = PlanTierDefinition & {
   // false: oksocial plans are off (self-hosting, or Stripe only), nothing here is limited or charged
   billing: boolean;
-  subscription: Pick<Subscription, 'provider' | 'period' | 'cancelAt' | 'isLifetime' | 'totalChannels'> | null;
+  subscription:
+    | (Pick<Subscription, 'provider' | 'period' | 'cancelAt' | 'isLifetime' | 'totalChannels'> & { isTrial: boolean })
+    | null;
 };
+
+// usage bars on the usage page: credits and the history window are shown on their own
+const USAGE_KEYS = LIMIT_KEYS.filter((k) => k !== 'monthly_credits' && k !== 'history_days');
 
 // oksocial's plans, limits and credits are on when oksocial sells plans itself (XorPay). Without it
 // nothing here limits anything: self-hosting stays unlimited and a Stripe-only deployment keeps
 // Postiz's own tiers exactly (the policy guard still applies them).
 const unlimitedPlan: EffectivePlan = {
-  tier: 'ULTIMATE',
+  tier: 'TEAM',
   name: '不限量（未启用计费）',
   limits: Object.fromEntries(LIMIT_KEYS.map((k) => [k, UNLIMITED])) as Record<LimitKey, number>,
   features: [...FEATURE_KEYS],
@@ -45,10 +54,6 @@ const unlimitedPlan: EffectivePlan = {
   billing: false,
   subscription: null,
 };
-
-/** A subscription whose end (cancelAt) has passed is over, whatever removes its row later. */
-export const isExpired = (sub: Pick<Subscription, 'cancelAt' | 'isLifetime'>, now = new Date()) =>
-  !sub.isLifetime && !!sub.cancelAt && sub.cancelAt.getTime() <= now.getTime();
 
 const withinLimit = (used: number, limit: number) => limit === UNLIMITED || used < limit;
 
@@ -78,10 +83,10 @@ export class PlanService {
       return unlimitedPlan;
     }
     const sub = await this.activeSubscription(orgId);
-    const def = CATALOGUE.tiers[(sub?.subscriptionTier as PlanTier) || 'FREE'];
+    const def = CATALOGUE.tiers[tierOf(sub?.subscriptionTier)];
     return {
       ...def,
-      // a subscription carries the channels that were bought (Stripe sells them per seat)
+      // paid plans are sold per account: the subscription carries the accounts that were bought
       limits: { ...def.limits, ...(sub ? { channels: sub.totalChannels } : {}) },
       billing: true,
       subscription: sub
@@ -91,9 +96,23 @@ export class PlanService {
             cancelAt: sub.cancelAt,
             isLifetime: sub.isLifetime,
             totalChannels: sub.totalChannels,
+            isTrial: !!sub.identifier?.startsWith(TRIAL_ORDER_PREFIX),
           }
         : null,
     };
+  }
+
+  /** Days of data reports and analytics may show (-1: no limit, billing off). */
+  async historyDays(orgId: string) {
+    const plan = await this.getPlan(orgId);
+    return plan.billing ? plan.limits.history_days : UNLIMITED;
+  }
+
+  /** A report range (days back from today) cut to what the plan keeps: at least 1 day. */
+  async clampDays(orgId: string, days: number) {
+    const wanted = Number.isFinite(days) && days >= 1 ? Math.floor(days) : 1;
+    const allowed = await this.historyDays(orgId);
+    return allowed === UNLIMITED ? wanted : Math.max(1, Math.min(wanted, allowed));
   }
 
   /** How much of a limit is used, or null when nothing counts it (yet). */
@@ -106,6 +125,7 @@ export class PlanService {
       case 'storage_gb':
         return Math.round(((await this._repository.storageBytes(orgId)) / GB) * 100) / 100;
       case 'monthly_credits':
+      case 'history_days':
         return null;
       default: {
         const counter = this._counters.get(key);
@@ -182,7 +202,7 @@ export class PlanService {
     }
 
     const subscription = await this.activeSubscription(orgId);
-    const tier = (subscription?.subscriptionTier || 'FREE') as PlanTier;
+    const tier = tierOf(subscription?.subscriptionTier);
 
     const def = CATALOGUE.tiers[tier];
     const { channel, ...all } = pricing[def.postizFeatures];
@@ -210,7 +230,7 @@ export class PlanService {
   async summary(orgId: string) {
     const plan = await this.getPlan(orgId);
     const usage = await Promise.all(
-      LIMIT_KEYS.filter((k) => k !== 'monthly_credits').map(async (key) => ({
+      USAGE_KEYS.map(async (key) => ({
         key,
         ...LIMIT_LABELS[key],
         limit: plan.limits[key],
@@ -222,6 +242,7 @@ export class PlanService {
       tier: plan.tier,
       name: plan.name,
       monthlyCredits: plan.limits.monthly_credits,
+      historyDays: plan.limits.history_days,
       subscription: plan.subscription,
       usage,
       features: FEATURE_KEYS.map((key) => ({
