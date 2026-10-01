@@ -89,9 +89,15 @@ export const BLOCKED_FIRST_ARGS: ReadonlySet<string> = new Set([
 ]);
 const isProfileFlag = (a: string): boolean => a === '--profile' || a.startsWith('--profile=');
 
+/**
+ * Longest single argument: a 公众号 article or an Instagram caption goes in as one. Linux caps one argv
+ * string at 128 KiB; 32k characters stay under it even when every one is 3 bytes of UTF-8.
+ */
+export const MAX_ARG_CHARS = 32_000;
+
 export const RunBody = z
   .object({
-    args: z.array(z.string().max(2000, 'each arg must be at most 2000 characters').refine((a) => !a.includes('\0'), 'args must not contain NUL')).min(1).max(40),
+    args: z.array(z.string().max(MAX_ARG_CHARS, `each arg must be at most ${MAX_ARG_CHARS} characters`).refine((a) => !a.includes('\0'), 'args must not contain NUL')).min(1).max(40),
     timeoutMs: z.number().int().min(1000).max(600_000).default(120_000),
   })
   .superRefine(({ args }, ctx) => {

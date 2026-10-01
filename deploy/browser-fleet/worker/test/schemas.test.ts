@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { HttpError } from '../src/errors.ts';
 import { redactSecrets, safeMessage } from '../src/redact.ts';
-import { ACCOUNT_CTL_PROXY_RE, CreateSlotBody, MediaFetchBody, normalizeProxyUrl, OpenBody, parseAllowedSites, parseOrThrow, ProxyBody, RunBody, slotParam } from '../src/schemas.ts';
+import { ACCOUNT_CTL_PROXY_RE, CreateSlotBody, MAX_ARG_CHARS, MediaFetchBody, normalizeProxyUrl, OpenBody, parseAllowedSites, parseOrThrow, ProxyBody, RunBody, slotParam } from '../src/schemas.ts';
 import { tokenMatches } from '../src/auth.ts';
 
 const fails = (fn: () => unknown, pattern: RegExp): void => {
@@ -51,7 +51,9 @@ describe('request bodies', () => {
     assert.deepEqual(parseOrThrow(RunBody, { args: ['twitter', 'whoami'] }), { args: ['twitter', 'whoami'], timeoutMs: 120_000 });
     fails(() => parseOrThrow(RunBody, { args: [] }), /args/);
     fails(() => parseOrThrow(RunBody, { args: Array(41).fill('a') }), /args/);
-    fails(() => parseOrThrow(RunBody, { args: ['x'.repeat(2001)] }), /2000/);
+    fails(() => parseOrThrow(RunBody, { args: ['x'.repeat(MAX_ARG_CHARS + 1)] }), /32000/);
+    // a long article (公众号 草稿) fits in one arg
+    assert.equal(parseOrThrow(RunBody, { args: ['weixin', 'create-draft', '文'.repeat(20_000)] }).args[2].length, 20_000);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'post', 'a\0b'] }), /NUL/);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'whoami', '--profile', 'other'] }), /--profile/);
     fails(() => parseOrThrow(RunBody, { args: ['twitter', 'whoami', '--profile=other'] }), /--profile/);

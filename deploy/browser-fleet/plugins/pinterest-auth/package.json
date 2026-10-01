@@ -1,0 +1,1 @@
+{ "name": "opencli-plugin-pinterest-auth", "type": "module", "private": true, "peerDependencies": { "@jackwener/opencli": ">=1.8.0" } }
