@@ -28,6 +28,8 @@ const POSTS_PER_SYNC = 5;
 // 竞品 › 搜索: profiles read per search (the query itself and the first post authors), paced
 const SEARCH_PROFILES = 4;
 const SEARCH_GAP_MS: [number, number] = [1_000, 2_500];
+// posts whose numbers the analytics keep (and sum into the account totals)
+const STATS_POSTS = 20;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
 // weibo.com/<uid>/<mblogid>, m.weibo.cn/detail/<id>, m.weibo.cn/status/<id>
 const POST_LINK = /weibo\.(?:com|cn)\/(?:\d+|detail|status)\/([A-Za-z0-9]+)(?:[?#/]|$)/i;
@@ -96,21 +98,21 @@ export class WeiboWebProvider
     guide: '微博：第一句就抛出观点或话题，短小有信息量，适合转发讨论；不需要单独的标题；1-3 个话题标签。',
   };
 
+  // The latest 20 posts of the own timeline with their numbers (帖文报告).
+  postStats = async (slot: string, integration: { internalId: string }) =>
+    (await this.userPosts(slot, { handle: integration.internalId, url: '' }, STATS_POSTS)).posts;
+
   // Profile totals; engagement summed over the latest 20 posts (weibo shows no account totals).
-  stats = async (slot: string, integration: { internalId: string }) => {
+  stats = async (slot: string, integration: { internalId: string }, posts?: MonitorPost[]) => {
     const me = firstRow<Record<string, any>>(await this.exec(slot, ['weibo', 'me'], 90_000));
-    const posts = await this.exec<Array<Record<string, any>>>(
-      slot,
-      ['weibo', 'user-posts', integration.internalId, '--limit', '20'],
-      120_000
-    );
+    const latest = posts ?? (await this.postStats(slot, integration));
     return {
       followers: Number(me?.followers) || 0,
       following: Number(me?.following) || 0,
       posts: Number(me?.statuses) || 0,
-      likes: sumOf(posts, 'likes'),
-      comments: sumOf(posts, 'comments'),
-      shares: sumOf(posts, 'reposts'),
+      likes: sumOf(latest, 'likes'),
+      comments: sumOf(latest, 'comments'),
+      shares: sumOf(latest, 'shares'),
     };
   };
 

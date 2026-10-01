@@ -138,6 +138,20 @@ export const CHANNEL_STAT_KEYS = [
 export type ChannelStatKey = (typeof CHANNEL_STAT_KEYS)[number];
 // Current account totals; a platform fills what it exposes.
 export type ChannelStats = Partial<Record<ChannelStatKey, number>>;
+// oksocial 受众分析: one slice of an audience (性别、年龄段、地区…), share in percent.
+export type AudienceShare = { label: string; share: number };
+export type ChannelAudienceData = {
+  // FOLLOWERS: the account's followers; VIEWERS: the viewers of its recent posts
+  basis: 'FOLLOWERS' | 'VIEWERS';
+  gender?: AudienceShare[];
+  age?: AudienceShare[];
+  regions?: AudienceShare[];
+  interests?: AudienceShare[];
+  // 活跃时段: 24 shares in percent, index = hour of the day (China time)
+  activeHours?: number[];
+  // how many posts the numbers come from (VIEWERS)
+  sample?: number;
+};
 // oksocial 监控: what a platform shows about a post. null / undefined = the platform does not expose it.
 export type MonitorMetrics = {
   views?: number | null;
@@ -390,7 +404,18 @@ export interface SocialProvider
   // oksocial inbox: read comments / DMs / mentions and reply to them.
   inbox?: InboxCapabilities;
   // oksocial analytics: current account totals, sampled into a time series (ChannelSnapshot).
-  stats?: (token: string, integration: Integration) => Promise<ChannelStats>;
+  // `posts` is what postStats just read, so totals summed over posts need no second read.
+  stats?: (token: string, integration: Integration, posts?: MonitorPost[]) => Promise<ChannelStats>;
+  // oksocial 帖文报告: the account's own recent posts with their current numbers, read with stats
+  // (PostMetricSnapshot).
+  postStats?: (token: string, integration: Integration) => Promise<MonitorPost[]>;
+  // oksocial 受众分析: gender / age / regions / active hours of the account's audience, read at
+  // most daily; `posts` as for stats. null when the platform has nothing to show yet.
+  audience?: (
+    token: string,
+    integration: Integration,
+    posts?: MonitorPost[]
+  ) => Promise<ChannelAudienceData | null>;
   // oksocial 监控: read posts, accounts and keyword searches of this platform.
   monitor?: MonitorCapabilities;
   // oksocial automations: like / bookmark / follow / reply to comments of other accounts

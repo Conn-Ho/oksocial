@@ -6,6 +6,7 @@ jest.mock('@gitroom/nestjs-libraries/monitor/monitor.ai.service', () => ({ Monit
 jest.mock('@gitroom/nestjs-libraries/database/prisma/brands/brand.service', () => ({ BrandService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository', () => ({ SyncSettingsRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/credits.service', () => ({ CreditsService: class {} }));
+jest.mock('@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service', () => ({ ChannelStatsService: class {} }));
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => {
   // Two fake monitor platforms: "xhs" (paced, full capability) and "wb" (no search, no own posts).
   const monitor = (site: string, extra: Record<string, unknown> = {}) => ({
@@ -116,6 +117,7 @@ const setup = (
   };
   const brands = { promptFor: jest.fn(async () => BRAND) };
   const syncSettings = { get: jest.fn(async () => ({ ...DEFAULT_SYNC_SETTINGS, ...(opts.settings || {}) })) };
+  const channelStats = { storedOwnPosts: jest.fn(async (): Promise<any[] | null> => null) };
   const service = new MonitorService(
     repo as any,
     integrationService as any,
@@ -126,11 +128,12 @@ const setup = (
     plan as any,
     credits as any,
     brands as any,
-    syncSettings as any
+    syncSettings as any,
+    channelStats as any
   );
   const sleep = jest.fn(async (_ms: number) => undefined);
   (service as any).sleep = sleep;
-  return { service, repo, ai, notifications, posts, sleep, plan, credits, syncSettings };
+  return { service, repo, ai, notifications, posts, sleep, plan, credits, syncSettings, channelStats };
 };
 
 const target = (over: Record<string, unknown> = {}): any => ({
@@ -670,6 +673,22 @@ describe('竞品 VS', () => {
     expect(res.competitor).toEqual(expect.objectContaining({ name: '对手', posts: 1, engagementPerPost: 12 }));
     expect(res.own).toEqual(expect.objectContaining({ name: '我的号', posts: 1, avgLikes: 4 }));
     expect(res.ownError).toBeNull();
+    expect(res.ownSource).toBe('live');
+  });
+
+  it('reads our posts from the last collection when there is a recent one', async () => {
+    const { service, repo, channelStats } = setup();
+    repo.getTarget.mockResolvedValueOnce(target({ kind: 'ACCOUNT', title: '对手', platform: 'xhs' }));
+    channelStats.storedOwnPosts.mockResolvedValueOnce([
+      { externalId: 'm1', url: 'u1', title: '我们的爆款', likes: 40, comments: 5, views: 900, publishedAt: new Date() },
+    ]);
+    xhs.ownPosts.mockClear();
+    const res = await service.compare('o1', 't1', 'mine', 90);
+    expect(channelStats.storedOwnPosts).toHaveBeenCalledWith(expect.objectContaining({ id: 'mine' }), expect.any(Date));
+    expect(xhs.ownPosts).not.toHaveBeenCalled();
+    expect(res.ownSource).toBe('stored');
+    expect(res.own?.top[0]).toEqual(expect.objectContaining({ title: '我们的爆款', engagement: 45, engagementRate: 5 }));
+    expect(res.own?.viewsPerDay).toBe(10);
   });
 
   it('explains when our channel cannot be read, and 404s other targets', async () => {
@@ -816,6 +835,18 @@ describe('helpers', () => {
     expect(s.daily).toHaveLength(7);
     expect(s.daily[6]).toEqual({ date: '2026-09-29', posts: 1, engagement: 12 });
     expect(s.daily[4]).toEqual({ date: '2026-09-27', posts: 1, engagement: 20 });
-    expect(summarizePosts([], 30, now)).toEqual(expect.objectContaining({ posts: 0, engagementPerPost: 0, avgLikes: null }));
+    expect(summarizePosts([], 30, now)).toEqual(expect.objectContaining({ posts: 0, engagementPerPost: 0, avgLikes: null, viewsPerDay: null, top: [] }));
+  });
+
+  it('summarizePosts: views per day and the five posts with the most engagement', () => {
+    const now = new Date('2026-09-29T12:00:00+08:00');
+    const post = (n: number, likes: number, views?: number) => ({
+      externalId: `p${n}`, title: `帖${n}`, url: `https://x/${n}`, likes, comments: 1, views, publishedAt: new Date('2026-09-28T09:00:00+08:00'),
+    });
+    const s = summarizePosts([post(1, 10, 100), post(2, 50), post(3, 5, 400), post(4, 30), post(5, 1), post(6, 2), post(7, 99, 0)], 7, now);
+    expect(s.viewsPerDay).toBe(71.4);
+    expect(s.top.map((p) => p.externalId)).toEqual(['p7', 'p2', 'p4', 'p1', 'p3']);
+    expect(s.top[3]).toEqual(expect.objectContaining({ title: '帖1', url: 'https://x/1', engagement: 11, engagementRate: 11, views: 100 }));
+    expect(s.top[0].engagementRate).toBeNull();
   });
 });

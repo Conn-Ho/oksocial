@@ -3,54 +3,134 @@ import { randomBytes } from 'node:crypto';
 import dayjs from 'dayjs';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
-import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
-import { buildChannelReport, ChannelReport } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report';
+import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
+import {
+  buildPlatformReport,
+  buildPostRows,
+  chinaDate,
+  Granularity,
+  PlatformReport,
+  PostSortKey,
+  ReportChannel,
+  ReportRange,
+  resolveRange,
+  sortPostRows,
+} from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 
 export const REPORT_DAYS = [7, 30, 90] as const;
+// 帖文报告 looks back this far unless dates are given
+const POST_REPORT_DAYS = 30;
+const POST_PAGE_SIZE = 20;
+const BAD_RANGE = '时间范围不对：开始日期要早于结束日期，不能晚于今天，最长一年';
+// readings are loaded from this long before the previous period, so its start has one
+const BASELINE_MARGIN_MS = 86_400_000;
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-
-const num = (v: number | null) => (v === null ? '—' : v.toLocaleString('zh-CN'));
-const pct = (v: number | null) => (v === null ? '' : ` (${v > 0 ? '+' : ''}${v}%)`);
-
-/** Weekly report email body: KPIs with change and one row per channel. Pure. */
-export const renderWeeklyEmail = (orgName: string, report: ChannelReport, url: string) => {
-  const t = report.totals;
-  const kpis = [
-    ['总粉丝', t.followers],
-    ['发布数', t.posts],
-    ['曝光/播放', t.views],
-    ['互动', t.engagement],
-  ] as const;
-  const rows = report.channels
-    .map(
-      (c) =>
-        `<tr><td style="padding:6px 10px">${escapeHtml(c.name)}</td><td style="padding:6px 10px;text-align:right">${num(c.followers)}</td><td style="padding:6px 10px;text-align:right">${num(c.netFollowers)}</td><td style="padding:6px 10px;text-align:right">${num(c.posts)}</td><td style="padding:6px 10px;text-align:right">${num(c.engagement)}</td></tr>`
-    )
-    .join('');
-  return `<h2 style="margin:0 0 12px">${escapeHtml(orgName)} · 近 7 天运营周报</h2>
-<p style="margin:0 0 16px">${kpis.map(([label, k]) => `<b>${label}</b> ${num(k.value)}${pct(k.change)}`).join(' · ')}</p>
-<table style="border-collapse:collapse;font-size:14px"><thead><tr><th style="padding:6px 10px;text-align:left">账号</th><th style="padding:6px 10px">粉丝</th><th style="padding:6px 10px">净增</th><th style="padding:6px 10px">发布</th><th style="padding:6px 10px">互动</th></tr></thead><tbody>${rows}</tbody></table>
-<p style="margin-top:16px"><a href="${url}">打开完整报告</a></p>`;
+export type ReportFilter = { integrationId?: string; platform?: string };
+export type ReportQuery = ReportFilter & {
+  days?: number;
+  from?: string;
+  to?: string;
+  granularity?: Granularity;
 };
+export type PostReportQuery = ReportQuery & {
+  sort?: PostSortKey;
+  order?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+};
+
+/** What a share link shows: the report without our ids (accounts and posts are numbered instead). */
+const withoutIds = (report: PlatformReport) => ({
+  ...report,
+  channels: report.channels.map((c, i) => ({ ...c, id: String(i + 1) })),
+  topPosts: report.topPosts.map((p, i) => ({
+    key: String(i + 1),
+    title: p.title,
+    url: p.url,
+    channelName: p.channelName,
+    channelPicture: p.channelPicture,
+    providerIdentifier: p.providerIdentifier,
+    publishedAt: p.publishedAt,
+    views: p.views,
+    likes: p.likes,
+    comments: p.comments,
+    shares: p.shares,
+    collects: p.collects,
+    engagement: p.engagement,
+    engagementRate: p.engagementRate,
+  })),
+});
+
+const filterChannels = <T extends ReportChannel>(channels: T[], filter: ReportFilter) =>
+  channels.filter(
+    (c) =>
+      (!filter.integrationId || c.id === filter.integrationId) &&
+      (!filter.platform || c.providerIdentifier === filter.platform)
+  );
 
 @Injectable()
 export class ReportService {
   constructor(
     private _repository: ChannelStatsRepository,
-    private _notificationService: NotificationService,
-    private _planService: PlanService
+    private _planService: PlanService,
+    private _channelStats: ChannelStatsService
   ) {}
 
-  async overview(orgId: string, days: number) {
-    const since = dayjs().subtract(days * 2, 'day').toDate();
-    const [channels, snapshots] = await Promise.all([
-      this._repository.orgChannels(orgId),
-      this._repository.snapshotsSince(orgId, since),
+  private range(query: ReportQuery, days?: number) {
+    const range = resolveRange({ ...query, days: query.days ?? days });
+    if (!range) {
+      throw new HttpException(BAD_RANGE, 400);
+    }
+    return range;
+  }
+
+  /** 平台报告 of a preset (7 / 30 / 90 days) or custom range, one account or platform, or all. */
+  async overview(orgId: string, query: ReportQuery = {}) {
+    return this.report(orgId, this.range(query), query);
+  }
+
+  /** The platform report of a resolved range (also what the AI 周报 is written from). */
+  async report(orgId: string, range: ReportRange, filter: ReportFilter = {}) {
+    const channels = filterChannels(await this._repository.orgChannels(orgId), filter);
+    const previousFrom = new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime()));
+    const [snapshots, posts] = await Promise.all([
+      this._repository.snapshotsSince(orgId, new Date(previousFrom.getTime() - BASELINE_MARGIN_MS), range.to),
+      this._repository.postMetrics(orgId, range.from, range.to, channels.map((c) => c.id)),
     ]);
-    return buildChannelReport(channels, snapshots, days);
+    return buildPlatformReport(channels, snapshots, range, posts);
+  }
+
+  /**
+   * 帖文报告: our channels' posts of a period with their latest numbers (and the posts published
+   * through oksocial whose platform shows none), sorted by any column, a page at a time.
+   */
+  async posts(orgId: string, query: PostReportQuery) {
+    const range = this.range(query, POST_REPORT_DAYS);
+    const channels = filterChannels(await this._repository.orgChannels(orgId), query);
+    const ids = channels.map((c) => c.id);
+    const [metrics, published] = await Promise.all([
+      this._repository.postMetrics(orgId, range.from, range.to, ids),
+      this._repository.publishedPosts(orgId, range.from, range.to, ids),
+    ]);
+    const rows = sortPostRows(
+      buildPostRows(channels, metrics, published, (identifier) => this._channelStats.hasPostStats(identifier)),
+      query.sort ?? 'publishedAt',
+      query.order ?? 'desc'
+    );
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? POST_PAGE_SIZE;
+    return {
+      from: range.from,
+      to: range.to,
+      fromDate: chinaDate(range.from.getTime()),
+      toDate: chinaDate(range.to.getTime() - 1),
+      total: rows.length,
+      page,
+      pageSize,
+      rows: rows.slice((page - 1) * pageSize, page * pageSize),
+      channels: channels.map((c) => ({ ...c, perPost: this._channelStats.hasPostStats(c.providerIdentifier) })),
+    };
   }
 
   private shareUrl(token: string) {
@@ -96,7 +176,7 @@ export class ReportService {
     }
     return {
       organization: share.organization.name,
-      report: await this.overview(share.organizationId, share.days),
+      report: withoutIds(await this.overview(share.organizationId, { days: share.days })),
     };
   }
 
@@ -104,37 +184,11 @@ export class ReportService {
     return this._repository.getWeeklyEmail(orgId);
   }
 
-  async setWeeklyEmail(orgId: string, enabled: boolean) {
+  /** The weekly email on or off, and whether it carries an AI 周报 (charged per week written). */
+  async setWeeklyEmail(orgId: string, enabled: boolean, ai?: boolean) {
     if (enabled) {
       await this._planService.assertFeature(orgId, 'weekly_email');
     }
-    return this._repository.setWeeklyEmail(orgId, enabled);
-  }
-
-  /** Weekly email to admins and managers of organizations that opted in. */
-  async sendWeeklyReports() {
-    const orgs = await this._repository.orgsWithSnapshots(dayjs().subtract(8, 'day').toDate());
-    let sent = 0;
-    for (const { organizationId } of orgs) {
-      // opted in, then moved to a plan without the weekly email
-      if (!(await this._planService.hasFeature(organizationId, 'weekly_email'))) {
-        continue;
-      }
-      const recipients = await this._repository.reviewersOf(organizationId);
-      if (!recipients.length) {
-        continue;
-      }
-      const orgName = recipients[0].organization.name;
-      const html = renderWeeklyEmail(
-        orgName,
-        await this.overview(organizationId, 7),
-        `${process.env.FRONTEND_URL || ''}/reports`
-      );
-      for (const r of recipients) {
-        await this._notificationService.sendEmail(r.user.email, `【oksocial 周报】${orgName}`, html);
-        sent += 1;
-      }
-    }
-    return { organizations: orgs.length, sent };
+    return this._repository.setWeeklyEmail(orgId, enabled, ai);
   }
 }

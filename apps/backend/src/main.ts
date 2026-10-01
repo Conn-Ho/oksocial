@@ -34,6 +34,8 @@ async function start() {
         'x-postiz-org',
         'x-postiz-include-deleted',
         'x-copilotkit-runtime-client-gql-version',
+        // the password of a shared report (/public/reports/:token)
+        'x-report-password',
       ],
       exposedHeaders: [
         'reload',

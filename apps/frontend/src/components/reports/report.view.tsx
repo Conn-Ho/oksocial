@@ -1,95 +1,192 @@
 'use client';
 
-import React, { FC } from 'react';
+import React, { FC, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
+import { MonitorChart } from '@gitroom/frontend/components/monitor/monitor.chart';
+import {
+  ChannelRow,
+  fmt,
+  KpiKey,
+  KpiValue,
+  percent,
+  PlatformReport,
+  signed,
+  TopPost,
+} from '@gitroom/frontend/components/reports/reports.hooks';
+import { Card, Change, ChannelCell, Empty, ScrollRegion } from '@gitroom/frontend/components/reports/report.ui';
 
-export type KpiValue = { value: number | null; previous: number | null; change: number | null };
-export type ChannelRow = {
-  id: string;
-  name: string;
-  picture?: string | null;
-  providerIdentifier: string;
-  followers: number | null;
-  netFollowers: number | null;
-  posts: number | null;
-  views: number | null;
-  engagement: number | null;
-  engagementRate: number | null;
-  lastCapturedAt: string | null;
-};
-export type ChannelReport = {
-  days: number;
-  generatedAt: string;
-  totals: { followers: KpiValue; posts: KpiValue; views: KpiValue; engagement: KpiValue };
-  channels: ChannelRow[];
-};
+export const KPIS: Array<{ key: KpiKey; label: string; chart: 'line' | 'bar'; color: string }> = [
+  { key: 'followers', label: '总粉丝', chart: 'line', color: 'rgb(29, 155, 240)' },
+  { key: 'netFollowers', label: '净增粉', chart: 'bar', color: 'rgb(50, 180, 120)' },
+  { key: 'posts', label: '发布数', chart: 'bar', color: 'rgb(120, 120, 140)' },
+  { key: 'views', label: '曝光', chart: 'bar', color: 'rgb(29, 155, 240)' },
+  { key: 'engagement', label: '互动', chart: 'bar', color: 'rgb(245, 140, 35)' },
+  { key: 'engagementRate', label: '互动率', chart: 'line', color: 'rgb(245, 140, 35)' },
+];
 
-const fmt = (v: number | null) => (v === null ? '—' : v.toLocaleString('zh-CN'));
+const show = (key: KpiKey, v: number | null) => (key === 'engagementRate' ? percent(v) : fmt(v));
 
-const Kpi: FC<{ label: string; kpi: KpiValue; hint: string }> = ({ label, kpi, hint }) => (
-  <div className="rounded-[10px] bg-newTableHeader p-[14px] sm:p-[18px] flex flex-col gap-[6px] min-w-0">
-    <span className="text-[13px] text-textColor/60">{label}</span>
-    <span className="text-[22px] sm:text-[28px] font-semibold leading-none tabular-nums">{fmt(kpi.value)}</span>
-    <span className="text-[12px] text-textColor/50">
-      {kpi.change === null ? (
-        hint
-      ) : (
-        <span className={clsx(kpi.change > 0 ? 'text-green-400' : kpi.change < 0 ? 'text-red-400' : '')}>
-          {kpi.change > 0 ? '▲' : kpi.change < 0 ? '▼' : '■'} {Math.abs(kpi.change)}% 较上期
-        </span>
-      )}
+const KpiTile: FC<{ label: string; kpiKey: KpiKey; kpi: KpiValue; selected: boolean; onSelect: () => void }> = ({
+  label,
+  kpiKey,
+  kpi,
+  selected,
+  onSelect,
+}) => (
+  <button
+    type="button"
+    aria-pressed={selected}
+    onClick={onSelect}
+    className={clsx(
+      'text-start rounded-[10px] border p-[14px] flex flex-col gap-[6px] min-w-0 transition-colors duration-150',
+      'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-btnPrimary',
+      selected ? 'border-textColor/25 bg-newTableHeader' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover'
+    )}
+  >
+    <span className="text-[13px] text-textItemBlur">{label}</span>
+    <span className="text-[22px] md:text-[26px] font-[600] leading-none tabular-nums truncate">{show(kpiKey, kpi.value)}</span>
+    <span className="flex items-center gap-[6px] text-[12px] text-textItemBlur min-w-0">
+      <span className="truncate tabular-nums">上期 {show(kpiKey, kpi.previous)}</span>
+      <Change value={kpi.change} unit={kpiKey === 'engagementRate' ? ' 个百分点' : '%'} />
     </span>
-  </div>
+  </button>
 );
 
-/** KPI cards and the per-channel table of a channel report (used logged-in and on share links). */
-export const ReportView: FC<{ report: ChannelReport }> = ({ report }) => (
-  <div className="flex flex-col gap-[16px]">
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-[12px]">
-      <Kpi label="总粉丝" kpi={report.totals.followers} hint="当前合计" />
-      <Kpi label="发布数" kpi={report.totals.posts} hint={`近 ${report.days} 天`} />
-      <Kpi label="曝光/播放" kpi={report.totals.views} hint={`近 ${report.days} 天新增`} />
-      <Kpi label="互动" kpi={report.totals.engagement} hint="点赞+评论+分享+收藏" />
-    </div>
-    <div className="overflow-x-auto rounded-[10px] border border-newTableBorder">
-      <table className="w-full text-[14px] min-w-[640px]">
-        <thead className="bg-newTableHeader text-textColor/70">
-          <tr>
-            <th className="p-[10px] text-start font-normal">账号</th>
-            <th className="p-[10px] text-end font-normal">粉丝</th>
-            <th className="p-[10px] text-end font-normal">净增粉</th>
-            <th className="p-[10px] text-end font-normal">发布数</th>
-            <th className="p-[10px] text-end font-normal">曝光/播放</th>
-            <th className="p-[10px] text-end font-normal">互动</th>
-            <th className="p-[10px] text-end font-normal">互动率</th>
-          </tr>
-        </thead>
-        <tbody>
-          {report.channels.map((c) => (
-            <tr key={c.id} className="border-t border-newTableBorder">
-              <td className="p-[10px]">
-                <span className="flex items-center gap-[8px]">
-                  <img src={`/icons/platforms/${c.providerIdentifier}.png`} alt="" className="w-[18px] h-[18px] rounded-full" />
-                  <span className="truncate">{c.name}</span>
-                  {!c.lastCapturedAt && <span className="text-[12px] text-textColor/40">暂无数据</span>}
-                </span>
-              </td>
-              <td className="p-[10px] text-end tabular-nums">{fmt(c.followers)}</td>
-              <td className={clsx('p-[10px] text-end tabular-nums', (c.netFollowers ?? 0) > 0 && 'text-green-400', (c.netFollowers ?? 0) < 0 && 'text-red-400')}>
-                {c.netFollowers === null ? '—' : `${c.netFollowers > 0 ? '+' : ''}${c.netFollowers.toLocaleString('zh-CN')}`}
-              </td>
-              <td className="p-[10px] text-end tabular-nums">{fmt(c.posts)}</td>
-              <td className="p-[10px] text-end tabular-nums">{fmt(c.views)}</td>
-              <td className="p-[10px] text-end tabular-nums">{fmt(c.engagement)}</td>
-              <td className="p-[10px] text-end tabular-nums">{c.engagementRate === null ? '—' : `${c.engagementRate}%`}</td>
-            </tr>
+const bucketLabel = (date: string, granularity: PlatformReport['granularity']) =>
+  granularity === 'month' ? date : granularity === 'week' ? `${dayjs(date).format('MM-DD')} 周` : dayjs(date).format('MM-DD');
+
+const HEADERS = ['总粉丝', '净增长', '增长率', '发布', '曝光', '互动', '互动率'];
+
+const AccountsTable: FC<{ channels: ChannelRow[] }> = ({ channels }) => (
+  <ScrollRegion label="账号详情">
+    <table className="w-full text-[14px] min-w-[760px]">
+      <thead className="text-[12px] text-textItemBlur">
+        <tr>
+          <th scope="col" className="px-[12px] py-[8px] text-start font-normal">
+            账号
+          </th>
+          {HEADERS.map((h) => (
+            <th key={h} scope="col" className="px-[12px] py-[8px] text-end font-normal">
+              {h}
+            </th>
           ))}
-        </tbody>
-      </table>
-    </div>
-    <p className="text-[12px] text-textColor/40">
-      数据每 3 小时采集一次 · 生成于 {dayjs(report.generatedAt).format('YYYY-MM-DD HH:mm')}
-    </p>
-  </div>
+        </tr>
+      </thead>
+      <tbody>
+        {channels.map((c) => (
+          <tr key={c.id} className="border-t border-newBorder">
+            <td className="px-[12px] py-[10px] max-w-[240px]">
+              <ChannelCell
+                name={c.name}
+                picture={c.picture}
+                providerIdentifier={c.providerIdentifier}
+                note={!c.lastCapturedAt && <span className="shrink-0 text-[12px] text-textItemBlur">暂无数据</span>}
+              />
+            </td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{fmt(c.followers)}</td>
+            <td className={clsx('px-[12px] py-[10px] text-end tabular-nums', (c.netFollowers ?? 0) > 0 && 'text-green-500', (c.netFollowers ?? 0) < 0 && 'text-red-500')}>
+              {signed(c.netFollowers)}
+            </td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{c.growthRate === null ? '—' : signed(c.growthRate, '%')}</td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{fmt(c.posts)}</td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{fmt(c.views)}</td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{fmt(c.engagement)}</td>
+            <td className="px-[12px] py-[10px] text-end tabular-nums">{percent(c.engagementRate)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </ScrollRegion>
 );
+
+/** Ranked posts: title, account, and their views / engagement / rate (stacked on phones). */
+export const TopPosts: FC<{ posts: TopPost[] }> = ({ posts }) => (
+  <ol className="flex flex-col">
+    {posts.map((p, i) => (
+      <li key={p.key} className="flex items-start sm:items-center gap-[12px] py-[10px] border-t border-newBorder first:border-t-0">
+        <span className={clsx('w-[22px] shrink-0 text-center tabular-nums text-[14px] leading-[22px]', i < 3 ? 'font-[700] text-textColor' : 'text-textItemBlur')}>{i + 1}</span>
+        <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-[8px] sm:gap-[12px]">
+          <div className="flex-1 min-w-0 flex flex-col gap-[4px]">
+            {p.url ? (
+              <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-[14px] truncate hover:underline">
+                {p.title || '（无标题）'}
+              </a>
+            ) : (
+              <span className="text-[14px] truncate">{p.title || '（无标题）'}</span>
+            )}
+            <span className="flex items-center gap-[8px] text-[12px] text-textItemBlur min-w-0">
+              <ChannelCell name={p.channelName} picture={p.channelPicture} providerIdentifier={p.providerIdentifier} />
+              {p.publishedAt && <span className="shrink-0 tabular-nums">{dayjs(p.publishedAt).format('MM-DD HH:mm')}</span>}
+            </span>
+          </div>
+          <dl className="grid grid-cols-3 gap-x-[14px] sm:text-end shrink-0">
+            <div className="flex flex-col">
+              <dt className="text-[11px] text-textItemBlur">曝光</dt>
+              <dd className="text-[14px] tabular-nums">{fmt(p.views)}</dd>
+            </div>
+            <div className="flex flex-col">
+              <dt className="text-[11px] text-textItemBlur">互动</dt>
+              <dd className="text-[14px] tabular-nums font-[600]">{fmt(p.engagement)}</dd>
+            </div>
+            <div className="flex flex-col">
+              <dt className="text-[11px] text-textItemBlur">互动率</dt>
+              <dd className="text-[14px] tabular-nums">{percent(p.engagementRate)}</dd>
+            </div>
+          </dl>
+        </div>
+      </li>
+    ))}
+  </ol>
+);
+
+/** 平台报告 body: KPI tiles (each opens its trend), 账号详情 and 帖文 Top 8. Logged in and on share links. */
+export const ReportView: FC<{ report: PlatformReport; shared?: boolean }> = ({ report, shared }) => {
+  const [metric, setMetric] = useState<KpiKey>('followers');
+  const current = KPIS.find((k) => k.key === metric)!;
+  const labels = useMemo(() => report.series.map((p) => bucketLabel(p.date, report.granularity)), [report]);
+  const series = useMemo(
+    () => [{ label: current.label, color: current.color, data: report.series.map((p) => p[metric]) }],
+    [report, metric]
+  );
+  const hasTrend = report.series.some((p) => p[metric] !== null);
+
+  return (
+    <div className="flex flex-col gap-[16px]">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-[10px]">
+        {KPIS.map((k) => (
+          <KpiTile key={k.key} label={k.label} kpiKey={k.key} kpi={report.totals[k.key]} selected={metric === k.key} onSelect={() => setMetric(k.key)} />
+        ))}
+      </div>
+
+      <Card title={`${current.label}趋势`} labelledBy="report-trend">
+        {hasTrend ? (
+          <div className="h-[240px]">
+            <MonitorChart type={current.chart} labels={labels} series={series} ariaLabel={`${current.label}趋势`} />
+          </div>
+        ) : (
+          <Empty>
+            这段时间还没有{current.label}数据。账号数据每 3 小时采集一次{shared ? '。' : '，也可以点「立即更新」马上读取。'}
+          </Empty>
+        )}
+      </Card>
+
+      <Card title="账号详情" labelledBy="report-accounts">
+        {report.channels.length ? <AccountsTable channels={report.channels} /> : <Empty>还没有连接账号。</Empty>}
+      </Card>
+
+      <Card title="帖文 Top 8" labelledBy="report-top-posts" actions={<span className="text-[12px] text-textItemBlur">按互动排序</span>}>
+        {report.topPosts.length ? (
+          <TopPosts posts={report.topPosts} />
+        ) : (
+          <Empty>这段时间还没有帖文数据。能读取单帖数据的平台会在每次采集时记录帖文的曝光和互动。</Empty>
+        )}
+      </Card>
+
+      <p className="text-[12px] text-textItemBlur tabular-nums">
+        {report.fromDate} — {report.toDate} · 上期为之前同样长的一段 · 数据每 3 小时采集一次 · 生成于{' '}
+        {dayjs(report.generatedAt).format('YYYY-MM-DD HH:mm')}
+      </p>
+    </div>
+  );
+};

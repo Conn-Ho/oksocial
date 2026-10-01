@@ -36,6 +36,7 @@ import {
   SyncSettingsService,
   SyncSettingsValues,
 } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.service';
+import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 
 dayjs.extend(utc);
 
@@ -147,15 +148,24 @@ export const freshPosts = <T extends { publishedAt?: Date | null }>(added: T[], 
       )
     : [];
 
-type Countable = MonitorMetrics & { publishedAt?: Date | null; createdAt?: Date };
+type Countable = MonitorMetrics & {
+  publishedAt?: Date | null;
+  createdAt?: Date;
+  externalId?: string | null;
+  title?: string | null;
+  content?: string | null;
+  url?: string | null;
+};
 const engagementOf = (p: MonitorMetrics) =>
   (p.likes ?? 0) + (p.comments ?? 0) + (p.shares ?? 0) + (p.collects ?? 0);
 const round1 = (n: number) => Math.round(n * 10) / 10;
+// 互动帖文 Top N of each side
+const VS_TOP_POSTS = 5;
 
 /**
  * 竞品 VS numbers for one side: posts in the last `days` days (by publish date, else first seen),
- * posts per day, averages per post (null when the platform shows none of that metric) and a
- * per-day series. Pure.
+ * posts, views and engagement per day, averages per post (null when the platform shows none of
+ * that metric), a per-day series and the posts with the most engagement. Pure.
  */
 export const summarizePosts = (posts: Countable[], days: number, now = new Date()) => {
   const since = now.getTime() - days * DAY_MS;
@@ -173,9 +183,27 @@ export const summarizePosts = (posts: Countable[], days: number, now = new Date(
     const sameDay = inWindow.filter((p) => dayjs(p.publishedAt ?? p.createdAt).format('YYYY-MM-DD') === date);
     return { date, posts: sameDay.length, engagement: sameDay.reduce((sum, p) => sum + engagementOf(p), 0) };
   });
+  const withViews = inWindow.filter((p) => p.views !== null && p.views !== undefined);
+  const top = [...inWindow]
+    .sort((a, b) => engagementOf(b) - engagementOf(a))
+    .slice(0, VS_TOP_POSTS)
+    .map((p) => ({
+      externalId: p.externalId ?? null,
+      title: (p.title || p.content || '').slice(0, 80),
+      url: p.url ?? null,
+      publishedAt: p.publishedAt ?? p.createdAt ?? null,
+      views: p.views ?? null,
+      likes: p.likes ?? null,
+      comments: p.comments ?? null,
+      shares: p.shares ?? null,
+      collects: p.collects ?? null,
+      engagement: engagementOf(p),
+      engagementRate: p.views ? round1((engagementOf(p) / p.views) * 100) : null,
+    }));
   return {
     posts: inWindow.length,
     postsPerDay: round1(inWindow.length / days),
+    viewsPerDay: withViews.length ? round1(withViews.reduce((sum, p) => sum + (p.views as number), 0) / days) : null,
     avgViews: average('views'),
     avgLikes: average('likes'),
     avgComments: average('comments'),
@@ -184,6 +212,7 @@ export const summarizePosts = (posts: Countable[], days: number, now = new Date(
     engagementPerPost: inWindow.length ? round1(engagement / inWindow.length) : 0,
     engagementPerDay: round1(engagement / days),
     daily,
+    top,
   };
 };
 
@@ -199,7 +228,8 @@ export class MonitorService implements OnModuleInit {
     private _planService: PlanService,
     private _credits: CreditsService,
     private _brands: BrandService,
-    private _syncSettings: SyncSettingsService
+    private _syncSettings: SyncSettingsService,
+    private _channelStats: ChannelStatsService
   ) {}
 
   onModuleInit() {
@@ -734,16 +764,22 @@ export class MonitorService implements OnModuleInit {
   }
 
   /**
-   * Our channel's recent posts for 竞品 VS, read live through the channel's browser.
-   * TODO(analytics): the analytics module (ChannelStatsService) samples account totals only; once it
-   * also keeps per-post numbers of our channels, read them from there instead of this live read.
+   * Our channel's posts for 竞品 VS: what the last channel collection read (帖文报告) when it is
+   * recent, else read live through the channel's browser.
    */
-  private async ownChannelPosts(integration: Integration) {
+  private async ownChannelPosts(integration: Integration, since: Date) {
+    const stored = await this._channelStats.storedOwnPosts(integration, since);
+    if (stored) {
+      return { posts: stored, source: 'stored' as const };
+    }
     const provider = this.provider(integration.providerIdentifier);
     if (!provider.monitor?.ownPosts) {
       throw new HttpException(`${provider.name}暂不支持读取自己账号的帖子`, 400);
     }
-    return provider.monitor.ownPosts(integration.token, integration, OWN_POSTS_PER_READ);
+    return {
+      posts: await provider.monitor.ownPosts(integration.token, integration, OWN_POSTS_PER_READ),
+      source: 'live' as const,
+    };
   }
 
   async compare(orgId: string, targetId: string, integrationId: string, days: number) {
@@ -756,11 +792,15 @@ export class MonitorService implements OnModuleInit {
       throw new HttpException('账号不存在或已停用', 404);
     }
     const now = new Date();
-    const competitorPosts = await this._repository.postsSince(targetId, new Date(now.getTime() - days * DAY_MS));
+    const since = new Date(now.getTime() - days * DAY_MS);
+    const competitorPosts = await this._repository.postsSince(targetId, since);
     let own: ReturnType<typeof summarizePosts> | null = null;
     let ownError: string | null = null;
+    let ownSource: 'stored' | 'live' | null = null;
     try {
-      own = summarizePosts(await this.ownChannelPosts(integration), days, now);
+      const read = await this.ownChannelPosts(integration, since);
+      own = summarizePosts(read.posts, days, now);
+      ownSource = read.source;
     } catch (err) {
       ownError = (err as Error)?.message || '读取失败';
     }
@@ -769,6 +809,7 @@ export class MonitorService implements OnModuleInit {
       competitor: { name: target.title || target.query, platform: target.platform, ...summarizePosts(competitorPosts, days, now) },
       own: own ? { name: integration.name, platform: integration.providerIdentifier, ...own } : null,
       ownError,
+      ownSource,
     };
   }
 

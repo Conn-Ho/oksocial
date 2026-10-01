@@ -86,6 +86,17 @@ describe('xiaohongshu provider on the simulator', () => {
     expect(stats.likes).toBeGreaterThan(0);
   });
 
+  it('帖文报告: every note with its numbers, and the same totals from them', async () => {
+    const posts = await p.postStats(slot);
+    expect(posts).toHaveLength(6);
+    expect(posts[0]).toMatchObject({ externalId: expect.stringMatching(/^[0-9a-f]{24}$/), views: expect.any(Number), likes: expect.any(Number) });
+    expect(posts[0].publishedAt).toBeInstanceOf(Date);
+    const runs = fleet.runs.length;
+    const stats = await p.stats(slot, integration(''), posts);
+    expect(stats).toMatchObject({ posts: 6, views: posts.reduce((sum, n) => sum + (n.views ?? 0), 0) });
+    expect(fleet.runs.slice(runs)).toEqual([['xhs2', 'me']]);
+  });
+
   it('inbox: comments, @mentions and DMs with stable ids, and new ones later', async () => {
     const first = itemsOf(await p.inbox.fetch(slot, integration('')));
     const kinds = new Set(first.map((i) => i.kind));
@@ -172,6 +183,9 @@ describe('weibo provider on the simulator', () => {
     const stats = await p.stats(slot, integration(uid));
     expect(stats).toMatchObject({ followers: expect.any(Number), posts: expect.any(Number) });
     expect(stats.likes).toBeGreaterThan(0);
+    const posts = await p.postStats(slot, integration(uid));
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts[0]).toMatchObject({ externalId: expect.any(String), likes: expect.any(Number) });
     const items = itemsOf(await p.inbox.fetch(slot, integration(uid)));
     expect(items.length).toBeGreaterThanOrEqual(5);
     expect(items.every((i) => i.kind === 'COMMENT' && i.threadId && i.threadUrl && i.platformTime)).toBe(true);
@@ -216,6 +230,9 @@ describe('douyin provider on the simulator', () => {
     expect(stats.views).toBeGreaterThan(0);
     const own = await p.monitor.ownPosts!(slot, integration(auth.id), 10);
     expect(own[0].publishedAt).toBeInstanceOf(Date);
+    const posts = await p.postStats(slot);
+    expect(posts[0]).toMatchObject({ externalId: own[0].externalId, views: expect.any(Number) });
+    expect((await p.stats(slot, integration(auth.id), posts)).views).toBe(posts.reduce((sum, v) => sum + (v.views ?? 0), 0));
     const { post } = await p.monitor.readPost(slot, p.monitor.parsePostUrl(own[0].url)!, 0);
     expect(post).toMatchObject({ externalId: own[0].externalId, views: expect.any(Number) });
     const analytics = await p.postAnalytics(auth.id, slot, own[0].externalId);
@@ -254,6 +271,9 @@ describe('x (browser) provider on the simulator', () => {
     const stats = await p.stats(slot, integration(handle));
     expect(stats.followers).toBeGreaterThan(0);
     expect(stats.posts).toBeGreaterThan(0);
+    const posts = await p.postStats(slot, integration(handle));
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts[0]).toMatchObject({ externalId: expect.stringMatching(/^\d+$/), likes: expect.any(Number) });
   });
 
   it('inbox keeps replies and mentions only, and answers with xq reply', async () => {

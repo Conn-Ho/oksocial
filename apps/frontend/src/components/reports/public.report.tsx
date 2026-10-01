@@ -1,20 +1,27 @@
 'use client';
 
 import React, { FC, useCallback, useEffect, useState } from 'react';
-import { ChannelReport, ReportView } from '@gitroom/frontend/components/reports/report.view';
+import { ReportView } from '@gitroom/frontend/components/reports/report.view';
+import { PlatformReport } from '@gitroom/frontend/components/reports/reports.hooks';
 
 /** Share-link view: no login; asks for the password when the link has one. */
 export const PublicReport: FC<{ backendUrl: string; token: string }> = ({ backendUrl, token }) => {
   const [state, setState] = useState<
-    { kind: 'loading' } | { kind: 'password'; wrong: boolean } | { kind: 'error'; message: string } | { kind: 'ok'; organization: string; report: ChannelReport }
+    { kind: 'loading' } | { kind: 'password'; wrong: boolean } | { kind: 'error'; message: string } | { kind: 'ok'; organization: string; report: PlatformReport }
   >({ kind: 'loading' });
   const [password, setPassword] = useState('');
 
   const load = useCallback(
     async (pw?: string) => {
-      const res = await fetch(`${backendUrl}/public/reports/${encodeURIComponent(token)}`, {
-        headers: pw ? { 'x-report-password': pw } : {},
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${backendUrl}/public/reports/${encodeURIComponent(token)}`, {
+          headers: pw ? { 'x-report-password': pw } : {},
+        });
+      } catch {
+        setState({ kind: 'error', message: '报告无法打开，请稍后再试' });
+        return;
+      }
       const body = await res.json().catch(() => ({}));
       if (res.status === 401) {
         setState({ kind: 'password', wrong: !!pw });
@@ -63,7 +70,7 @@ export const PublicReport: FC<{ backendUrl: string; token: string }> = ({ backen
               <h1 className="text-[26px] font-semibold">{state.organization} · 运营报告</h1>
               <p className="text-textColor/60 text-[14px]">近 {state.report.days} 天 · 由 oksocial 生成</p>
             </header>
-            <ReportView report={state.report} />
+            <ReportView report={state.report} shared={true} />
           </>
         )}
       </div>

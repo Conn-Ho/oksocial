@@ -50,7 +50,7 @@ describe('snapshotsToAnalytics', () => {
 });
 
 describe('ChannelStatsService', () => {
-  const setup = (stats?: jest.Mock) => {
+  const setup = (stats?: jest.Mock, extra: Record<string, unknown> = {}) => {
     const repo = {
       addSnapshot: jest.fn(async () => ({})),
       statChannels: jest.fn(async () => [
@@ -58,18 +58,113 @@ describe('ChannelStatsService', () => {
         { id: 'i2', organizationId: 'o1', providerIdentifier: 'xiaohongshu', token: 's2' },
       ]),
       series: jest.fn(async () => []),
+      savePostMetrics: jest.fn(async () => ({ added: 0, updated: 0 })),
+      audienceCapturedAt: jest.fn(async (): Promise<Date | null> => null),
+      saveAudience: jest.fn(async () => ({})),
+      orgChannels: jest.fn(async () => [
+        { id: 'i1', name: 'WenWen', providerIdentifier: 'xiaohongshu' },
+        { id: 'i3', name: '微博号', providerIdentifier: 'weibo' },
+      ]),
+      audiences: jest.fn(async () => [{ integrationId: 'i1', basis: 'VIEWERS', gender: [{ label: '女', share: 80 }] }]),
+      lastSnapshotAt: jest.fn(async (): Promise<Date | null> => new Date()),
+      recentPostMetrics: jest.fn(async () => [
+        { externalId: 'n1', url: 'u1', title: 'T', publishedAt: new Date('2026-09-28T00:00:00Z'), firstSeenAt: new Date('2026-09-28T00:00:00Z'), views: 10, likes: 2, comments: null, shares: null, collects: 1 },
+      ]),
     };
-    const manager = { getSocialIntegration: jest.fn(() => (stats ? { stats } : {})) };
+    const manager = {
+      getSocialIntegration: jest.fn((id: string) => (id === 'weibo' ? { stats } : stats ? { stats, ...extra } : {})),
+    };
     return { service: new ChannelStatsService(repo as any, manager as any), repo, manager };
   };
+  const xhs = { id: 'i1', organizationId: 'o1', providerIdentifier: 'xiaohongshu', token: 's1' } as any;
 
   it('collects a snapshot through the provider', async () => {
     const stats = jest.fn(async () => ({ followers: 283 }));
     const { service, repo } = setup(stats);
-    const integration = { id: 'i1', organizationId: 'o1', providerIdentifier: 'xiaohongshu', token: 's1' } as any;
-    expect(await service.collect(integration)).toEqual({ followers: 283 });
-    expect(stats).toHaveBeenCalledWith('s1', integration);
+    expect(await service.collect(xhs)).toEqual({ followers: 283 });
+    expect(stats).toHaveBeenCalledWith('s1', xhs, undefined);
     expect(repo.addSnapshot).toHaveBeenCalledWith('o1', 'i1', { followers: 283 });
+    expect(repo.savePostMetrics).not.toHaveBeenCalled();
+  });
+
+  it('reads the posts once: their numbers are kept and the totals are summed from them', async () => {
+    const posts = [{ externalId: 'n1', url: 'u', likes: 3 }];
+    const postStats = jest.fn(async () => posts);
+    const stats = jest.fn(async () => ({ followers: 1, likes: 3 }));
+    const { service, repo } = setup(stats, { postStats });
+    await service.collect(xhs);
+    expect(stats).toHaveBeenCalledWith('s1', xhs, posts);
+    expect(repo.savePostMetrics).toHaveBeenCalledWith('o1', 'i1', posts);
+  });
+
+  it('a post read the platform pushed back on (or a logout) fails the channel: no second read', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const { service, repo } = setup(stats, {
+      postStats: jest.fn(async () => Promise.reject(new Error('平台风控拦截了这次操作：请完成滑块验证'))),
+    });
+    await expect(service.collect(xhs)).rejects.toThrow('风控');
+    expect(stats).not.toHaveBeenCalled();
+    expect(repo.addSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('any other failed post read still records the totals', async () => {
+    const stats = jest.fn(async () => ({ followers: 7 }));
+    const { service, repo } = setup(stats, { postStats: jest.fn(async () => Promise.reject(new Error('xweb TIMEOUT: page load'))) });
+    expect(await service.collect(xhs)).toEqual({ followers: 7 });
+    expect(stats).toHaveBeenCalledWith('s1', xhs, undefined);
+    expect(repo.addSnapshot).toHaveBeenCalledWith('o1', 'i1', { followers: 7 });
+    expect(repo.savePostMetrics).not.toHaveBeenCalled();
+  });
+
+  it('the audience is read at most daily, on the scheduled collection, and never fails it', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const posts = [{ externalId: 'n1', url: 'u' }];
+    const audience = jest.fn(async () => ({ basis: 'VIEWERS', gender: [{ label: '女', share: 70 }] }));
+    const { service, repo } = setup(stats, { postStats: jest.fn(async () => posts), audience });
+    await service.collect(xhs);
+    expect(audience).not.toHaveBeenCalled();
+    await service.collect(xhs, true);
+    expect(audience).toHaveBeenCalledWith('s1', xhs, posts);
+    expect(repo.saveAudience).toHaveBeenCalledWith('o1', 'i1', { basis: 'VIEWERS', gender: [{ label: '女', share: 70 }] });
+    repo.audienceCapturedAt.mockResolvedValueOnce(new Date(Date.now() - 3600_000));
+    await service.collect(xhs, true);
+    expect(audience).toHaveBeenCalledTimes(1);
+    repo.audienceCapturedAt.mockResolvedValueOnce(new Date(Date.now() - 25 * 3600_000));
+    audience.mockRejectedValueOnce(new Error('page timeout'));
+    await expect(service.collect({ ...xhs, id: 'i9' }, true)).resolves.toEqual({ followers: 1 });
+  });
+
+  it('an audience that came back empty or failed is not tried again the same day', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const audience = jest.fn(async () => null);
+    const { service } = setup(stats, { audience });
+    await service.collect(xhs, true);
+    await service.collect(xhs, true);
+    expect(audience).toHaveBeenCalledTimes(1);
+    audience.mockRejectedValueOnce(new Error('boom'));
+    await service.collect({ ...xhs, id: 'i2' }, true);
+    await service.collect({ ...xhs, id: 'i2' }, true);
+    expect(audience).toHaveBeenCalledTimes(2);
+  });
+
+  it('受众分析 lists every channel with what its platform can show', async () => {
+    const { service } = setup(jest.fn(), { audience: jest.fn() });
+    const rows = await service.audience('o1');
+    expect(rows).toEqual([
+      expect.objectContaining({ channel: expect.objectContaining({ id: 'i1' }), supported: true, audience: expect.objectContaining({ basis: 'VIEWERS' }) }),
+      expect.objectContaining({ channel: expect.objectContaining({ id: 'i3' }), supported: false, audience: null }),
+    ]);
+  });
+
+  it('own posts for 竞品 VS come from the last collection when it is recent', async () => {
+    const { service, repo } = setup(jest.fn(), { postStats: jest.fn() });
+    const since = new Date('2026-09-01T00:00:00Z');
+    const posts = await service.storedOwnPosts(xhs, since);
+    expect(repo.recentPostMetrics).toHaveBeenCalledWith('i1', since);
+    expect(posts).toEqual([expect.objectContaining({ externalId: 'n1', likes: 2, collects: 1, publishedAt: new Date('2026-09-28T00:00:00Z') })]);
+    repo.lastSnapshotAt.mockResolvedValueOnce(new Date(Date.now() - 2 * 86400_000));
+    expect(await service.storedOwnPosts(xhs, since)).toBeNull();
+    expect(await setup(jest.fn()).service.storedOwnPosts(xhs, since)).toBeNull();
   });
 
   it('collectAll asks only stats providers and survives a failing channel', async () => {
@@ -77,6 +172,16 @@ describe('ChannelStatsService', () => {
     const { service, repo } = setup(stats);
     expect(await service.collectAll()).toEqual({ channels: 2, collected: 1 });
     expect(repo.statChannels).toHaveBeenCalledWith(['xiaohongshu', 'weibo']);
+  });
+
+  it('the scheduled collection reads audiences, 立即更新 does not', async () => {
+    const stats = jest.fn(async () => ({ followers: 1 }));
+    const audience = jest.fn(async () => null);
+    const { service } = setup(stats, { audience });
+    await service.collectOrg('o9');
+    expect(audience).not.toHaveBeenCalled();
+    await service.collectAll();
+    expect(audience).toHaveBeenCalledTimes(2);
   });
 
   it('立即更新 collects only that team, at most every 10 minutes per team', async () => {

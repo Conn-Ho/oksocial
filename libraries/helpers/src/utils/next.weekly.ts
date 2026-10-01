@@ -10,3 +10,12 @@ export const msUntilNextMondayNine = (now: number) => {
     CHINA_OFFSET_MS;
   return target > now ? target - now : target + 7 * DAY_MS - now;
 };
+
+/** The last complete Monday 00:00 - Monday 00:00 week (China time) before `now`. Pure. */
+export const lastFullWeek = (now: number) => {
+  const china = new Date(now + CHINA_OFFSET_MS);
+  const sinceMonday = (china.getUTCDay() + 6) % 7;
+  const thisMonday =
+    Date.UTC(china.getUTCFullYear(), china.getUTCMonth(), china.getUTCDate() - sinceMonday) - CHINA_OFFSET_MS;
+  return { start: new Date(thisMonday - 7 * DAY_MS), end: new Date(thisMonday) };
+};

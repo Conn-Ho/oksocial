@@ -51,6 +51,9 @@ import { InboxAiService } from '@gitroom/nestjs-libraries/inbox/inbox.ai.service
 import { ChannelStatsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.repository';
 import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/channel.stats.service';
 import { ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
+import { WeeklyReportRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/weekly.report.repository';
+import { WeeklyReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/weekly.report.service';
+import { WeeklyReportAiService } from '@gitroom/nestjs-libraries/reports/weekly.report.ai.service';
 import { AutomationRepository } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.repository';
 import { AutomationRunner } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.runner';
 import { AutomationService } from '@gitroom/nestjs-libraries/database/prisma/automations/automation.service';
@@ -142,6 +145,9 @@ import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/s
     ChannelStatsRepository,
     ChannelStatsService,
     ReportService,
+    WeeklyReportRepository,
+    WeeklyReportService,
+    WeeklyReportAiService,
     AutomationRepository,
     AutomationRunner,
     AutomationService,
