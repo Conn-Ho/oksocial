@@ -42,6 +42,7 @@ import { AttachToFeedbackIcon } from '@gitroom/frontend/components/new-layout/se
 import { FirstBillingComponent } from '@gitroom/frontend/components/billing/first.billing.component';
 import { TrialTracker } from '@gitroom/frontend/components/layout/gtm.component';
 import { MobileNav } from '@gitroom/frontend/components/new-layout/mobile.nav';
+import { SetupChecklist } from '@gitroom/frontend/components/onboarding/setup.checklist';
 import { setSentryUser } from '@gitroom/react/sentry/initialize.sentry.client';
 
 
@@ -118,6 +119,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         <nav aria-label="主导航" className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
                           <TopMenu variant="row" />
                         </nav>
+                        <SetupChecklist variant="rail" />
                       </div>
                     </aside>
                     <div className="flex-1 min-w-0 flex flex-col">
@@ -143,6 +145,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                           <NotificationComponent />
                         </div>
                       </div>
+                      <SetupChecklist variant="strip" />
                       {/* phones stack a page's panes (e.g. channels over the calendar) instead of squeezing them side by side */}
                       <main className="flex-1 min-w-0 bg-newBgColorInner rounded-[14px] overflow-clip flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-newBorder blurMe shadow-[0_1px_2px_rgba(10,15,30,0.05)] ring-1 ring-newBorder">
                         {children}

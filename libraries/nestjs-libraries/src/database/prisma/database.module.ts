@@ -79,6 +79,8 @@ import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/b
 import { CreationRepository } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.repository';
 import { AiCreationService } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.service';
 import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.ai.service';
+import { ChecklistRepository } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.repository';
+import { ChecklistService } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.service';
 import { ChannelTagsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.repository';
 import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
 import { SyncSettingsRepository } from '@gitroom/nestjs-libraries/database/prisma/sync-settings/sync.settings.repository';
@@ -175,6 +177,8 @@ import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/s
     ErrorsService,
     AdminStatsRepository,
     AdminStatsService,
+    ChecklistRepository,
+    ChecklistService,
   ],
   get exports() {
     return this.providers;
