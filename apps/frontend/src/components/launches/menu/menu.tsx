@@ -11,31 +11,19 @@ import React, {
 } from 'react';
 import { useClickOutside } from '@mantine/hooks';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
-import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
-import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
-import { TimeTable } from '@gitroom/frontend/components/launches/time.table';
 import {
   Integrations,
   useCalendar,
 } from '@gitroom/frontend/components/launches/calendar.context';
-import { BotPicture } from '@gitroom/frontend/components/launches/bot.picture';
-import { CustomerModal } from '@gitroom/frontend/components/launches/customer.modal';
 import { Integration } from '@prisma/client';
-import { SettingsModal } from '@gitroom/frontend/components/launches/settings.modal';
-import { CustomVariables } from '@gitroom/frontend/components/launches/add.provider.component';
-import { useRouter } from 'next/navigation';
-import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { AddEditModal } from '@gitroom/frontend/components/new-launch/add.edit.modal';
 import dayjs from 'dayjs';
 import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/modal.wrapper.component';
-import copy from 'copy-to-clipboard';
-import { BrowserProxyModal } from '@gitroom/frontend/components/launches/browser.proxy.modal';
-import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
-import { ChannelTagsModal } from '@gitroom/frontend/components/launches/channel.tags.modal';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
+import { useChannelActions } from '@gitroom/frontend/components/launches/menu/use.channel.actions';
 
 export const Menu: FC<{
   canEnable: boolean;
@@ -65,10 +53,7 @@ export const Menu: FC<{
   const user = useUser();
 
   const fetch = useFetch();
-  const router = useRouter();
-  const { extensionId } = useVariables();
   const { integrations, reloadCalendarView } = useCalendar();
-  const toast = useToaster();
   const modal = useModals();
   const [show, setShow] = useState<false | { x: number; y: number }>(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -113,107 +98,14 @@ export const Menu: FC<{
     },
     [show]
   );
-  const disableChannel = useCallback(async () => {
-    if (
-      !(await deleteDialog(
-        t('are_you_sure_disable_channel', 'Are you sure you want to disable this channel?'),
-        t('disable_channel_title', 'Disable Channel')
-      ))
-    ) {
-      return;
-    }
-    await fetch('/integrations/disable', {
-      method: 'POST',
-      body: JSON.stringify({
-        id,
-      }),
-    });
-    toast.show(t('channel_disabled', 'Channel Disabled'), 'success');
-    setShow(false);
-    onChange(false);
-  }, [t]);
-  const deleteChannel = useCallback(async () => {
-    if (
-      !(await deleteDialog(
-        t('are_you_sure_delete_channel', 'Are you sure you want to delete this channel?'),
-        t('delete_channel_title', 'Delete Channel')
-      ))
-    ) {
-      return;
-    }
-    const deleteIntegration = await fetch('/integrations', {
-      method: 'DELETE',
-      body: JSON.stringify({
-        id,
-      }),
-    });
-    if (deleteIntegration.status === 406) {
-      toast.show(
-        t('delete_posts_before_channel', 'You have to delete all the posts associated with this channel before deleting it'),
-        'warning'
-      );
-      return;
-    }
-    // Clean up extension refresh token if applicable
-    if (
-      extensionId &&
-      typeof chrome !== 'undefined' &&
-      chrome?.runtime?.sendMessage
-    ) {
-      try {
-        chrome.runtime.sendMessage(
-          extensionId,
-          { type: 'REMOVE_REFRESH_TOKEN', integrationId: id },
-          () => {
-            if (chrome.runtime.lastError) {
-              return;
-            }
-          }
-        );
-      } catch {
-        // Silently ignore
-      }
-    }
-    toast.show(t('channel_deleted', 'Channel Deleted'), 'success');
-    setShow(false);
-    onChange(true);
-  }, [t, extensionId, id]);
-
-  const enableChannel = useCallback(async () => {
-    await fetch('/integrations/enable', {
-      method: 'POST',
-      body: JSON.stringify({
-        id,
-      }),
-    });
-    toast.show(t('channel_enabled', 'Channel Enabled'), 'success');
-    setShow(false);
-    onChange(false);
-  }, [t]);
-
-  const editTimeTable = useCallback(() => {
-    const findIntegration = integrations.find(
-      (integration) => integration.id === id
-    );
-    modal.openModal({
-      withCloseButton: true,
-      closeOnEscape: false,
-      closeOnClickOutside: false,
-      askClose: true,
-      title: t('time_table_slots', 'Time Table Slots'),
-      children: <TimeTable integration={findIntegration!} mutate={mutate} />,
-    });
-    setShow(false);
-  }, [integrations, t]);
-
-  const copyChannelId = useCallback(
-    (integration: Integrations) => async () => {
+  const actions = useChannelActions({ mutate, onChange });
+  // every entry closes the menu first, then acts on this channel
+  const run = useCallback(
+    (action: (integration: any) => unknown) => () => {
       setShow(false);
-      const channelId = integration.id;
-      copy(channelId);
-      toast.show(t('channel_id_copied', 'Channel ID copied to clipboard'), 'success');
+      action(findIntegration);
     },
-    [t]
+    [findIntegration]
   );
 
   const createPost = useCallback(
@@ -254,133 +146,6 @@ export const Menu: FC<{
     },
     [integrations]
   );
-
-  const changeBotPicture = useCallback(() => {
-    const findIntegration = integrations.find(
-      (integration) => integration.id === id
-    );
-    modal.openModal({
-      classNames: {
-        modal: 'w-[100%] max-w-[600px] bg-transparent text-textColor',
-      },
-      size: '100%',
-      withCloseButton: false,
-      closeOnEscape: true,
-      closeOnClickOutside: true,
-      children: (
-        <BotPicture
-          canChangeProfilePicture={canChangeProfilePicture}
-          canChangeNickName={canChangeNickName}
-          integration={findIntegration!}
-          mutate={mutate}
-        />
-      ),
-    });
-    setShow(false);
-  }, [integrations]);
-  const additionalSettings = useCallback(() => {
-    const findIntegration = integrations.find(
-      (integration) => integration.id === id
-    );
-    modal.openModal({
-      title: t('additional_settings', 'Additional Settings'),
-      children: (
-        <SettingsModal
-          // @ts-ignore
-          integration={findIntegration}
-          onClose={() => {
-            mutate();
-            toast.show(t('settings_updated', 'Settings Updated'), 'success');
-          }}
-        />
-      ),
-    });
-    setShow(false);
-  }, [integrations, t]);
-  const addToCustomer = useCallback(() => {
-    const findIntegration = integrations.find(
-      (integration) => integration.id === id
-    );
-    modal.openModal({
-      classNames: {
-        modal: 'md',
-      },
-      title: t('move_add_to_group', 'Move / Add to group'),
-      withCloseButton: false,
-      closeOnEscape: true,
-      closeOnClickOutside: true,
-      children: (
-        <CustomerModal
-          // @ts-ignore
-          integration={findIntegration}
-          onClose={() => {
-            mutate();
-            toast.show(t('customer_updated', 'Customer Updated'), 'success');
-          }}
-        />
-      ),
-    });
-    setShow(false);
-  }, [integrations, t]);
-  // 添加标签: a channel can carry several tags (the channel list and the editor filter by them)
-  const editTags = useCallback(() => {
-    modal.openModal({
-      title: t('channel_tags_title', '账号标签'),
-      withCloseButton: true,
-      classNames: {
-        modal: 'bg-transparent text-textColor w-[560px] max-w-[95vw]',
-      },
-      children: (close: () => void) => (
-        <ChannelTagsModal integration={findIntegration} close={close} onSaved={() => mutate()} />
-      ),
-    });
-    setShow(false);
-  }, [t, findIntegration]);
-  const browserProxy = useCallback(() => {
-    modal.openModal({
-      title: t('browser_proxies', '出口代理'),
-      withCloseButton: true,
-      children: <BrowserProxyModal integrationId={findIntegration.id} />,
-    });
-  }, [t, findIntegration]);
-
-  // 小红书网页版 (DMs, notifications) has its own login in the same browser
-  const browserWeb = useCallback(() => {
-    modal.openModal({
-      title: t('browser_web_title', '登录网页版：{{name}}', { name: findIntegration.name }),
-      withCloseButton: true,
-      classNames: {
-        modal: 'bg-transparent text-textColor w-[980px] max-w-[95vw]',
-      },
-      children: (
-        <BrowserLoginModal
-          identifier={findIntegration.identifier}
-          name={findIntegration.name}
-          integrationId={findIntegration.id}
-          mode="web"
-          onConnected={() => mutate()}
-        />
-      ),
-    });
-    setShow(false);
-  }, [t, findIntegration]);
-
-  const updateCredentials = useCallback(() => {
-    modal.openModal({
-      title: t('custom_url', 'Custom URL'),
-      withCloseButton: false,
-      classNames: {
-        modal: 'md',
-      },
-      children: (
-        <CustomVariables
-          identifier={findIntegration.identifier}
-          gotoUrl={(url: string) => router.push(url)}
-          variables={findIntegration.customFields}
-        />
-      ),
-    });
-  }, [t]);
 
   return (
     <div
@@ -437,7 +202,7 @@ export const Menu: FC<{
           )}
           <div
             className="flex gap-[12px] items-center py-[8px] px-[10px]"
-            onClick={copyChannelId(findIntegration)}
+            onClick={run(actions.copyId)}
           >
             <div>
               <svg
@@ -502,7 +267,7 @@ export const Menu: FC<{
               </div>
               <div
                 className="flex gap-[12px] items-center py-[8px] px-[10px]"
-                onClick={browserProxy}
+                onClick={run(actions.proxy)}
               >
                 <div className="w-[18px] text-center">⇄</div>
                 <div className="text-[14px]">{t('browser_proxies', '出口代理')}</div>
@@ -510,7 +275,7 @@ export const Menu: FC<{
               {findIntegration.identifier === 'xiaohongshu' && (
                 <div
                   className="flex gap-[12px] items-center py-[8px] px-[10px]"
-                  onClick={browserWeb}
+                  onClick={run(actions.webLogin)}
                 >
                   <div className="w-[18px] text-center">⌗</div>
                   <div className="text-[14px]">
@@ -523,7 +288,7 @@ export const Menu: FC<{
           {!!findIntegration?.isCustomFields && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={updateCredentials}
+              onClick={run(actions.updateCredentials)}
             >
               <div>
                 <svg
@@ -547,7 +312,7 @@ export const Menu: FC<{
           {findIntegration?.additionalSettings !== '[]' && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={additionalSettings}
+              onClick={run(actions.additionalSettings)}
             >
               <div>
                 <svg
@@ -571,7 +336,7 @@ export const Menu: FC<{
           {(canChangeProfilePicture || canChangeNickName) && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={changeBotPicture}
+              onClick={run(actions.botPicture)}
             >
               <div>
                 <svg
@@ -601,7 +366,7 @@ export const Menu: FC<{
           {canManageChannels(user?.role) && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={editTags}
+              onClick={run(actions.tags)}
             >
               <div>
                 <svg
@@ -627,7 +392,7 @@ export const Menu: FC<{
           )}
           <div
             className="flex gap-[12px] items-center py-[8px] px-[10px]"
-            onClick={addToCustomer}
+            onClick={run(actions.customer)}
           >
             <div>
               <svg
@@ -649,7 +414,7 @@ export const Menu: FC<{
           </div>
           <div
             className="flex gap-[12px] items-center py-[8px] px-[10px]"
-            onClick={editTimeTable}
+            onClick={run(actions.timeTable)}
           >
             <div>
               <svg
@@ -672,7 +437,7 @@ export const Menu: FC<{
           {canEnable && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={enableChannel}
+              onClick={run(actions.enable)}
             >
               <div>
                 <svg
@@ -697,7 +462,7 @@ export const Menu: FC<{
           {canDisable && (
             <div
               className="flex gap-[12px] items-center py-[8px] px-[10px]"
-              onClick={disableChannel}
+              onClick={run(actions.disable)}
             >
               <div>
                 <svg
@@ -721,7 +486,7 @@ export const Menu: FC<{
 
           <div
             className="flex gap-[12px] items-center py-[8px] px-[10px]"
-            onClick={deleteChannel}
+            onClick={run(actions.remove)}
           >
             <div>
               <svg

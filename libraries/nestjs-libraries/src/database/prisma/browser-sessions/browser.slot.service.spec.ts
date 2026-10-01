@@ -29,7 +29,7 @@ const provider = {
   },
 };
 
-const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any; qr?: any } = {}) => {
+const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any; qr?: any; channelSlots?: any[] } = {}) => {
   const fleet = {
     configured: true,
     ensureSlot: jest.fn(async () => ({})),
@@ -62,6 +62,7 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
     ]),
     createProxy: jest.fn(async (org: string, name: string, url: string) => ({ id: 'p9', name, url })),
     deleteProxy: jest.fn(async () => ({})),
+    channelSlots: jest.fn(async () => overrides.channelSlots ?? []),
   };
   const integrationService = {
     createOrUpdateIntegration: jest.fn(async () => ({ id: 'int1' })),
@@ -421,6 +422,67 @@ describe('BrowserSlotService', () => {
     expect(await service.listProxies('org1')).toEqual([
       { id: 'p1', name: 'TW', host: 'http://1.2.3.4:8000', slots: 2 },
     ]);
+  });
+
+  describe('channelBrowsers (账号 page)', () => {
+    const NOW = Date.parse('2026-10-01T08:00:00Z');
+    const proxy = (over: Record<string, unknown> = {}) => ({
+      id: 'p1',
+      name: '台湾住宅',
+      url: AuthService.fixedEncryption('http://u:pw@1.2.3.4:8000'),
+      region: 'TW',
+      deletedAt: null,
+      ...over,
+    });
+    const slot = (integrationId: string | null, over: Record<string, unknown> = {}) => ({
+      integrationId,
+      brakeUntil: null,
+      brakeReason: null,
+      notice: null,
+      proxy: null,
+      ...over,
+    });
+
+    it('names the exit IP of each channel and shows its host to managers, never the credentials', async () => {
+      const { service, repo } = setup({ channelSlots: [slot('c1', { proxy: proxy() }), slot('c2')] });
+      const browsers = await service.channelBrowsers('org1', { withHost: true, now: NOW });
+      expect(repo.channelSlots).toHaveBeenCalledWith('org1');
+      expect(browsers.c1.proxy).toEqual({ id: 'p1', name: '台湾住宅', region: 'TW', host: 'http://1.2.3.4:8000' });
+      expect(browsers.c2.proxy).toBeNull();
+      expect(browsers.c1.proxy).not.toHaveProperty('url');
+      expect(JSON.stringify(browsers)).not.toContain('u:pw@');
+    });
+
+    it('leaves the proxy host out for members who cannot manage channels', async () => {
+      const { service } = setup({ channelSlots: [slot('c1', { proxy: proxy() })] });
+      const browsers = await service.channelBrowsers('org1', { withHost: false, now: NOW });
+      expect(browsers.c1.proxy).toEqual({ id: 'p1', name: '台湾住宅', region: 'TW' });
+    });
+
+    it('counts a deleted proxy as none, since its accounts were told they go direct', async () => {
+      const { service } = setup({ channelSlots: [slot('c1', { proxy: proxy({ deletedAt: new Date(NOW - 1000) }) })] });
+      expect((await service.channelBrowsers('org1', { withHost: true, now: NOW })).c1.proxy).toBeNull();
+    });
+
+    it('reports a risk-control pause only while it lasts, with its reason', async () => {
+      const until = new Date(NOW + 30 * 60_000);
+      const { service } = setup({
+        channelSlots: [
+          slot('c1', { brakeUntil: until, brakeReason: '平台提示操作频繁' }),
+          slot('c2', { brakeUntil: new Date(NOW - 60_000), brakeReason: '旧的暂停' }),
+        ],
+      });
+      const browsers = await service.channelBrowsers('org1', { withHost: false, now: NOW });
+      expect(browsers.c1).toMatchObject({ brakeUntil: until, brakeReason: '平台提示操作频繁' });
+      expect(browsers.c2).toMatchObject({ brakeUntil: null, brakeReason: null });
+    });
+
+    it('passes on what the team has to fix and skips browsers without a channel', async () => {
+      const { service } = setup({ channelSlots: [slot('c1', { notice: '小红书网页版未登录' }), slot(null)] });
+      const browsers = await service.channelBrowsers('org1', { withHost: false, now: NOW });
+      expect(Object.keys(browsers)).toEqual(['c1']);
+      expect(browsers.c1.notice).toBe('小红书网页版未登录');
+    });
   });
 
   it('setChannelProxy decrypts the chosen proxy for the fleet and records it', async () => {

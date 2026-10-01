@@ -161,6 +161,9 @@ const OnboardingStep1: FC<{ onNext: () => void; onSkip: () => void }> = ({
             'Connect your social media accounts to start scheduling posts'
           )}
         </div>
+        <div className="text-[13px] text-textItemBlur">
+          {t('onboarding_accounts_later', '以后也可以随时在左侧菜单的「账号」里添加和管理账号')}
+        </div>
       </div>
 
       {/* Connected channels */}
@@ -561,7 +564,7 @@ const OnboardingStep3: FC<{ onBack: () => void; onFinish: () => void }> = ({
 
       <ol className="mx-auto w-full max-w-[560px] flex flex-col gap-[14px] text-[15px] leading-[1.6]">
         {[
-          t('quick_start_1', '在「设置 → 出口代理」给要做自动化的账号绑定独立代理，降低被风控的概率'),
+          t('quick_start_accounts', '在「账号」添加和管理社媒账号：重新登录、打标签，给要做自动化的账号绑定出口 IP 降低被风控的概率（出口 IP 先在「设置 → 出口代理」里添加）'),
           t('quick_start_2', '在「日历」写第一篇帖子：一稿多发、按平台改写、定时发布，也可以先存草稿'),
           t('quick_start_3', '在「互动」集中查看和回复评论、私信，AI 会给出回复建议'),
           t('quick_start_4', '在「监控」添加竞品账号、爆款帖子和关键词，看到好内容可以一键复刻'),

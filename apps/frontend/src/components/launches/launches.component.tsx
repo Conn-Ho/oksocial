@@ -1,9 +1,5 @@
 'use client';
 
-import {
-  AddProviderButton,
-  CustomVariables,
-} from '@gitroom/frontend/components/launches/add.provider.component';
 import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import SafeImage from '@gitroom/react/helpers/safe.image';
 import { capitalize, groupBy, orderBy } from 'lodash';
@@ -30,10 +26,14 @@ import { useIntegrationList } from '@gitroom/frontend/components/launches/helper
 import useCookie from 'react-use-cookie';
 import { Onboarding } from '@gitroom/frontend/components/onboarding/onboarding';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
-import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 import { BulkImportModal } from '@gitroom/frontend/components/launches/bulk.import.modal';
 import { useSWRConfig } from 'swr';
 import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
+import Link from 'next/link';
+import {
+  ChannelActionTarget,
+  useChannelActions,
+} from '@gitroom/frontend/components/launches/menu/use.channel.actions';
 import { PostsList } from '@gitroom/frontend/components/launches/posts.list';
 import { ChannelTagFilterBar } from '@gitroom/frontend/components/launches/channel.tag.filter';
 import { useChannelTags } from '@gitroom/frontend/components/launches/posts.list.hooks';
@@ -68,6 +68,31 @@ const PublishViewTabs: FC<{ view: PublishView; onChange: (view: PublishView) => 
         </button>
       ))}
     </nav>
+  );
+};
+
+// adding and managing accounts lives on the 账号 page; the calendar keeps the list for picking
+const ManageAccountsLink: FC<{ collapsed: boolean }> = ({ collapsed }) => {
+  const t = useT();
+  const label = t('manage_accounts', '管理账号');
+  return (
+    <Link
+      href="/accounts"
+      aria-label={label}
+      {...(collapsed ? { 'data-tooltip-id': 'tooltip', 'data-tooltip-content': label } : {})}
+      className="text-btnText bg-btnSimple h-[44px] ps-[16px] pe-[20px] group-[.sidebar]:px-0 group-[.sidebar]:w-[44px] justify-center items-center flex rounded-[8px] gap-[8px] text-[14px] hover:bg-boxHover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-btnPrimary"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden={true}>
+        <path
+          d="M7 20.2C7.6 18.1 9.6 16.6 12 16.6C14.4 16.6 16.4 18.1 17 20.2M7.8 21H16.2C17.88 21 18.72 21 19.362 20.673C19.927 20.385 20.385 19.927 20.673 19.362C21 18.72 21 17.88 21 16.2V7.8C21 6.12 21 5.28 20.673 4.638C20.385 4.073 19.927 3.615 19.362 3.327C18.72 3 17.88 3 16.2 3H7.8C6.12 3 5.28 3 4.638 3.327C4.073 3.615 3.615 4.073 3.327 4.638C3 5.28 3 6.12 3 7.8V16.2C3 17.88 3 18.72 3.327 19.362C3.615 19.927 4.073 20.385 4.638 20.673C5.28 21 6.12 21 7.8 21ZM15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="group-[.sidebar]:hidden">{label}</span>
+    </Link>
   );
 };
 
@@ -507,68 +532,12 @@ export const LaunchesComponent = () => {
     },
     []
   );
+  // the calendar's channel menu and the 账号 page reconnect the same way
+  const { reconnect } = useChannelActions({ mutate, onChange: update });
   const refreshChannel = useCallback(
-    (
-        integration: Integration & {
-          identifier: string;
-          isCustomFields?: boolean;
-          customFields?: any[];
-          isBrowserSession?: boolean;
-        }
-      ) =>
-      async () => {
-        // Browser channels reconnect by logging in again inside the channel's own browser.
-        if (integration.isBrowserSession) {
-          modal.openModal({
-            title: t('browser_login_reconnect', '重新登录 {{name}}', {
-              name: integration.name,
-            }),
-            withCloseButton: true,
-            classNames: {
-              modal: 'bg-transparent text-textColor w-[980px] max-w-[95vw]',
-            },
-            children: (
-              <BrowserLoginModal
-                identifier={integration.identifier}
-                name={integration.name}
-                integrationId={integration.id}
-                onConnected={() => router.refresh()}
-              />
-            ),
-          });
-          return;
-        }
-        // Custom-fields providers (Bluesky, etc.) have no OAuth URL to redirect
-        // to: reconnect by re-entering the credentials, like the menu does.
-        if (integration.isCustomFields) {
-          modal.openModal({
-            title: t('custom_url', 'Custom URL'),
-            withCloseButton: false,
-            classNames: {
-              modal: 'md',
-            },
-            children: (
-              <CustomVariables
-                identifier={integration.identifier}
-                gotoUrl={(url: string) => router.push(url)}
-                variables={integration.customFields || []}
-              />
-            ),
-          });
-          return;
-        }
-
-        const { url } = await (
-          await fetch(
-            `/integrations/social/${integration.identifier}?refresh=${integration.internalId}`,
-            {
-              method: 'GET',
-            }
-          )
-        ).json();
-        window.location.href = url;
-      },
-    []
+    (integration: Integration & { identifier: string }) => async () =>
+      reconnect(integration as unknown as ChannelActionTarget),
+    [reconnect]
   );
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -651,9 +620,7 @@ export const LaunchesComponent = () => {
               </div>
             </div>
             <div className="flex flex-col gap-[8px] group-[.sidebar]:mx-auto group-[.sidebar]:w-[44px]">
-              {canManageChannels(user?.role) && (
-                <AddProviderButton update={() => update(true)} />
-              )}
+              <ManageAccountsLink collapsed={collapseMenu === '1'} />
               <div className="flex gap-[8px] group-[.sidebar]:flex-col">
                 {sortedIntegrations?.length > 0 && canWritePosts(user?.role) && <NewPost />}
                 {sortedIntegrations?.length > 0 &&
@@ -725,6 +692,14 @@ export const LaunchesComponent = () => {
                     <div className="text-[14px]">
                       {t('connect_your_accounts')}
                     </div>
+                    {canManageChannels(user?.role) && (
+                      <Link
+                        href="/accounts"
+                        className="mx-auto mt-[4px] h-[40px] px-[20px] rounded-full bg-btnPrimary hover:bg-btnPrimaryHover text-white text-[14px] font-[600] inline-flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-btnPrimary"
+                      >
+                        {t('accounts_add', '添加账号')}
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}

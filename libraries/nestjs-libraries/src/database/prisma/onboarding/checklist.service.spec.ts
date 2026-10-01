@@ -17,7 +17,7 @@ describe('新手任务 progress', () => {
   it('lists the four tasks in order, each with where it is done', () => {
     const p = checklistProgress(facts());
     expect(p.items.map((i) => [i.key, i.done, i.href])).toEqual([
-      ['channel', false, '/launches'],
+      ['channel', false, '/accounts'],
       ['post', false, '/launches'],
       ['automation', false, '/automations'],
       ['member', false, '/settings'],

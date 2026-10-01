@@ -40,6 +40,7 @@ import {
   RequireRoles,
 } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
+import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
 import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
 import {
   CreateChannelTagDto,
@@ -149,43 +150,77 @@ export class IntegrationsController {
     return this._integrationService.updateOnCustomerName(org.id, id, body.name);
   }
 
+  // one channel as the calendar's channel list and the 账号 page both read it
+  private async channelRow(
+    p: Awaited<ReturnType<IntegrationService['getIntegrationsList']>>[number]
+  ) {
+    const findIntegration = this._integrationManager.getSocialIntegration(
+      p.providerIdentifier
+    );
+    return {
+      name: p.name,
+      id: p.id,
+      internalId: p.internalId,
+      disabled: p.disabled,
+      editor: findIntegration.editor,
+      stripLinks: !!findIntegration?.stripLinks?.(),
+      picture: p.picture || '/no-picture.jpg',
+      identifier: p.providerIdentifier,
+      inBetweenSteps: p.inBetweenSteps,
+      refreshNeeded: p.refreshNeeded,
+      isCustomFields: !!findIntegration.customFields,
+      isBrowserSession: !!findIntegration.browserSession,
+      // a browser channel whose publishing is not built yet: not offered in the post editor
+      publishable: findIntegration.publishable !== false,
+      ...(findIntegration.customFields
+        ? { customFields: await findIntegration.customFields() }
+        : {}),
+      display: p.profile,
+      type: p.type,
+      time: JSON.parse(p.postingTimes),
+      changeProfilePicture: !!findIntegration?.changeProfilePicture,
+      changeNickName: !!findIntegration?.changeNickname,
+      customer: p.customer,
+      // 账号标签 (several per channel)
+      tags: (p.channelTags || []).map((l) => l.tag),
+      additionalSettings: p.additionalSettings || '[]',
+    };
+  }
+
   @Get('/list')
   async getIntegrationList(@GetOrgFromRequest() org: Organization) {
     return {
       integrations: await Promise.all(
         (
           await this._integrationService.getIntegrationsList(org.id)
-        ).map(async (p) => {
-          const findIntegration = this._integrationManager.getSocialIntegration(
+        ).map((p) => this.channelRow(p))
+      ),
+    };
+  }
+
+  // 账号 page: the channel list plus when each was added, its browser's exit IP and risk-control
+  // pause, and the platform's second site to log in to (proxy host only for who manages channels)
+  @Get('/accounts')
+  async getAccounts(@GetOrgFromRequest() org: Organization) {
+    // @ts-ignore set by AuthMiddleware: users[0] is the caller's membership
+    const role: string | undefined = org.users?.[0]?.role;
+    const [channels, browsers] = await Promise.all([
+      this._integrationService.getIntegrationsList(org.id),
+      this._browserSlotService.channelBrowsers(org.id, {
+        withHost: canManageChannels(role),
+      }),
+    ]);
+    return {
+      accounts: await Promise.all(
+        channels.map(async (p) => {
+          const provider = this._integrationManager.getSocialIntegration(
             p.providerIdentifier
           );
           return {
-            name: p.name,
-            id: p.id,
-            internalId: p.internalId,
-            disabled: p.disabled,
-            editor: findIntegration.editor,
-            stripLinks: !!findIntegration?.stripLinks?.(),
-            picture: p.picture || '/no-picture.jpg',
-            identifier: p.providerIdentifier,
-            inBetweenSteps: p.inBetweenSteps,
-            refreshNeeded: p.refreshNeeded,
-            isCustomFields: !!findIntegration.customFields,
-            isBrowserSession: !!findIntegration.browserSession,
-            // a browser channel whose publishing is not built yet: not offered in the post editor
-            publishable: findIntegration.publishable !== false,
-            ...(findIntegration.customFields
-              ? { customFields: await findIntegration.customFields() }
-              : {}),
-            display: p.profile,
-            type: p.type,
-            time: JSON.parse(p.postingTimes),
-            changeProfilePicture: !!findIntegration?.changeProfilePicture,
-            changeNickName: !!findIntegration?.changeNickname,
-            customer: p.customer,
-            // 账号标签 (several per channel)
-            tags: (p.channelTags || []).map((l) => l.tag),
-            additionalSettings: p.additionalSettings || '[]',
+            ...(await this.channelRow(p)),
+            createdAt: p.createdAt,
+            webLogin: provider.browserSession?.web?.label ?? null,
+            browser: browsers[p.id] ?? null,
           };
         })
       ),

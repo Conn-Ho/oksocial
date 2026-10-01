@@ -8,14 +8,21 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useBrowserProxies } from '@gitroom/frontend/components/settings/browser.proxies.component';
 
-/** Picks the outbound proxy for one browser channel; its browser restarts with the new egress. */
-export const BrowserProxyModal: FC<{ integrationId: string }> = ({ integrationId }) => {
+/**
+ * Picks the outbound proxy for one browser channel; its browser restarts with the new egress.
+ * `current` preselects the bound proxy when the caller knows it; `onSaved` follows a change.
+ */
+export const BrowserProxyModal: FC<{
+  integrationId: string;
+  current?: string | null;
+  onSaved?: () => void;
+}> = ({ integrationId, current, onSaved }) => {
   const fetch = useFetch();
   const modal = useModals();
   const toaster = useToaster();
   const t = useT();
   const { data } = useBrowserProxies();
-  const [choice, setChoice] = useState<string>('');
+  const [choice, setChoice] = useState<string>(current || '');
   const [saving, setSaving] = useState(false);
 
   const save = useCallback(async () => {
@@ -30,8 +37,9 @@ export const BrowserProxyModal: FC<{ integrationId: string }> = ({ integrationId
       return;
     }
     toaster.show(t('proxy_saved', '已切换出口，浏览器已重启'), 'success');
+    onSaved?.();
     modal.closeCurrent();
-  }, [choice, integrationId]);
+  }, [choice, integrationId, onSaved]);
 
   return (
     <div className="flex flex-col gap-[12px] min-w-[360px]">
