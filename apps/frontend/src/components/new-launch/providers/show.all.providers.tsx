@@ -44,12 +44,14 @@ import XiaohongshuWebProvider from '@gitroom/frontend/components/new-launch/prov
 import DouyinWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/douyin.web.provider';
 import WeiboWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/weibo.web.provider';
 import XWebProvider from '@gitroom/frontend/components/new-launch/providers/browser/x.web.provider';
+import { BROWSER_CHANNEL_EDITORS } from '@gitroom/frontend/components/new-launch/providers/browser/channels.web.provider';
 
 export const Providers = [
   { identifier: 'xiaohongshu', component: XiaohongshuWebProvider },
   { identifier: 'douyin', component: DouyinWebProvider },
   { identifier: 'weibo', component: WeiboWebProvider },
   { identifier: 'xweb', component: XWebProvider },
+  ...BROWSER_CHANNEL_EDITORS,
   {
     identifier: 'devto',
     component: DevtoProvider,

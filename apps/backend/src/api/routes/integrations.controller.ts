@@ -121,6 +121,8 @@ export class IntegrationsController {
             refreshNeeded: p.refreshNeeded,
             isCustomFields: !!findIntegration.customFields,
             isBrowserSession: !!findIntegration.browserSession,
+            // a browser channel whose publishing is not built yet: not offered in the post editor
+            publishable: findIntegration.publishable !== false,
             ...(findIntegration.customFields
               ? { customFields: await findIntegration.customFields() }
               : {}),

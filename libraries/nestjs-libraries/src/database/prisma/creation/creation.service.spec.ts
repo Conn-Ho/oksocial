@@ -21,6 +21,7 @@ jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({
     { identifier: 'douyin', name: '抖音', maxLength: () => 1000, creation: { format: 'video', titleMax: 30, coverAspect: '9:16', guide: 'g' } },
     { identifier: 'xweb', name: 'X', maxLength: () => 280, creation: { format: 'thread', weighted: true, coverAspect: '16:9', guide: 'g' } },
     { identifier: 'linkedin', name: 'LinkedIn', maxLength: () => 3000 },
+    { identifier: 'instagramweb', platform: 'instagram', name: 'Instagram', maxLength: () => 2200, creation: { format: 'post', coverAspect: '3:4', guide: 'g', region: 'global' } },
   ],
 }));
 
@@ -169,13 +170,15 @@ describe('AiCreationService templates', () => {
   it('lists the platforms with a channel to connect first, then every other platform it can write for', () => {
     const { service } = setup();
     const list = service.platforms();
-    expect(list.slice(0, 3).map((p) => [p.identifier, p.maxLength, p.format, p.channel])).toEqual([
-      ['xiaohongshu', 1000, 'post', true], ['douyin', 1000, 'video', true], ['xweb', 280, 'thread', true],
+    expect(list.slice(0, 4).map((p) => [p.identifier, p.maxLength, p.format, p.channel])).toEqual([
+      ['xiaohongshu', 1000, 'post', true], ['douyin', 1000, 'video', true], ['xweb', 280, 'thread', true], ['instagramweb', 2200, 'post', true],
     ]);
+    // the Instagram channel replaces the catalog's Instagram
+    expect(list.map((p) => p.identifier)).not.toContain('instagram');
     const ids = list.map((p) => p.identifier);
     expect(ids).toEqual(expect.arrayContaining([
       'bilibili', 'zhihu', 'kuaishou', 'shipinhao', 'gongzhonghao', 'toutiao', 'jike',
-      'instagram', 'facebook', 'threads', 'tiktok', 'youtube', 'linkedin', 'pinterest', 'reddit', 'bluesky',
+      'instagramweb', 'facebook', 'threads', 'tiktok', 'youtube', 'linkedin', 'pinterest', 'reddit', 'bluesky',
     ]));
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).not.toContain('hidden');

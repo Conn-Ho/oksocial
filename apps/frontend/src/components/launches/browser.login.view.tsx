@@ -16,6 +16,12 @@ export const SCAN_APP: Record<string, string> = {
   xiaohongshu: '小红书',
   weibo: '微博',
   douyin: '抖音',
+  shipinhao: '微信',
+  bilibili: '哔哩哔哩',
+  zhihu: '知乎',
+  jike: '即刻',
+  toutiao: '今日头条',
+  tiktokweb: 'TikTok',
 };
 
 /**

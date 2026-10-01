@@ -38,7 +38,8 @@ export const PicksSocialsComponent: FC<{ toolTip?: boolean }> = ({
                 if (exising.integration) {
                   return f.id === exising.integration;
                 }
-                return !f.inBetweenSteps && !f.disabled;
+                // a browser channel whose publishing is not built yet can't be posted to
+                return !f.inBetweenSteps && !f.disabled && (f as { publishable?: boolean }).publishable !== false;
               })
               .map((integration) => (
                 <div
