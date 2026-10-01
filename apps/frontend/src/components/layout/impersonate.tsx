@@ -829,6 +829,21 @@ const ViewStats = () => {
   );
 };
 
+const ViewCoupons = () => {
+  const t = useT();
+  const handleClick = useCallback(() => {
+    window.location.href = '/admin/coupons';
+  }, []);
+  return (
+    <div
+      className="px-[10px] rounded-[4px] bg-emerald-700 text-white cursor-pointer whitespace-nowrap"
+      onClick={handleClick}
+    >
+      {t('view_coupons', '兑换券')}
+    </div>
+  );
+};
+
 const ImportDebugPost = () => {
   const { openModal } = useModals();
   const t = useT();
@@ -1117,6 +1132,7 @@ export const Impersonate = () => {
                 <AddAnnouncement />
                 <ViewErrors />
                 <ViewStats />
+                <ViewCoupons />
               </div>
             )}
           </div>

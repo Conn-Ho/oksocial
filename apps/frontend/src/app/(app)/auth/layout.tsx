@@ -59,7 +59,10 @@ export default async function AuthLayout({
             </div>
             <div className="flex">{children}</div>
           </div>
-          <p className="mt-[24px] text-center text-[12px] text-textItemBlur">
+          <p className="mt-[24px] text-center text-[12px] text-textItemBlur flex justify-center gap-[16px]">
+            <a href="/pricing" className="underline hover:text-textColor">
+              {t('auth_pricing_link', '价格与套餐')}
+            </a>
             <a
               href="https://github.com/Conn-Ho/oksocial"
               target="_blank"

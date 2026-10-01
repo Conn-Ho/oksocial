@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
-import { CATALOGUE, isXorPayBilling } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.plans';
+import { BillingOrdersService } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.orders.service';
 
 // The public /pricing page (no login): plans, the per-account price list and the credit prices.
 @ApiTags('Public Pricing')
@@ -10,7 +10,8 @@ import { CATALOGUE, isXorPayBilling } from '@gitroom/nestjs-libraries/database/p
 export class PublicPricingController {
   constructor(
     private _planService: PlanService,
-    private _creditsService: CreditsService
+    private _creditsService: CreditsService,
+    private _billingOrdersService: BillingOrdersService
   ) {}
 
   @Get('/')
@@ -20,10 +21,8 @@ export class PublicPricingController {
   })
   pricing() {
     return {
-      billing: isXorPayBilling(),
+      ...this._billingOrdersService.publicPricing(),
       tiers: this._planService.tiers(),
-      pricing: CATALOGUE.pricing,
-      packs: CATALOGUE.packs,
       prices: this._creditsService.prices(),
     };
   }

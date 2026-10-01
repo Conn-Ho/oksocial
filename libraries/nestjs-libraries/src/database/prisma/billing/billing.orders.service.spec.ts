@@ -8,16 +8,127 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/referral.service', 
 
 import dayjs from 'dayjs';
 import {
+  addonTerm,
   BillingOrdersService,
+  changeOf,
   newOrderNo,
+  nextTerm,
   orderName,
   purchaseOf,
+  quoteTerm,
+  termFrom,
 } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.orders.service';
 import { md5sign, XorPayClient } from '@gitroom/nestjs-libraries/services/payment/xorpay.client';
 import { XorPayProvider } from '@gitroom/nestjs-libraries/services/payment/providers/xorpay.provider';
 import { PaymentProviderManager } from '@gitroom/nestjs-libraries/services/payment/payment.provider.manager';
 
 const DAY = 86400_000;
+
+const T_NOW = new Date('2026-10-01T12:00:00+08:00');
+const tAfter = (days: number) => new Date(T_NOW.getTime() + days * DAY);
+const daysBetween = (a: Date, b: Date) => (b.getTime() - a.getTime()) / DAY;
+
+const runningTeam5 = { tier: 'TEAM' as const, accounts: 5, months: 1, periodEnd: tAfter(10), dailyPrice: 10 };
+
+describe('nextTerm (periods with accounts)', () => {
+  it('starts now for calendar months when nothing is running', () => {
+    const t = nextTerm(null, { tier: 'TEAM', accounts: 5, months: 1, priceYuan: '345.00' }, T_NOW);
+    expect(t.startsAt).toBe(T_NOW);
+    expect(t.expiresAt).toEqual(dayjs(T_NOW).add(1, 'month').toDate());
+    expect(t.accounts).toBe(5);
+    expect(t.dailyPrice).toBeCloseTo(345 / 31);
+    const ended = nextTerm({ ...runningTeam5, periodEnd: tAfter(-1) }, { tier: 'TEAM', accounts: 5, months: 12, priceYuan: '3312.00' }, T_NOW);
+    expect(ended.startsAt).toBe(T_NOW);
+    expect(ended.expiresAt).toEqual(dayjs(T_NOW).add(12, 'month').toDate());
+  });
+
+  it('days instead of months (trials, coupons, the old fixed plans)', () => {
+    const t = nextTerm(null, { tier: 'TEAM', accounts: 5, days: 7, priceYuan: '0.00' }, T_NOW);
+    expect(daysBetween(t.startsAt, t.expiresAt)).toBe(7);
+    expect(t.dailyPrice).toBe(0);
+  });
+
+  it('the same plan and accounts is appended, with a paid-weighted daily value', () => {
+    const t = nextTerm(runningTeam5, { tier: 'TEAM', accounts: 5, months: 12, priceYuan: '3312.00' }, T_NOW);
+    expect(t.startsAt).toEqual(runningTeam5.periodEnd);
+    expect(t.expiresAt).toEqual(dayjs(runningTeam5.periodEnd).add(12, 'month').toDate());
+    const added = daysBetween(runningTeam5.periodEnd, t.expiresAt);
+    expect(t.dailyPrice).toBeCloseTo((10 * 10 + 3312) / (10 + added));
+    // free days (a coupon) lower each day's value instead of adding any
+    const coupon = nextTerm(runningTeam5, { tier: 'TEAM', accounts: 5, days: 30, priceYuan: '0.00' }, T_NOW);
+    expect(daysBetween(T_NOW, coupon.expiresAt)).toBe(40);
+    expect(coupon.dailyPrice).toBeCloseTo(100 / 40);
+    // no stored value: the new price counts for every day
+    expect(nextTerm({ ...runningTeam5, dailyPrice: null }, { tier: 'TEAM', accounts: 5, days: 30, priceYuan: '300.00' }, T_NOW).dailyPrice).toBeCloseTo(10);
+  });
+
+  it('another plan or another account count starts now and converts the unused days', () => {
+    const more = nextTerm(runningTeam5, { tier: 'TEAM', accounts: 10, days: 30, priceYuan: '600.00' }, T_NOW);
+    expect(more.startsAt).toBe(T_NOW);
+    // 10 days worth ¥100 left, the new period costs ¥20 a day: 5 more days
+    expect(daysBetween(T_NOW, more.expiresAt)).toBeCloseTo(35);
+    expect(more.accounts).toBe(10);
+    const basic = nextTerm(runningTeam5, { tier: 'STANDARD', accounts: 5, days: 30, priceYuan: '150.00' }, T_NOW);
+    expect(daysBetween(T_NOW, basic.expiresAt)).toBeCloseTo(50);
+    // nothing to convert: no stored value, or a free period
+    expect(daysBetween(T_NOW, nextTerm({ ...runningTeam5, dailyPrice: null }, { tier: 'STANDARD', accounts: 5, days: 30, priceYuan: '150.00' }, T_NOW).expiresAt)).toBe(30);
+    expect(daysBetween(T_NOW, nextTerm(runningTeam5, { tier: 'STANDARD', accounts: 5, days: 30, priceYuan: '0.00' }, T_NOW).expiresAt)).toBe(30);
+  });
+});
+
+describe('addonTerm', () => {
+  it('adds the accounts until the running end and raises what each day is worth', () => {
+    const t = addonTerm(runningTeam5, { accounts: 3, priceYuan: '50.00', days: 10 }, T_NOW);
+    expect(t).toEqual({ startsAt: T_NOW, expiresAt: runningTeam5.periodEnd, accounts: 8, dailyPrice: 15 });
+  });
+
+  it('when the period ended before the payment: those accounts for the days paid for', () => {
+    const t = addonTerm({ ...runningTeam5, periodEnd: tAfter(-1) }, { accounts: 3, priceYuan: '50.00', days: 10 }, T_NOW);
+    expect(t.accounts).toBe(3);
+    expect(daysBetween(T_NOW, t.expiresAt)).toBe(10);
+    expect(t.dailyPrice).toBe(5);
+    expect(daysBetween(T_NOW, addonTerm(null, { accounts: 1, priceYuan: '1.00', days: 0 }, T_NOW).expiresAt)).toBe(1);
+  });
+});
+
+describe('changeOf / quoteTerm', () => {
+  it('names the change', () => {
+    expect(changeOf(null, { tier: 'TEAM', accounts: 5 }, T_NOW)).toBe('new');
+    expect(changeOf({ ...runningTeam5, periodEnd: tAfter(-1) }, { tier: 'TEAM', accounts: 5 }, T_NOW)).toBe('new');
+    expect(changeOf(runningTeam5, { tier: 'TEAM', accounts: 5 }, T_NOW)).toBe('renew');
+    expect(changeOf(runningTeam5, { tier: 'TEAM', accounts: 6 }, T_NOW)).toBe('upgrade');
+    expect(changeOf(runningTeam5, { tier: 'TEAM', accounts: 4 }, T_NOW)).toBe('downgrade');
+    expect(changeOf({ ...runningTeam5, tier: 'STANDARD' }, { tier: 'TEAM', accounts: 5 }, T_NOW)).toBe('upgrade');
+    expect(changeOf(runningTeam5, { tier: 'STANDARD', accounts: 50 }, T_NOW)).toBe('downgrade');
+    expect(quoteTerm(runningTeam5, { tier: 'TEAM', accounts: 5, months: 1, priceYuan: '345.00' }, T_NOW)).toEqual({
+      change: 'renew',
+      startsAt: runningTeam5.periodEnd,
+      expiresAt: dayjs(runningTeam5.periodEnd).add(1, 'month').toDate(),
+    });
+  });
+});
+
+describe('termFrom', () => {
+  const lastPaid = { tier: 'TEAM', kind: 'plan', totalAccounts: 8, months: 12, periodEnd: tAfter(1), dailyPrice: 16 } as any;
+  const xorpay = { provider: 'xorpay', isLifetime: false, cancelAt: tAfter(1), totalChannels: 8 } as any;
+
+  it('reads a running XorPay period with its accounts and months', () => {
+    expect(termFrom({ lastPaid, subscription: xorpay }, T_NOW)).toEqual({ tier: 'TEAM', accounts: 8, months: 12, periodEnd: lastPaid.periodEnd, dailyPrice: 16 });
+  });
+
+  it('an order from the old tier plans reads as 团队版 with the accounts on the subscription', () => {
+    const old = { tier: 'PRO', kind: null, totalAccounts: null, months: null, periodEnd: tAfter(1), dailyPrice: 16 } as any;
+    expect(termFrom({ lastPaid: old, subscription: { ...xorpay, totalChannels: 30 } }, T_NOW)).toMatchObject({ tier: 'TEAM', accounts: 30, months: null });
+  });
+
+  it('nothing for other providers, ended periods, missing orders and trials', () => {
+    expect(termFrom({ lastPaid, subscription: { ...xorpay, provider: 'stripe' } }, T_NOW)).toBeNull();
+    expect(termFrom({ lastPaid, subscription: { ...xorpay, cancelAt: tAfter(-0.001) } }, T_NOW)).toBeNull();
+    expect(termFrom({ lastPaid: null, subscription: xorpay }, T_NOW)).toBeNull();
+    expect(termFrom({ lastPaid, subscription: null }, T_NOW)).toBeNull();
+    expect(termFrom({ lastPaid: { ...lastPaid, kind: 'trial' }, subscription: xorpay }, T_NOW)).toBeNull();
+  });
+});
 
 describe('purchaseOf / orderName', () => {
   const row = (o: Record<string, unknown>) => ({ kind: null, productId: '', tier: null, accounts: null, months: null, days: null, priceYuan: '0.00', ...o }) as any;
@@ -540,7 +651,9 @@ describe('BillingOrdersService', () => {
     expect(c.term).toMatchObject({ tier: 'TEAM', accounts: 5, months: 1 });
     expect(c.trial.available).toBe(false);
     expect(s.service.methods()).toEqual({ xorpay: true, stripe: false });
+    expect(s.service.publicPricing()).toMatchObject({ billing: true, pricing: c.pricing, packs: [expect.objectContaining({ id: 'pack-1000' }), expect.anything(), expect.anything()] });
     delete process.env.OKSOCIAL_XORPAY_AID;
+    expect(s.service.publicPricing().billing).toBe(false);
     expect(await s.service.catalogue('o1')).toMatchObject({ packs: [], term: null });
   });
 

@@ -1,39 +1,38 @@
 'use client';
 
-import React, { FC, useCallback, useEffect, useState } from 'react';
+import React, { FC, ReactNode, useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
-import dayjs from 'dayjs';
-import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { Button } from '@gitroom/react/form/button';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import {
-  CHANGE_LABELS,
   CreatedOrder,
-  PackProduct,
-  PAY_LABELS,
+  OrderBody,
   PayType,
-  PlanProduct,
   useOrderStatus,
+  usePost,
 } from '@gitroom/frontend/components/usage/usage.hooks';
-
-const Period: FC<{ product: PlanProduct }> = ({ product }) => (
-  <p className="text-[13px] text-textColor/70">
-    {CHANGE_LABELS[product.quote.change]} · 服务周期 {dayjs(product.quote.startsAt).format('YYYY-MM-DD')} 至{' '}
-    {dayjs(product.quote.expiresAt).format('YYYY-MM-DD')}
-  </p>
-);
+import { count, payLabel, yuan } from '@gitroom/frontend/components/usage/usage.format';
 
 /**
  * 扫码支付: pick WeChat or Alipay, create the XorPay order, show its QR code and poll until it is
- * paid. The period shown is the server's quote (renewals are appended, tier changes convert the
- * unused days), the one that applies is decided when the payment arrives.
+ * paid. What the order buys is decided by the server when the payment arrives; `details` is what
+ * the page showed (period, accounts, gifted credits).
  */
 export const PayDialog: FC<{
-  product: PlanProduct | PackProduct;
+  title: string;
+  priceYuan: string;
+  payTypes: PayType[];
+  body: OrderBody;
+  details?: ReactNode;
+  giftCredits?: number;
+  /** What the success screen says, e.g. "套餐已生效". */
+  doneText: string;
   onPaid: () => void;
   close: () => void;
-}> = ({ product, onPaid, close }) => {
-  const fetch = useFetch();
-  const [payType, setPayType] = useState<PayType>(product.payTypes[0]);
+}> = ({ title, priceYuan, payTypes, body, details, giftCredits, doneText, onPaid, close }) => {
+  const t = useT();
+  const post = usePost();
+  const [payType, setPayType] = useState<PayType>(payTypes[0]);
   const [order, setOrder] = useState<CreatedOrder | null>(null);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -42,13 +41,7 @@ export const PayDialog: FC<{
   const [settled, setSettled] = useState(false);
   const { data: polled } = useOrderStatus(order?.orderNo ?? null, !!order && !qrExpired && !settled);
   const remote = polled?.status;
-  const state = !order
-    ? null
-    : remote && remote !== 'PENDING'
-    ? remote
-    : qrExpired
-    ? 'EXPIRED'
-    : 'PENDING';
+  const state = !order ? null : remote && remote !== 'PENDING' ? remote : qrExpired ? 'EXPIRED' : 'PENDING';
 
   useEffect(() => {
     setQrExpired(false);
@@ -73,69 +66,67 @@ export const PayDialog: FC<{
   const createOrder = useCallback(async () => {
     setCreating(true);
     setError('');
-    try {
-      const res = await fetch('/usage/orders', {
-        method: 'POST',
-        body: JSON.stringify({ productId: product.id, payType }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body?.message || '下单失败，请稍后再试');
-        return;
-      }
-      setOrder(body);
-    } finally {
-      setCreating(false);
+    const res = await post<CreatedOrder>('/usage/orders', { ...body, payType });
+    setCreating(false);
+    if (!res.ok) {
+      setError(res.message || t('pay_order_failed', '下单失败，请稍后再试'));
+      return;
     }
-  }, [product.id, payType]);
+    setOrder(res.data);
+  }, [body, payType]);
 
-  if (!product.payTypes.length) {
+  if (!payTypes.length) {
     return (
-      <div className="flex flex-col gap-[12px] p-[8px] text-[14px]">
-        <p>这个金额超过了扫码支付的单笔上限，请联系我们对公转账开通。</p>
-        <Button secondary={true} onClick={close}>知道了</Button>
+      <div className="flex flex-col gap-[14px] p-[8px] w-[400px] max-w-full text-[14px]">
+        <p>{t('pay_over_limit', '这笔金额超过了扫码支付的单笔上限，请联系我们对公转账开通。')}</p>
+        <Button secondary={true} onClick={close}>
+          {t('got_it', '知道了')}
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-[16px] p-[8px] w-[380px] max-w-full">
+    <div className="flex flex-col gap-[16px] p-[8px] w-[400px] max-w-full">
       <div className="flex items-baseline justify-between gap-[12px]">
-        <span className="text-[16px] font-semibold">{product.name}</span>
-        <span className="text-[24px] font-semibold tabular-nums">¥{product.priceYuan}</span>
+        <span className="text-[15px] font-[600] leading-[1.4]">{title}</span>
+        <span className="text-[24px] font-[700] tabular-nums whitespace-nowrap">{yuan(priceYuan)}</span>
       </div>
-      {product.kind === 'plan' ? (
-        <Period product={product} />
-      ) : (
-        <p className="text-[13px] text-textColor/70">
-          到账 {product.credits.toLocaleString('zh-CN')} 积分，长期有效；每月套餐赠送的积分先用。
+      {details && <div className="text-[13px] text-textItemBlur leading-[1.6]">{details}</div>}
+      {!!giftCredits && (
+        <p className="text-[13px] rounded-[8px] bg-newTableHeader px-[12px] py-[8px]">
+          {t('pay_gift_note', '付款后赠送 {{n}} 积分，长期有效', { n: count(giftCredits) })}
         </p>
       )}
 
       {!order && (
         <>
-          <div className="flex gap-[8px]" role="radiogroup" aria-label="支付方式">
-            {product.payTypes.map((t) => (
+          <div className="flex gap-[8px]" role="radiogroup" aria-label={t('pay_method', '支付方式')}>
+            {payTypes.map((type) => (
               <button
-                key={t}
+                key={type}
                 type="button"
                 role="radio"
-                aria-checked={payType === t}
-                onClick={() => setPayType(t)}
+                aria-checked={payType === type}
+                onClick={() => setPayType(type)}
                 className={clsx(
-                  'flex-1 h-[40px] rounded-[8px] border text-[14px] transition-colors',
-                  payType === t
-                    ? 'border-btnPrimary bg-newTableHeader'
-                    : 'border-newTableBorder hover:bg-newTableHeader'
+                  'flex-1 h-[40px] rounded-full text-[14px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-btnPrimary',
+                  payType === type
+                    ? 'bg-btnSimple text-textColor font-[600] ring-1 ring-newBorder'
+                    : 'text-textItemBlur hover:text-textColor hover:bg-boxHover ring-1 ring-newBorder'
                 )}
               >
-                {PAY_LABELS[t]}
+                {payLabel(t, type)}
               </button>
             ))}
           </div>
-          {error && <p className="text-[13px] text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-[13px] text-red-500">
+              {error}
+            </p>
+          )}
           <Button loading={creating} onClick={createOrder}>
-            生成付款二维码
+            {t('pay_create_qr', '生成付款二维码')}
           </Button>
         </>
       )}
@@ -144,36 +135,42 @@ export const PayDialog: FC<{
         <div className="flex flex-col items-center gap-[10px]">
           <img
             src={order.qrImage}
-            alt={`${PAY_LABELS[order.payType]}付款二维码`}
+            alt={t('pay_qr_alt', '{{method}}付款二维码', { method: payLabel(t, order.payType) })}
             width={220}
             height={220}
-            className="rounded-[8px] bg-white p-[8px]"
+            className="rounded-[10px] border border-newBorder bg-white p-[8px]"
           />
           <p className="text-[14px]">
-            请用{order.payType === 'alipay' ? '支付宝' : '微信'}扫码支付 ¥{order.priceYuan}
+            {t('pay_scan', '请用{{app}}扫码支付 {{amount}}', {
+              app: order.payType === 'alipay' ? t('pay_alipay', '支付宝') : t('pay_wechat_app', '微信'),
+              amount: yuan(order.priceYuan),
+            })}
           </p>
-          <p className="text-[12px] text-textColor/50">
-            付款后几秒内自动到账，二维码 {Math.round(order.expireIn / 60)} 分钟内有效 · 订单号 {order.orderNo}
+          <p className="text-[12px] text-textItemBlur text-center">
+            {t('pay_scan_hint', '付款后几秒内自动开通，二维码 {{minutes}} 分钟内有效 · 订单号 {{orderNo}}', {
+              minutes: Math.round(order.expireIn / 60),
+              orderNo: order.orderNo,
+            })}
           </p>
         </div>
       )}
 
       {state === 'PAID' && (
-        <div className="flex flex-col gap-[12px] items-center py-[12px]">
-          <span className="text-[18px] font-semibold text-green-400">支付成功</span>
-          <p className="text-[13px] text-textColor/70">
-            {product.kind === 'plan' ? '套餐已生效，本月赠送积分已到账。' : '积分已到账。'}
-          </p>
-          <Button onClick={close}>完成</Button>
+        <div className="flex flex-col gap-[12px] items-center py-[12px]" role="status">
+          <span className="text-[18px] font-[700] text-green-600">{t('pay_done', '支付成功')}</span>
+          <p className="text-[13px] text-textItemBlur text-center">{doneText}</p>
+          <Button onClick={close}>{t('done', '完成')}</Button>
         </div>
       )}
 
       {(state === 'CLOSED' || state === 'EXPIRED') && (
         <div className="flex flex-col gap-[12px]">
-          <p className="text-[13px] text-textColor/70">
-            二维码已失效。如果刚刚已经付款，几分钟内会自动到账，可在订单记录里查看；否则请重新下单。
+          <p className="text-[13px] text-textItemBlur">
+            {t('pay_expired', '二维码已失效。如果刚刚已经付款，几分钟内会自动到账，可在订单记录里查看；否则请重新下单。')}
           </p>
-          <Button secondary={true} onClick={() => setOrder(null)}>重新下单</Button>
+          <Button secondary={true} onClick={() => setOrder(null)}>
+            {t('pay_again', '重新下单')}
+          </Button>
         </div>
       )}
     </div>

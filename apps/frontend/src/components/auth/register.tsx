@@ -38,6 +38,25 @@ type Inputs = {
   providerToken: string;
   provider: string;
 };
+
+// A referral link (/auth?ref=CODE) is remembered for 30 days, also through a Google / GitHub sign-in.
+const REF_COOKIE = 'oks_ref';
+const REF_RE = /^[A-Za-z0-9]{4,16}$/;
+const readReferral = () => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  const fromLink = new URLSearchParams(window.location.search).get('ref') || '';
+  if (REF_RE.test(fromLink)) {
+    return fromLink.toUpperCase();
+  }
+  const cookie = document.cookie
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${REF_COOKIE}=`));
+  const saved = cookie ? decodeURIComponent(cookie.slice(REF_COOKIE.length + 1)) : '';
+  return REF_RE.test(saved) ? saved : '';
+};
 export function Register({ invited = false }: { invited?: boolean }) {
   const getQuery = useSearchParams();
   const fetch = useFetch();
@@ -48,6 +67,10 @@ export function Register({ invited = false }: { invited?: boolean }) {
   useEffect(() => {
     if (provider && code) {
       load();
+    }
+    const ref = getQuery?.get('ref');
+    if (ref && REF_RE.test(ref)) {
+      document.cookie = `${REF_COOKIE}=${encodeURIComponent(ref.toUpperCase())}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
     }
   }, []);
   const load = useCallback(async () => {
@@ -107,6 +130,10 @@ export function RegisterAfter({
   const fireEvents = useFireEvents();
   const track = useTrack();
   const [datafast_visitor_id] = useCookie('datafast_visitor_id');
+  const [referred, setReferred] = useState(false);
+  useEffect(() => {
+    setReferred(!!readReferral());
+  }, []);
   const isAfterProvider = useMemo(() => {
     return !!token && !!provider;
   }, [token, provider]);
@@ -129,6 +156,7 @@ export function RegisterAfter({
       body: JSON.stringify({
         ...data,
         datafast_visitor_id,
+        ...(readReferral() ? { referralCode: readReferral() } : {}),
       }),
     })
       .then(async (response) => {
@@ -170,6 +198,11 @@ export function RegisterAfter({
               {t('sign_in', '登录')}
             </Link>
           </p>
+          {referred && !invited && (
+            <p className="text-[13px] rounded-[10px] bg-btnSimple ring-1 ring-newBorder px-[14px] py-[10px] -mt-[12px] mb-[20px]">
+              {t('register_referred', '你是通过好友的推广链接注册的，创建团队后会获得积分奖励。')}
+            </p>
+          )}
           <div className="flex flex-col text-[14px]">
             {!isAfterProvider &&
               (!isGeneral ? (
