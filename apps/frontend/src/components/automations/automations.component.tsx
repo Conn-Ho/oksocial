@@ -21,6 +21,7 @@ import {
 import { AutomationForm } from '@gitroom/frontend/components/automations/automation.form';
 import { AutomationStats } from '@gitroom/frontend/components/automations/automation.stats';
 import { LeadsLibrary } from '@gitroom/frontend/components/automations/leads.library';
+import { useOpenFromQuery } from '@gitroom/frontend/components/layout/quick.create';
 
 // what an action did, for actions without text (likes, follows) and the log
 const KIND_TEXT: Record<string, string> = { like: '点赞', bookmark: '收藏', follow: '关注', comment: '评论', comment_reply: '评论区回复', reply: '回复', dm: '私信', post: '发帖' };
@@ -92,6 +93,8 @@ const Manage: FC = () => {
       }),
     [openForm]
   );
+  // 「新建」 › 新建自动化 from another page: /automations?new=1
+  useOpenFromQuery('new', canManage, () => pickType());
 
   const patch = useCallback(async (a: Automation, body: Record<string, unknown>) => {
     await fetch(`/automations/${a.id}`, { method: 'PUT', body: JSON.stringify(body) });

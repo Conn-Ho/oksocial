@@ -3131,5 +3131,14 @@
   "all_competitors": "All competitors",
   "competitor": "Competitor",
   "date_range": "Date range",
-  "menu_badge_unreplied": "{{n}} unanswered"
+  "menu_badge_unreplied": "{{n}} unanswered",
+  "quick_create": "New",
+  "quick_create_post": "New post",
+  "quick_create_post_hint": "Open the post editor",
+  "quick_create_automation": "New automation",
+  "quick_create_automation_hint": "Comment, DM and prospecting assistants",
+  "quick_create_monitor": "Add a monitor",
+  "quick_create_monitor_hint": "Paste a post link to track its numbers and comments",
+  "quick_create_account": "Add an account",
+  "quick_create_account_hint": "Connect a social media account"
 }

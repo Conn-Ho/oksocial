@@ -27,6 +27,7 @@ import { RemakeModal } from '@gitroom/frontend/components/monitor/remake.modal';
 import { CompetitorSearchModal } from '@gitroom/frontend/components/monitor/competitor.search.modal';
 import { CompetitorImportModal } from '@gitroom/frontend/components/monitor/competitor.import.modal';
 import { CompetitorPosts } from '@gitroom/frontend/components/monitor/competitor.posts';
+import { useOpenFromQuery } from '@gitroom/frontend/components/layout/quick.create';
 import { MobileBack, scrollToTopOnPhone } from '@gitroom/frontend/components/new-layout/mobile.back';
 
 const ADD_LABEL: Record<MonitorKind, string> = { POST: '监控帖子', ACCOUNT: '添加竞品', KEYWORD: '添加关键词' };
@@ -137,18 +138,27 @@ export const MonitorComponent: FC = () => {
     }
   }, [mutate]);
 
-  const openAdd = useCallback(
-    () =>
+  const openAddFor = useCallback(
+    (what: MonitorKind) =>
       modal.openModal({
-        title: t(`monitor_add_${kind.toLowerCase()}`, ADD_LABEL[kind]),
+        title: t(`monitor_add_${what.toLowerCase()}`, ADD_LABEL[what]),
         withCloseButton: true,
         classNames: { modal: 'bg-transparent text-textColor w-[640px] max-w-[95vw]' },
         children: (close: () => void) => (
-          <AddTargetModal kind={kind} platforms={platforms || []} channels={channels} close={close} onAdded={firstRead} />
+          <AddTargetModal kind={what} platforms={platforms || []} channels={channels} close={close} onAdded={firstRead} />
         ),
       }),
-    [kind, platforms, channels, firstRead]
+    [platforms, channels, firstRead]
   );
+  const openAdd = useCallback(() => openAddFor(kind), [kind, openAddFor]);
+
+  // 「新建」 › 添加监控 from another page: /monitor?add=POST (or ACCOUNT / KEYWORD)
+  useOpenFromQuery('add', canManage && !!platforms, (value) => {
+    const what = KIND_TABS.find((tab) => tab.kind === value)?.kind ?? 'POST';
+    setKind(what);
+    setLibrary(false);
+    openAddFor(what);
+  });
 
   // 竞品 › 搜索: platforms that cannot search lead to the paste-a-link form
   const openSearch = useCallback(

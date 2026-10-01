@@ -7,6 +7,7 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { SetSelectionModal } from '@gitroom/frontend/components/launches/calendar';
 import { AddEditModal } from '@gitroom/frontend/components/new-launch/add.edit.modal';
 import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/modal.wrapper.component';
+import { useOpenFromQuery } from '@gitroom/frontend/components/layout/quick.create';
 
 export const NewPost = () => {
   const fetch = useFetch();
@@ -74,6 +75,8 @@ export const NewPost = () => {
       title: ``,
     });
   }, [integrations, sets]);
+  // 「新建」 › 新建帖子 from another page: /launches?new=post
+  useOpenFromQuery('new', integrations.length > 0, (value) => value === 'post' && createAPost());
   return (
     <button
       onClick={createAPost}
