@@ -79,6 +79,12 @@ export const LeadsLibrary: FC = () => {
   const [format, setFormat] = useState<'csv' | 'xlsx'>('xlsx');
   const [busy, setBusy] = useState<'store' | 'selected' | 'all' | null>(null);
   const { data, mutate, isLoading } = useLeads(filter, page);
+  // the last row of the last page went away (deleted, purged, read): step back to a page that exists
+  useEffect(() => {
+    if (data && page > Math.max(1, data.pages)) {
+      setPage(Math.max(1, data.pages));
+    }
+  }, [data, page]);
   const leads = useMemo(() => data?.leads || [], [data]);
 
   // a new page or filter starts with nothing selected
