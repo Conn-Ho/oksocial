@@ -667,6 +667,14 @@ describe('互动收件箱 of B站 and 知乎: comments on our own posts, and rep
     ]);
   });
 
+  it('our own comments stay out after the account is renamed in oksocial (by the username of the login)', async () => {
+    const renamed = { ...BILI_ME, name: '小鹿咖啡官方', profile: 'bili_84201078353' };
+    const { result } = await inbox('bilibili', [ok([biliVideoRow(1)]), ok([biliComment('2002', 'bili_84201078353', '谢谢大家'), biliComment('2003', '阿杰', '好')])], (i) =>
+      i.fetch('s1', renamed)
+    );
+    expect(result.map((r: any) => r.externalId)).toEqual(['2003']);
+  });
+
   it('B站 without videos reads nothing else (a new account)', async () => {
     const { result, calls } = await inbox('bilibili', [ok([])], (i) => i.fetch('s1', BILI_ME));
     expect(result).toEqual([]);

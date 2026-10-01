@@ -68,8 +68,12 @@ const threadItems = async <T>(threads: T[], readThread: (thread: T) => Promise<I
   }
   return items;
 };
-/** Rows written by someone else than the account itself (by its name, as the platform shows it). */
-const notMine = (author: unknown, integration: { name: string }) => text(author) !== integration.name;
+/**
+ * Rows written by someone else than the account itself. The rows carry the author's name only: the
+ * account's name, or its username from the login (kept when the name is changed in oksocial).
+ */
+const notMine = (author: unknown, integration: { name: string; profile: string | null }) =>
+  ![integration.name, integration.profile].includes(text(author));
 
 // ---------------------------------------------------------------- B站
 const BV = /bilibili\.com\/video\/(BV[A-Za-z0-9]{10})/i;
