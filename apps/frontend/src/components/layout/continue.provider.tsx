@@ -9,6 +9,7 @@ import { continueProviderList } from '@gitroom/frontend/components/new-launch/pr
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { ACCOUNTS_KEY } from '@gitroom/frontend/components/accounts/accounts.hooks';
 export const Null: FC<{
   onSave: (data: any) => Promise<void>;
   existingId: string[];
@@ -35,6 +36,8 @@ export const ContinueProvider: FC = () => {
   });
   const refreshList = useCallback(() => {
     mutate('/integrations/list');
+    // the 账号 page lists the same channels
+    mutate(ACCOUNTS_KEY);
     const url = new URL(window.location.href);
     url.searchParams.delete('added');
     url.searchParams.delete('continue');

@@ -17,7 +17,7 @@ type Checklist = {
 };
 
 // the pages a new team works on; settings, billing and the rest stay free of the card
-const MAIN_PAGES = ['/launches', '/inbox', '/monitor', '/automations', '/create'];
+const MAIN_PAGES = ['/launches', '/accounts', '/inbox', '/monitor', '/automations', '/create'];
 const COLLAPSED_KEY = 'oksocial-checklist-collapsed';
 
 const readCollapsed = (fallback: boolean) => {

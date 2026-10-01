@@ -6,7 +6,7 @@ export type ChecklistFacts = { channels: number; publishedPosts: number; automat
 /** The four 新手任务 of a team, in order, each with the page where it is done. Pure. */
 export const checklistProgress = (f: ChecklistFacts) => {
   const items = [
-    { key: 'channel', label: '绑定 1 个社媒账号', href: '/launches', done: f.channels > 0 },
+    { key: 'channel', label: '绑定 1 个社媒账号', href: '/accounts', done: f.channels > 0 },
     { key: 'post', label: '发布一篇帖子', href: '/launches', done: f.publishedPosts > 0 },
     { key: 'automation', label: '创建一个自动化', href: '/automations', done: f.automations > 0 },
     { key: 'member', label: '邀请一位成员', href: '/settings', done: f.members > 1 },

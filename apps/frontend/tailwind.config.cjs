@@ -289,6 +289,8 @@ module.exports = {
         xs: {
           max: '401px',
         },
+        // wide desktops: room for a side column next to a full table (the 账号 page's tag list)
+        wide: '1440px',
       },
     },
   },

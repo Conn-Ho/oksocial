@@ -266,6 +266,22 @@ export const useMenuItem = () => {
       requireBilling: true,
     },
     {
+      // 账号: add and manage the social accounts (the calendar only picks from them)
+      name: t('nav_accounts', '账号'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="21" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M7 20.2C7.6 18.1 9.6 16.6 12 16.6C14.4 16.6 16.4 18.1 17 20.2M7.8 21H16.2C17.88 21 18.72 21 19.362 20.673C19.927 20.385 20.385 19.927 20.673 19.362C21 18.72 21 17.88 21 16.2V7.8C21 6.12 21 5.28 20.673 4.638C20.385 4.073 19.927 3.615 19.362 3.327C18.72 3 17.88 3 16.2 3H7.8C6.12 3 5.28 3 4.638 3.327C4.073 3.615 3.615 4.073 3.327 4.638C3 5.28 3 6.12 3 7.8V16.2C3 17.88 3 18.72 3.327 19.362C3.615 19.927 4.073 20.385 4.638 20.673C5.28 21 6.12 21 7.8 21ZM15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      path: '/accounts',
+    },
+    {
       name: t('settings', 'Settings'),
       icon: (
         <svg
