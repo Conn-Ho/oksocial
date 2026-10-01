@@ -3130,5 +3130,6 @@
   "competitor_posts_range_0": "All time",
   "all_competitors": "All competitors",
   "competitor": "Competitor",
-  "date_range": "Date range"
+  "date_range": "Date range",
+  "menu_badge_unreplied": "{{n}} unanswered"
 }

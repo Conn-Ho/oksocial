@@ -93,6 +93,12 @@ export const useInboxCounts = () => {
   return useSWR<Partial<Record<InboxKind, number>>>('/inbox/counts', load, { refreshInterval: 60_000 });
 };
 
+/** Everything not answered yet, over all kinds: the 互动 badge in the menu (polled every minute). */
+export const useInboxUnreplied = () => {
+  const { data } = useInboxCounts();
+  return KIND_TABS.reduce((sum, { kind }) => sum + (typeof data?.[kind] === 'number' ? data[kind]! : 0), 0);
+};
+
 export const useInboxCapabilities = () => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/inbox/capabilities')).json(), []);
