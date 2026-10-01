@@ -92,6 +92,11 @@ export async function proxy(request: NextRequest) {
 
   const org = nextUrl.searchParams.get('org');
   const url = new URL(nextUrl).search;
+  // signing in with oksocial (okchat's OAuth) and adding its account: log in, then come back here
+  if (!authCookie && (nextUrl.pathname.startsWith('/oauth/authorize') || nextUrl.pathname.startsWith('/okchat/'))) {
+    const back = `${(process.env.FRONTEND_URL || nextUrl.origin).replace(/\/+$/, '')}${nextUrl.pathname}${nextUrl.search}`;
+    return NextResponse.redirect(new URL(`/auth/login?${new URLSearchParams({ returnUrl: back })}`, nextUrl.href));
+  }
   if (!nextUrl.pathname.startsWith('/auth') && !authCookie) {
     const providers = ['google', 'settings'];
     const findIndex = providers.find((p) => nextUrl.href.indexOf(p) > -1);

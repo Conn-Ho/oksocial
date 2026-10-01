@@ -82,7 +82,7 @@ const setup = (opts: { items?: any[]; acted?: string[]; today?: number; braked?:
   };
   const brands = { promptFor: jest.fn(async () => BRAND) };
   const syncSettings = { get: jest.fn(async () => ({ dmReplyPolicy: opts.dmReplyPolicy ?? null })) };
-  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any, brands as any, undefined as any, undefined as any, syncSettings as any);
+  const runner = new AutomationRunner(repo as any, inbox as any, posts as any, notifications as any, ai as any, brands as any, undefined as any, undefined as any);
   (runner as any).sleep = jest.fn(async () => undefined);
   (runner as any).random = () => 0.5;
   return { runner, repo, inbox, posts, notifications, ai, recorded, brands, syncSettings };
@@ -194,38 +194,26 @@ describe('comment assistant', () => {
 describe('DM assistant', () => {
   const dms = [item({ id: 'd1', kind: 'DM', threadId: 'c1' }), item({ id: 'd2', kind: 'DM', threadId: 'c1', content: '在吗' })];
 
-  it('answers the latest message of a conversation, once per conversation', async () => {
+  it('no longer answers DMs: they are handled in okchat, and the automation says so', async () => {
     const s = setup({ items: dms });
-    await s.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'once' } }) as any);
-    expect(s.inbox.reply).toHaveBeenCalledTimes(1);
-    expect(s.inbox.reply).toHaveBeenCalledWith('o1', null, 'd2', 'AI 回复', 'AUTOMATION');
-    expect(s.recorded.map((r) => r.targetKey)).toEqual(['d2', 'thread:ch1:c1']);
-    const again = setup({ items: [item({ id: 'd3', kind: 'DM', threadId: 'c1' })], acted: ['thread:ch1:c1'] });
-    await again.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'once' } }) as any);
-    expect(again.inbox.reply).not.toHaveBeenCalled();
-  });
-
-  it('keeps answering in continuous mode', async () => {
-    const s = setup({ items: [item({ id: 'd3', kind: 'DM', threadId: 'c1' })], acted: ['thread:ch1:c1'] });
-    await s.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'continuous' } }) as any);
-    expect(s.inbox.reply).toHaveBeenCalledTimes(1);
-  });
-
-  it('the team 私信自动回复策略, when set, overrides the automation', async () => {
-    const answered = [item({ id: 'd3', kind: 'DM', threadId: 'c1' })];
-    const once = setup({ items: answered, acted: ['thread:ch1:c1'], dmReplyPolicy: 'ONCE' });
-    await once.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'continuous' } }) as any);
-    expect(once.inbox.reply).not.toHaveBeenCalled();
-    expect(once.syncSettings.get).toHaveBeenCalledWith('o1');
-
-    const continuous = setup({ items: answered, acted: ['thread:ch1:c1'], dmReplyPolicy: 'CONTINUOUS' });
-    await continuous.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'once' } }) as any);
-    expect(continuous.inbox.reply).toHaveBeenCalledTimes(1);
-    expect(continuous.recorded.map((r) => r.targetKey)).toEqual(['d3']);
+    const result = await s.runner.run(automation({ type: 'DM_ASSISTANT', config: { strategy: 'continuous' } }) as any);
+    expect(s.inbox.reply).not.toHaveBeenCalled();
+    expect(s.recorded).toEqual([]);
+    expect(result).toEqual({ done: 0, held: 0, failed: 0, skipped: 0, warning: expect.stringContaining('okchat') });
   });
 });
 
 describe('lead collector', () => {
+  it('leaves DMs out (they are handled in okchat)', async () => {
+    const s = setup({ items: [item()] });
+    await s.runner.run(automation({ type: 'LEAD_COLLECTOR', config: { prompt: '想买课程的人', sources: ['COMMENT', 'DM'] } }) as any);
+    expect(s.repo.inboxCandidates).toHaveBeenCalledWith('o1', expect.anything(), ['COMMENT'], expect.any(Date), false);
+    const dmOnly = setup({ items: [item()] });
+    const result = await dmOnly.runner.run(automation({ type: 'LEAD_COLLECTOR', config: { prompt: '想买课程的人', sources: ['DM'] } }) as any);
+    expect(dmOnly.repo.inboxCandidates).not.toHaveBeenCalled();
+    expect(result.warning).toMatch(/okchat/);
+  });
+
   it('scores in batches and keeps only high scores', async () => {
     const s = setup({ items: [item(), item({ id: 'it2', authorName: 'b' })] });
     const result = await s.runner.run(automation({ type: 'LEAD_COLLECTOR', config: { prompt: '想买课程的人', minScore: 80 } }) as any);
@@ -288,8 +276,10 @@ describe('AutomationService', () => {
 
   it('validates config and applies the type default cap', async () => {
     const { service, repo } = makeService();
-    await service.create('o1', { type: 'DM_ASSISTANT', name: '私信', integrationIds: ['ch1'], config: {} });
-    expect(repo.create).toHaveBeenCalledWith('o1', expect.objectContaining({ dailyCap: 100, enabled: false, config: expect.objectContaining({ strategy: 'once' }) }));
+    await service.create('o1', { type: 'COMMENT_ASSISTANT', name: '评论', integrationIds: ['ch1'], config: {} });
+    expect(repo.create).toHaveBeenCalledWith('o1', expect.objectContaining({ dailyCap: 50, enabled: false, config: expect.objectContaining({ oncePerAuthor: true }) }));
+    // DMs are answered in okchat: no new DM assistant
+    await expect(service.create('o1', { type: 'DM_ASSISTANT', name: '私信', integrationIds: ['ch1'], config: {} })).rejects.toMatchObject({ status: 400 });
     await expect(service.create('o1', { type: 'LEAD_COLLECTOR', name: 'x', integrationIds: [], config: {} })).rejects.toMatchObject({ status: 400 });
   });
 
