@@ -2,14 +2,9 @@
 name: "oksocial image"
 
 # Builds the amd64 image that social-ops-1 runs (ghcr.io/conn-ho/oksocial).
+# Deploys build on oksocial-builder (deploy/build-and-deploy.sh); this stays as a manual fallback.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'deploy/**'
-      - 'e2e/**'
-      - '**.md'
 
 concurrency:
   group: oksocial-image
