@@ -2507,5 +2507,6 @@
   "no_media_found": "No media found",
   "import_selected": "Import Selected",
   "import_from": "Import From",
-  "import": "Import"
+  "import": "Import",
+  "automation_stats_other": "Skipped or pending {{n}}"
 }

@@ -31,7 +31,6 @@ import { BrowserProxiesComponent } from '@gitroom/frontend/components/settings/b
 import { SyncAiSettings } from '@gitroom/frontend/components/settings/sync.ai.settings';
 import { Autopost } from '@gitroom/frontend/components/autopost/autopost';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-import { SVGLine } from '@gitroom/frontend/components/launches/launches.component';
 import { GlobalSettings } from '@gitroom/frontend/components/settings/global.settings';
 import { ApprovedAppsComponent } from '@gitroom/frontend/components/approved-apps/approved-apps.component';
 export const SettingsPopup: FC<{
@@ -124,28 +123,27 @@ export const SettingsPopup: FC<{
     <>
       {/* phones: the sections become a row of tabs above the content */}
       <div className="bg-newBgColorInner p-[12px] md:p-[20px] flex flex-col transition-all w-full md:w-[260px]">
-        <div className="flex flex-1 flex-row md:flex-col gap-[4px] md:gap-[15px] overflow-x-auto md:overflow-visible">
+        <nav
+          aria-label={t('settings', 'Settings')}
+          className="flex flex-1 flex-row md:flex-col gap-[4px] overflow-x-auto md:overflow-visible"
+        >
           {list.map(({ tab: tabKey, label }) => (
-            <div
+            <button
               key={tabKey}
-              className={clsx(
-                'cursor-pointer flex items-center gap-[12px] group/profile hover:bg-boxHover rounded-e-[8px] shrink-0 whitespace-nowrap md:whitespace-normal pe-[12px] md:pe-0',
-                tabKey === tab && 'bg-boxHover'
-              )}
+              type="button"
+              aria-current={tabKey === tab ? 'page' : undefined}
               onClick={() => setTab(tabKey)}
+              className={clsx(
+                'shrink-0 whitespace-nowrap md:whitespace-normal text-start rounded-[8px] px-[12px] min-h-[36px] text-[14px] transition-colors',
+                tabKey === tab
+                  ? 'bg-boxHover text-textColor font-[600]'
+                  : 'text-textItemBlur hover:text-textColor hover:bg-boxHover'
+              )}
             >
-              <div
-                className={clsx(
-                  'h-full w-[4px] rounded-s-[3px] opacity-0 group-hover/profile:opacity-100 transition-opacity',
-                  tabKey === tab && 'opacity-100'
-                )}
-              >
-                <SVGLine />
-              </div>
               {label}
-            </div>
+            </button>
           ))}
-        </div>
+        </nav>
         <div>
           {showLogout && (
             <div className="mt-4">

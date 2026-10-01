@@ -13,9 +13,12 @@ import {
 const successRate = (c: RunCounts) =>
   c.done + c.failed ? Math.round((c.done / (c.done + c.failed)) * 100) : null;
 
+// runs that neither succeeded nor failed: skipped (no match, over a limit) or waiting for 待确认
+const otherOf = (c: RunCounts) => Math.max(0, c.runs - c.done - c.failed);
+
 /** Successes, failures and everything else (held, skipped) as one thin stacked bar. */
 const RunBar: FC<{ counts: RunCounts }> = ({ counts }) => {
-  const other = Math.max(0, counts.runs - counts.done - counts.failed);
+  const other = otherOf(counts);
   const pct = (n: number) => `${counts.runs ? (n / counts.runs) * 100 : 0}%`;
   return (
     <div className="flex h-[6px] w-full rounded-full overflow-hidden bg-newTableHeader" aria-hidden={true}>
@@ -43,6 +46,7 @@ const SummaryCard: FC<{ title: string; hint: string; counts: RunCounts }> = ({ t
       <p className="text-[12px] text-textItemBlur flex flex-wrap gap-x-[10px] gap-y-[2px]">
         <span>{t('automation_stats_done', '成功 {{n}}', { n: counts.done })}</span>
         <span className={clsx(counts.failed > 0 && 'text-red-400')}>{t('automation_stats_failed', '失败 {{n}}', { n: counts.failed })}</span>
+        {otherOf(counts) > 0 && <span>{t('automation_stats_other', '跳过或待确认 {{n}}', { n: otherOf(counts) })}</span>}
         <span>{rate === null ? t('automation_stats_no_rate', '暂无成功率') : t('automation_stats_rate', '成功率 {{n}}%', { n: rate })}</span>
       </p>
     </section>
@@ -66,6 +70,7 @@ const Runs: FC<{ counts: RunCounts }> = ({ counts }) => {
         {t('automation_stats_done', '成功 {{n}}', { n: counts.done })}
         {' · '}
         <span className={clsx(counts.failed > 0 && 'text-red-400')}>{t('automation_stats_failed', '失败 {{n}}', { n: counts.failed })}</span>
+        {otherOf(counts) > 0 && ` · ${t('automation_stats_other', '跳过或待确认 {{n}}', { n: otherOf(counts) })}`}
       </span>
     </>
   );
