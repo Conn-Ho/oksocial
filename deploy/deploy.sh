@@ -32,8 +32,13 @@ wait_for() {
 has_pollers() { [ "$(pollers)" -gt 0 ]; }
 
 previous=$(docker inspect -f '{{.Image}}' oksocial-oksocial-1 2>/dev/null || true)
-echo "pulling $IMAGE:$TAG (running: ${previous:0:19})"
-docker pull -q "$IMAGE:$TAG" >/dev/null
+# an image built on oksocial-builder arrives with docker load: use it; anything else is pulled
+if [ "$TAG" != latest ] && docker image inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+  echo "using the loaded $IMAGE:$TAG (running: ${previous:0:19})"
+else
+  echo "pulling $IMAGE:$TAG (running: ${previous:0:19})"
+  docker pull -q "$IMAGE:$TAG" >/dev/null
+fi
 [ "$TAG" = latest ] || docker tag "$IMAGE:$TAG" "$IMAGE:latest"
 compose up -d oksocial 2>&1 | tail -1
 
