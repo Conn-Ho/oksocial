@@ -16,9 +16,8 @@ const NO_PROXY = '';
  * platform sees it from that IP from the first page on. Defaults to the team's first one.
  */
 export const BrowserExitPicker: FC<{
-  name: string;
   onStart: (proxyId?: string) => void;
-}> = ({ name, onStart }) => {
+}> = ({ onStart }) => {
   const t = useT();
   const router = useRouter();
   const modals = useModals();
@@ -39,7 +38,11 @@ export const BrowserExitPicker: FC<{
     ...(proxies ?? []).map((p) => ({
       id: p.id,
       title: p.name,
-      detail: t('browser_exit_proxy_detail', '{{host}} · {{n}} 个账号在用', { host: p.host, n: p.slots }),
+      detail: t('browser_exit_proxy_detail', '{{host}} · {{n}} 个账号在用', {
+        host: p.host.replace(/^\w+:\/\//, ''),
+        n: p.slots,
+        interpolation: { escapeValue: false },
+      }),
     })),
     {
       id: NO_PROXY,
@@ -55,8 +58,7 @@ export const BrowserExitPicker: FC<{
         <p className="text-[14px] text-textColor/80">
           {t(
             'browser_exit_intro',
-            '{{name}}的账号浏览器会从第一页起走这个 IP，之后发帖、互动也都走它。建议和你平时用这个账号的地区一致。',
-            { name }
+            '这个账号的浏览器会从第一页起走这个 IP，之后发帖、互动也都走它。建议和你平时用这个账号的地区一致。'
           )}
         </p>
       </div>

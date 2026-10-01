@@ -211,7 +211,6 @@ export const BrowserLoginModal: FC<{
   if (picking) {
     return (
       <BrowserExitPicker
-        name={name}
         onStart={(proxyId) => {
           setPicking(false);
           start(proxyId);
