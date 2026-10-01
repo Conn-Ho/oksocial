@@ -76,6 +76,17 @@ export class XWebProvider extends BrowserSocialAbstract implements SocialProvide
     loginUrl: 'https://x.com/i/flow/login',
     whoami: ['twitter', 'whoami'],
     loginCookies: { domain: 'x.com', names: ['auth_token'] },
+    // X has no QR login: oksocial's form asks for the account, the extra identity check X sometimes
+    // shows ("enter your phone number or username"), the password and the 2FA / email code. The flow
+    // moved from /i/flow/login to /i/jf/onboarding/web (2026); /account/access is a locked account.
+    form: {
+      hints: {
+        loginUrls: ['x.com/i/flow/', 'x.com/i/jf/', 'x.com/login', 'x.com/account/access', 'twitter.com/i/flow/'],
+        submit: '[data-testid="LoginForm_Login_Button"], [data-testid="ocfEnterTextNextButton"]',
+        error: '[data-testid="toast"]',
+        captcha: '#arkose_iframe, iframe[src*="arkoselabs"]',
+      },
+    },
     identity: (rows: unknown) => {
       const me = firstRow<Record<string, any>>(rows);
       if (!me?.logged_in || !me.username) {

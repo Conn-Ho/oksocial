@@ -22,7 +22,9 @@ import {
 import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { BrowserSlotService } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import {
+  BrowserLoginPageDto,
   CreateBrowserProxyDto,
+  LoginFormSubmitDto,
   SetChannelProxyDto,
   StartBrowserLoginDto,
 } from '@gitroom/nestjs-libraries/dtos/browser-sessions/browser.session.dto';
@@ -124,6 +126,34 @@ export class BrowserSessionsController {
   @ApiOperation({ summary: '登录二维码', description: '登录页上的二维码图片（PNG data URL），供登录弹窗放大显示；页面上没有二维码时为 null。' })
   loginQr(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
     return this._browserSlotService.loginQr(org.id, id);
+  }
+
+  // oksocial's own login form for password platforms (X, Instagram, Google, …). The values typed in
+  // are only in the POST body: never stored or logged (Sentry drops these request bodies too).
+  @Get('/:id/form')
+  @ApiOperation({ summary: '登录表单：当前步骤', description: '登录页现在在哪一步（账号 / 密码 / 验证码 / 人机验证 / 已离开登录页），以及页面自己的标题、说明和错误提示。' })
+  formState(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
+    return this._browserSlotService.formState(org.id, id);
+  }
+
+  @Post('/:id/form')
+  @ApiOperation({ summary: '登录表单：填写一步', description: '把输入的账号、密码或验证码直接填进这个账号自己的浏览器并提交，返回页面的下一步。输入只用于这一次登录，不保存、不记录。' })
+  formSubmit(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: LoginFormSubmitDto
+  ) {
+    return this._browserSlotService.formSubmit(org.id, id, body.step, body.value);
+  }
+
+  @Post('/:id/page')
+  @ApiOperation({ summary: '切换登录页', description: '密码登录在单独页面的平台（TikTok 默认是扫码页）：在账号浏览器里打开登录页或密码登录页。' })
+  openLoginPage(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: BrowserLoginPageDto
+  ) {
+    return this._browserSlotService.openLoginPage(org.id, id, body.page);
   }
 
   @Get('/:id')

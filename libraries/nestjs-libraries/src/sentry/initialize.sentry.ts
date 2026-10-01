@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nestjs';
 import { capitalize } from 'lodash';
+import { hasSensitiveBody, scrubSensitiveRequest } from '@gitroom/nestjs-libraries/sentry/sensitive.requests';
 
 export const setSentryUserContext = (params: {
   userId?: string;
@@ -63,6 +64,8 @@ export const initializeSentry = (appName: string, allowLogs = false) => {
       spotlight: process.env.SENTRY_SPOTLIGHT === '1',
       integrations: [
         ...profiling,
+        // never capture the body of a login form submit (what a user typed into a platform's login page)
+        Sentry.httpIntegration({ ignoreIncomingRequestBody: (url) => hasSensitiveBody(url) }),
         Sentry.consoleLoggingIntegration({ levels: ['log', 'info', 'warn', 'error', 'debug', 'assert', 'trace'] }),
         Sentry.openAIIntegration({
           recordInputs: true,
@@ -85,6 +88,9 @@ export const initializeSentry = (appName: string, allowLogs = false) => {
         );
       },
       enableLogs: true,
+      // and, should one ever be attached, drop it again before anything is sent
+      beforeSend: (event) => scrubSensitiveRequest(event),
+      beforeSendTransaction: (event) => scrubSensitiveRequest(event),
 
       // Profiling (SENTRY_PROFILING=1)
       ...(profiling.length

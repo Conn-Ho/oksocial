@@ -54,6 +54,32 @@ describe('BrowserFleetClient', () => {
     expect((fetchImpl.mock.calls as any)[1][0]).toBe('http://w/slots/s1/qr');
   });
 
+  it('reads the login form with its hints in the query, and posts a step with the value in the body only', async () => {
+    const state = { step: 'password', prompt: 'Enter your password', detail: null, error: null, field: null };
+    const fetchImpl = jest.fn(() => reply(200, state));
+    const client = new BrowserFleetClient('http://w', 't', fetchImpl as any);
+    const hints = { loginUrls: ['x.com/i/flow/'], submit: '[data-testid="LoginForm_Login_Button"]' };
+    expect(await client.loginForm('s1', hints)).toEqual(state);
+    const [readUrl, readInit] = fetchImpl.mock.calls[0] as any;
+    expect(readInit.method).toBe('GET');
+    expect(JSON.parse(new URL(readUrl).searchParams.get('hints') as string)).toEqual(hints);
+
+    const secret = 'p@ss word/?&#';
+    await client.loginFormSubmit('s1', 'password', secret, hints);
+    const [url, init] = fetchImpl.mock.calls[1] as any;
+    expect(url).toBe('http://w/slots/s1/login-form');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ step: 'password', value: secret, hints });
+    expect(url).not.toContain('ss');
+  });
+
+  it("keeps the worker's error code on a failure", async () => {
+    const client = new BrowserFleetClient('http://w', 't', (() => reply(409, { ok: false, code: 'BUSY', error: 'still typing' })) as any);
+    await expect(client.loginFormSubmit('s1', 'code', '123456', {})).rejects.toEqual(
+      expect.objectContaining({ status: 409, code: 'BUSY', message: 'still typing' })
+    );
+  });
+
   it('is only configured with a token', () => {
     expect(new BrowserFleetClient('http://w', '').configured).toBe(false);
     expect(new BrowserFleetClient('http://w', 'x').configured).toBe(true);

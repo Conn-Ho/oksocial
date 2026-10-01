@@ -1,5 +1,6 @@
 // Client for the host-side browser worker (deploy/browser-fleet/worker): one Chrome per connected
 // account ("slot"), driven through opencli. The app container reaches it at host.docker.internal.
+import type { BrowserLoginFormHints } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 
 export type BrowserRunErrorCode =
   | 'USAGE'
@@ -46,9 +47,39 @@ export interface BrowserSlotInfo {
 }
 
 export class BrowserFleetError extends Error {
-  constructor(message: string, public status: number) {
+  // code: the worker's machine-readable error code (BUSY, CHROME_NOT_RUNNING, …), when it sent one
+  constructor(message: string, public status: number, public code?: string) {
     super(message);
   }
+}
+
+// oksocial's own login form (the worker's /slots/:slot/login-form)
+export type BrowserLoginStep = 'identifier' | 'password' | 'code' | 'captcha' | 'done' | 'unknown';
+export type BrowserLoginFillStep = 'identifier' | 'password' | 'code';
+export const LOGIN_FORM_FILL_STEPS: readonly BrowserLoginFillStep[] = ['identifier', 'password', 'code'];
+// longest account / password / code typed in (the worker refuses more)
+export const LOGIN_FORM_VALUE_MAX = 512;
+
+export interface BrowserLoginField {
+  kind: BrowserLoginFillStep;
+  label: string | null;
+  inputType: 'text' | 'email' | 'tel' | 'password';
+  inputMode: string | null;
+  autocomplete: 'username' | 'current-password' | 'one-time-code';
+  maxLength: number | null;
+}
+
+/** The step the account's login page is on, in the page's own words. */
+export interface BrowserLoginFormState {
+  step: BrowserLoginStep;
+  prompt: string | null;
+  detail: string | null;
+  error: string | null;
+  field: BrowserLoginField | null;
+  // the page asks for the account and the password together: the account was only typed
+  next?: 'password';
+  // the page was on another step when a value came in: nothing was typed
+  stale?: true;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -87,7 +118,8 @@ export class BrowserFleetClient {
     if (!res.ok) {
       throw new BrowserFleetError(
         json?.message || json?.error || `browser worker ${res.status}`,
-        res.status
+        res.status,
+        typeof json?.code === 'string' ? json.code : undefined
       );
     }
     return json as T;
@@ -136,6 +168,20 @@ export class BrowserFleetClient {
   async qr(slot: string, reveal?: string) {
     const query = reveal ? `?${new URLSearchParams({ reveal })}` : '';
     return (await this.call<{ image: string | null }>('GET', `/slots/${slot}/qr${query}`, undefined, 20_000)).image;
+  }
+
+  /** Which login step the slot's screen tab is on (oksocial's login form), with the page's prompt and errors. */
+  loginForm(slot: string, hints: BrowserLoginFormHints) {
+    const query = new URLSearchParams({ hints: JSON.stringify(hints) });
+    return this.call<BrowserLoginFormState>('GET', `/slots/${slot}/login-form?${query}`, undefined, 20_000);
+  }
+
+  /**
+   * Types `value` into the login page's field for `step` and submits it; the page's next state. The
+   * value only travels in the request body (never a URL) and is not kept here.
+   */
+  loginFormSubmit(slot: string, step: BrowserLoginFillStep, value: string, hints: BrowserLoginFormHints) {
+    return this.call<BrowserLoginFormState>('POST', `/slots/${slot}/login-form`, { step, value, hints }, 90_000);
   }
 
   startScreen(slot: string) {

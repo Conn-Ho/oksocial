@@ -1,6 +1,7 @@
 import { BadBody } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { BROWSER_CHANNELS } from '@gitroom/nestjs-libraries/integrations/social/browser.channels';
 import { CREATION_CATALOG } from '@gitroom/nestjs-libraries/creation/creation.platforms';
+import { XWebProvider } from '@gitroom/nestjs-libraries/integrations/social/x.web.provider';
 
 type Run = { ok: boolean; data?: any; code?: string };
 
@@ -77,6 +78,24 @@ describe('browser channels for every platform opencli can log in to', () => {
     expect(reddit.identity(REDDIT_WHOAMI)).toEqual({ id: 't2_1', name: 'xiaolu', username: 'xiaolu' });
     expect(reddit.identity([])).toBeNull();
     expect(reddit.identity([{ field: 'Username', value: '' }])).toBeNull();
+  });
+
+  it('the password platforms log in through oksocial\'s form, with sane hints; the QR platforms do not', () => {
+    const PASSWORD = ['instagramweb', 'facebookweb', 'tiktokweb', 'youtubeweb', 'linkedinweb', 'redditweb', 'pinterestweb'];
+    const forms = [...BROWSER_CHANNELS, new XWebProvider()].filter((c) => c.browserSession.form);
+    expect(forms.map((c) => c.identifier).sort()).toEqual([...PASSWORD, 'xweb'].sort());
+    for (const c of forms) {
+      const { url, hints = {} } = c.browserSession.form!;
+      const login = new URL(c.browserSession.loginUrl);
+      // the login page itself is one of the login pages, or the page the form lives on is
+      expect((hints.loginUrls ?? []).some((p) => (login.host + login.pathname).startsWith(p) || (url && (new URL(url).host + new URL(url).pathname).startsWith(p)))).toBe(true);
+      for (const p of hints.loginUrls ?? []) expect(p).toMatch(/^[a-z0-9.-]+\.[a-z]+\/[^\s]*$/);
+      for (const [key, selector] of Object.entries(hints)) {
+        if (key !== 'loginUrls') expect(String(selector).length).toBeLessThanOrEqual(300);
+      }
+    }
+    expect(channel('tiktokweb').browserSession.form?.url).toBe('https://www.tiktok.com/login/phone-or-email/email');
+    for (const qr of ['shipinhao', 'bilibili', 'zhihu', 'jike', 'toutiao', 'gongzhonghao']) expect(channel(qr).browserSession.form).toBeUndefined();
   });
 
   it('Pinterest and 公众号 say who is logged in through the fleet plugins, others through opencli whoami', () => {

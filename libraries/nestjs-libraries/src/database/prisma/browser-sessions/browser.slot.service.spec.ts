@@ -8,9 +8,16 @@ jest.mock('@gitroom/nestjs-libraries/integrations/refresh.integration.service', 
 jest.mock('@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.repository', () => ({ BrowserSlotRepository: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/plan.service', () => ({ PlanService: class {} }));
 
+import { ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
+import { BrowserFleetError } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
+import { BrowserSessionsController } from '@gitroom/backend/api/routes/browser.sessions.controller';
+import { RolesGuard } from '@gitroom/backend/services/auth/permissions/roles.guard';
 import {
   BrowserSlotService,
+  LOGIN_FORM_SUBMITS_MAX,
+  loginFormHints,
   newSlotName,
   PENDING_SLOT_TTL_MS,
   safeHost,
@@ -29,7 +36,7 @@ const provider = {
   },
 };
 
-const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any; qr?: any } = {}) => {
+const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLimit?: boolean; provider?: any; cookies?: any; qr?: any; loginFormSubmit?: any } = {}) => {
   const fleet = {
     configured: true,
     ensureSlot: jest.fn(async () => ({})),
@@ -41,6 +48,8 @@ const setup = (overrides: { run?: any; slotRow?: any; integration?: any; overLim
     run: jest.fn(overrides.run ?? (async () => ({ ok: true, data: [{ logged_in: false }], durationMs: 1 }))),
     loginCookies: jest.fn(overrides.cookies ?? (async () => [] as string[])),
     qr: jest.fn(overrides.qr ?? (async () => 'data:image/png;base64,UE5H')),
+    loginForm: jest.fn(async () => ({ step: 'identifier', prompt: 'Sign in to X', detail: null, error: null, field: null })),
+    loginFormSubmit: jest.fn(overrides.loginFormSubmit ?? (async () => ({ step: 'password', prompt: 'Enter your password', detail: null, error: null, field: null }))),
   };
   const repo = {
     createPending: jest.fn(async (org: string, prov: string, slot: string) => ({
@@ -511,6 +520,140 @@ describe('BrowserSlotService', () => {
       expect(await service.checkLogin('org1', 'row1')).toEqual({ status: 'connected', integrationId: 'int1' });
       expect(integrationService.createOrUpdateIntegration.mock.calls[0].slice(8, 10)).toEqual([pending.slot, pending.slot]);
       expect(refresh.startRefreshWorkflow).toHaveBeenCalled();
+    });
+  });
+  describe("oksocial's login form (password platforms)", () => {
+    const SECRET = 'correct horse 🐴 battery';
+    const xweb = {
+      identifier: 'xweb',
+      browserSession: {
+        loginUrl: 'https://x.com/i/flow/login',
+        whoami: ['twitter', 'whoami'],
+        identity: () => null,
+        form: { hints: { loginUrls: ['x.com/i/flow/', 'x.com/i/jf/'], submit: '[data-testid="LoginForm_Login_Button"]' } },
+      },
+    };
+    const pending = { id: 'row1', slot: 's1', status: 'PENDING', providerIdentifier: 'xweb', integrationId: null };
+    const formSetup = (overrides: Parameters<typeof setup>[0] = {}) => setup({ provider: xweb, slotRow: pending, ...overrides });
+
+    it('startLogin says the platform logs in through the form', async () => {
+      const { service } = formSetup({ slotRow: null });
+      expect(await service.startLogin('org1', 'xweb')).toMatchObject({ form: true });
+      expect(await setup().service.startLogin('org1', 'xiaohongshu')).not.toHaveProperty('form');
+    });
+
+    it("reads the session's login step with the platform's hints, for that organization's session only", async () => {
+      const { service, fleet, repo } = formSetup();
+      expect(await service.formState('org1', 'row1')).toMatchObject({ step: 'identifier', prompt: 'Sign in to X' });
+      expect(repo.getById).toHaveBeenCalledWith('org1', 'row1');
+      expect(fleet.loginForm).toHaveBeenCalledWith('s1', xweb.browserSession.form.hints);
+      const gone = formSetup({ slotRow: null });
+      await expect(gone.service.formState('org2', 'row1')).rejects.toMatchObject({ status: 404 });
+      await expect(formSetup({ slotRow: { ...pending, status: 'RELEASED' } }).service.formState('org1', 'row1')).rejects.toMatchObject({ status: 404 });
+      expect(gone.fleet.loginForm).not.toHaveBeenCalled();
+    });
+
+    it('has no form for a QR platform', async () => {
+      const { service, fleet } = setup({ slotRow: { ...pending, providerIdentifier: 'xiaohongshu' } });
+      await expect(service.formState('org1', 'row1')).rejects.toMatchObject({ status: 400 });
+      await expect(service.formSubmit('org1', 'row1', 'password', SECRET)).rejects.toMatchObject({ status: 400 });
+      expect(fleet.loginFormSubmit).not.toHaveBeenCalled();
+    });
+
+    it('defaults the login pages to the login page (and the form page) itself', () => {
+      expect(loginFormHints({ loginUrl: 'https://www.tiktok.com/login', form: { url: 'https://www.tiktok.com/login/phone-or-email/email' } } as any)).toEqual({
+        loginUrls: ['www.tiktok.com/login', 'www.tiktok.com/login/phone-or-email/email'],
+      });
+      expect(loginFormHints({ loginUrl: 'https://x.com/i/flow/login', form: { hints: { submit: 'button' } } } as any)).toEqual({ submit: 'button', loginUrls: ['x.com/i/flow/login'] });
+    });
+
+    it('passes the value through to the worker unchanged and answers the next step', async () => {
+      const { service, fleet } = formSetup();
+      expect(await service.formSubmit('org1', 'row1', 'password', SECRET)).toMatchObject({ step: 'password' });
+      expect(fleet.loginFormSubmit).toHaveBeenCalledTimes(1);
+      expect(fleet.loginFormSubmit).toHaveBeenCalledWith('s1', 'password', SECRET, xweb.browserSession.form.hints);
+    });
+
+    it('stores the value nowhere: no repository, integration or keep-alive call ever sees it', async () => {
+      const { service, repo, integrationService, refresh, plans } = formSetup();
+      await service.formSubmit('org1', 'row1', 'password', SECRET);
+      await service.formState('org1', 'row1');
+      const seen = JSON.stringify([repo, integrationService, refresh, plans].flatMap((m) => Object.values(m).map((fn: any) => fn.mock?.calls ?? [])));
+      expect(seen).not.toContain('horse');
+      for (const write of [repo.createPending, repo.activate, repo.release, repo.setNotice, repo.setProxy, repo.createProxy, integrationService.createOrUpdateIntegration]) {
+        expect(write).not.toHaveBeenCalled();
+      }
+      // nor in memory, beyond when this session last submitted
+      expect(JSON.stringify([...(service as any)._formSubmits.entries()])).not.toContain('horse');
+    });
+
+    it('refuses an unknown step or a bad value before anything reaches the browser, without repeating it', async () => {
+      const { service, fleet } = formSetup();
+      for (const [step, value] of [['captcha', SECRET], ['password', ''], ['password', `${SECRET}x`.repeat(30)], ['password', 'horse\nEnter'], ['password', 42]] as const) {
+        const err = await service.formSubmit('org1', 'row1', step, value).catch((e) => e);
+        expect(err.status).toBe(400);
+        expect(JSON.stringify({ message: err.message, response: err.response })).not.toContain('horse');
+      }
+      expect(fleet.loginFormSubmit).not.toHaveBeenCalled();
+    });
+
+    it("turns the worker's failures into messages for people, logging no value", async () => {
+      const cases: Array<[unknown, number]> = [
+        [new BrowserFleetError('slot s1: the login form is still being filled in', 409, 'BUSY'), 409],
+        [new BrowserFleetError('slot s1: chrome is inactive', 409, 'CHROME_NOT_RUNNING'), 409],
+        [new BrowserFleetError('typing into the login page failed', 502, 'TYPING_FAILED'), 502],
+        [new TypeError('fetch failed'), 502],
+      ];
+      for (const [failure, status] of cases) {
+        const { service } = formSetup({ loginFormSubmit: async () => { throw failure; } });
+        const logged = jest.spyOn((service as any)._logger, 'warn').mockImplementation(() => undefined);
+        const err = await service.formSubmit('org1', 'row1', 'password', SECRET).catch((e) => e);
+        expect(err.status).toBe(status);
+        expect(err.message).not.toContain('horse');
+        expect(JSON.stringify(logged.mock.calls)).not.toContain('horse');
+        expect(logged).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('stops a session that submits too often (someone guessing passwords)', async () => {
+      const { service, fleet } = formSetup();
+      const now = 1_000_000;
+      for (let i = 0; i < LOGIN_FORM_SUBMITS_MAX; i++) await service.formSubmit('org1', 'row1', 'password', SECRET, now + i);
+      await expect(service.formSubmit('org1', 'row1', 'password', SECRET, now + 100)).rejects.toMatchObject({ status: 429 });
+      expect(fleet.loginFormSubmit).toHaveBeenCalledTimes(LOGIN_FORM_SUBMITS_MAX);
+      // the window moves on
+      await expect(service.formSubmit('org1', 'row1', 'password', SECRET, now + 11 * 60 * 1000)).resolves.toMatchObject({ step: 'password' });
+    });
+
+    it('switches between the QR page and the password page only for a platform whose form has a page of its own', async () => {
+      const tiktok = { identifier: 'tiktokweb', browserSession: { loginUrl: 'https://www.tiktok.com/login', whoami: [], identity: () => null, form: { url: 'https://www.tiktok.com/login/phone-or-email/email' } } };
+      const both = setup({ provider: tiktok, slotRow: { ...pending, providerIdentifier: 'tiktokweb' } });
+      expect(await both.service.openLoginPage('org1', 'row1', 'form')).toEqual({ ok: true, navigated: true });
+      expect(await both.service.openLoginPage('org1', 'row1', 'login')).toEqual({ ok: true, navigated: true });
+      expect(both.fleet.open.mock.calls).toEqual([['s1', 'https://www.tiktok.com/login/phone-or-email/email'], ['s1', 'https://www.tiktok.com/login']]);
+      const x = formSetup();
+      expect(await x.service.openLoginPage('org1', 'row1', 'form')).toEqual({ ok: true, navigated: false });
+      expect(x.fleet.open).not.toHaveBeenCalled();
+    });
+
+    it('is only for the roles that manage channels, like every browser-session route', () => {
+      const guard = new RolesGuard(new Reflector());
+      const proto = BrowserSessionsController.prototype as any;
+      const context = (role: string, handler: (...a: any[]) => any, method: string) =>
+        ({
+          switchToHttp: () => ({ getRequest: () => ({ method, org: { users: [{ role }] } }) }),
+          getHandler: () => handler,
+          getClass: () => BrowserSessionsController,
+        }) as any;
+      for (const [handler, method] of [[proto.formState, 'GET'], [proto.formSubmit, 'POST'], [proto.openLoginPage, 'POST']] as const) {
+        expect(handler).toEqual(expect.any(Function));
+        for (const role of ['USER', 'VIEWER']) {
+          expect(() => guard.canActivate(context(role, handler, method))).toThrow(ForbiddenException);
+        }
+        for (const role of ['MANAGER', 'ADMIN', 'SUPERADMIN']) {
+          expect(guard.canActivate(context(role, handler, method))).toBe(true);
+        }
+      }
     });
   });
 });

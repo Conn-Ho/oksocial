@@ -7,10 +7,16 @@ import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integration
 import {
   browserFleet,
   BrowserFleetClient,
+  BrowserFleetError,
+  BrowserLoginFillStep,
+  BrowserLoginFormState,
   isRunFailure,
+  LOGIN_FORM_FILL_STEPS,
+  LOGIN_FORM_VALUE_MAX,
 } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import {
+  BrowserLoginFormHints,
   BrowserSession,
   BrowserSessionIdentity,
   SocialProvider,
@@ -65,8 +71,35 @@ const assertSimulatedAllowed = (superAdmin: boolean | undefined) => {
 };
 
 /** What the login dialog embeds; a simulated account has no screen to show. */
-// proxy: the name of the exit IP a new account's browser started behind
-export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true; proxy?: string };
+// proxy: the name of the exit IP a new account's browser started behind; form: the platform logs in
+// with a password, through oksocial's own login form
+export type BrowserLoginStart = { id: string; screenPath: string | null; simulated?: true; proxy?: string; form?: true };
+
+// oksocial's login form: at most this many submits per login session in this window (someone guessing
+// passwords through it), and the characters it never types (Enter, Tab… would act on the page)
+export const LOGIN_FORM_SUBMITS_MAX = 20;
+export const LOGIN_FORM_SUBMITS_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_FORM_CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** host + path of a URL, as the worker matches the login pages. Pure. */
+const hostPath = (url: string) => {
+  try {
+    const u = new URL(url);
+    return u.host + u.pathname;
+  } catch {
+    return '';
+  }
+};
+
+/** The form's hints, with the login pages defaulting to the login page (and form page) itself. Pure. */
+export const loginFormHints = (session: BrowserSession): BrowserLoginFormHints => {
+  const hints = session.form?.hints ?? {};
+  if (hints.loginUrls?.length) {
+    return hints;
+  }
+  const pages = [session.loginUrl, session.form?.url].filter((u): u is string => !!u).map(hostPath).filter(Boolean);
+  return { ...hints, loginUrls: pages };
+};
 
 export interface StartLoginOptions {
   // connect a simulated account instead of opening the platform's login page
@@ -149,7 +182,12 @@ export class BrowserSlotService {
     }
     await this.fleet.open(row.slot, provider.browserSession!.loginUrl);
     const { path } = await this.fleet.startScreen(row.slot);
-    return { id: row.id, screenPath: path, ...(picked ? { proxy: picked.name } : {}) };
+    return {
+      id: row.id,
+      screenPath: path,
+      ...(picked ? { proxy: picked.name } : {}),
+      ...(provider.browserSession!.form ? { form: true as const } : {}),
+    };
   }
 
   /**
@@ -370,6 +408,89 @@ export class BrowserSlotService {
     return { image };
   }
 
+  /** A login session that can still be used (the dialog's id), of this organization only. */
+  private async liveSession(orgId: string, id: string) {
+    const row = await this._repository.getById(orgId, id);
+    if (!row || row.status === 'RELEASED') {
+      throw new HttpException('登录窗口已失效，请关闭后重新登录', 404);
+    }
+    return row;
+  }
+
+  private formSession(providerIdentifier: string) {
+    const session = this.browserProvider(providerIdentifier).browserSession!;
+    if (!session.form) {
+      throw new HttpException('这个平台不能在这里填写登录信息，请在画面里登录', 400);
+    }
+    return session;
+  }
+
+  /** What the worker's failure means to the user. Logged without any value: there is none in it. */
+  private formFailure(row: { slot: string; providerIdentifier: string }, err: unknown): never {
+    const status = err instanceof BrowserFleetError ? err.status : 0;
+    const code = err instanceof BrowserFleetError ? err.code : undefined;
+    this._logger.warn(`login form of ${row.providerIdentifier} (slot ${row.slot}) failed: ${status || 'unreachable'} ${code ?? ''}`);
+    if (code === 'BUSY') {
+      throw new HttpException('上一步还在填写中，请稍等几秒', 409);
+    }
+    if (code === 'CHROME_NOT_RUNNING' || code === 'NO_LOGIN_PAGE') {
+      throw new HttpException('这个账号的浏览器没有打开登录页，请切换到完整画面，或关闭后重新登录', 409);
+    }
+    throw new HttpException('暂时操作不了这个账号的浏览器，请切换到完整画面登录', 502);
+  }
+
+  /**
+   * oksocial's login form: which step the session's login page is on (account, password, code,
+   * captcha, done), with the page's own prompt and error text, for the dialog to ask for that step.
+   */
+  async formState(orgId: string, id: string): Promise<BrowserLoginFormState> {
+    const row = await this.liveSession(orgId, id);
+    const session = this.formSession(row.providerIdentifier);
+    return this.fleet.loginForm(row.slot, loginFormHints(session)).catch((err) => this.formFailure(row, err));
+  }
+
+  // when each login session submitted its form lately (timestamps only, this process)
+  private _formSubmits = new Map<string, number[]>();
+
+  /**
+   * Types what the user entered for one step into the session's login page and submits it; the page's
+   * next state. `value` (an account, a password, a code) is passed straight to the worker and kept
+   * nowhere: no database, cache, log line or error message.
+   */
+  async formSubmit(orgId: string, id: string, step: string, value: unknown, now = Date.now()): Promise<BrowserLoginFormState> {
+    if (!LOGIN_FORM_FILL_STEPS.includes(step as BrowserLoginFillStep)) {
+      throw new HttpException('不支持的登录步骤', 400);
+    }
+    if (typeof value !== 'string' || !value.length || value.length > LOGIN_FORM_VALUE_MAX || LOGIN_FORM_CONTROL.test(value)) {
+      throw new HttpException(`请输入 1-${LOGIN_FORM_VALUE_MAX} 个字符，不能包含换行`, 400);
+    }
+    const row = await this.liveSession(orgId, id);
+    const session = this.formSession(row.providerIdentifier);
+    const recent = (this._formSubmits.get(row.id) ?? []).filter((t) => now - t < LOGIN_FORM_SUBMITS_WINDOW_MS);
+    if (recent.length >= LOGIN_FORM_SUBMITS_MAX) {
+      throw new HttpException('尝试次数太多，请过几分钟再试', 429);
+    }
+    this._formSubmits.set(row.id, [...recent, now]);
+    return this.fleet
+      .loginFormSubmit(row.slot, step as BrowserLoginFillStep, value, loginFormHints(session))
+      .catch((err) => this.formFailure(row, err));
+  }
+
+  /**
+   * Shows the session's login page again (`login`) or the platform's password-form page (`form`), for
+   * a platform whose form lives on a page of its own (TikTok opens on its QR code). Nothing to do for
+   * the others: their form is on the login page.
+   */
+  async openLoginPage(orgId: string, id: string, page: 'login' | 'form') {
+    const row = await this.liveSession(orgId, id);
+    const session = this.browserProvider(row.providerIdentifier).browserSession!;
+    const url = session.form?.url ? (page === 'form' ? session.form.url : session.loginUrl) : null;
+    if (url) {
+      await this.fleet.open(row.slot, url);
+    }
+    return { ok: true, navigated: !!url };
+  }
+
   /** The user closed the dialog: a new session's browser is removed, a reconnect's is kept. */
   async cancelLogin(orgId: string, id: string) {
     const row = await this._repository.getById(orgId, id);
@@ -377,6 +498,7 @@ export class BrowserSlotService {
       return { ok: true };
     }
     await this.fleet.stopScreen(row.slot).catch(() => undefined);
+    this._formSubmits.delete(row.id);
     if (row.status === 'PENDING') {
       await this.fleet.removeSlot(row.slot, true).catch(() => undefined);
       await this._repository.release(row.id);
