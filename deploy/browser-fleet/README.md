@@ -115,6 +115,21 @@ handle /screen/* {
 }
 ```
 
+## opencli patches
+
+Fixes the VM runs before upstream opencli releases them. Reinstalling or upgrading opencli
+(`npm i -g @jackwener/opencli`) drops them: re-apply, or delete the entry once the release has it.
+
+| File | Replaces | Why |
+|---|---|---|
+| `opencli-patches/toutiao-auth.js` | `clis/toutiao/auth.js` (1.8.8) | `toutiao whoami` failed on the profile_v4 backend (no user in page globals); reads `/mp/agw/creator_center/user_info`. Branch `fix/toutiao-whoami-creator-api` in the opencli repo. |
+
+```bash
+d=/usr/lib/node_modules/@jackwener/opencli/clis
+sudo cp -n $d/toutiao/auth.js $d/toutiao/auth.js.orig
+sudo install -m 0644 ~/oksocial/browser-fleet/opencli-patches/toutiao-auth.js $d/toutiao/auth.js
+```
+
 ## account-ctl
 
 ```

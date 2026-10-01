@@ -126,6 +126,16 @@ export const BrowserLoginModal: FC<{
     if (data.status === 'connected') {
       return finish(t('browser_login_connected', '账号已连接'));
     }
+    // 我已登录 found no account: say why instead of doing nothing
+    if (data.status === 'waiting' && data.reason) {
+      toaster.show(
+        data.reason === 'not_logged_in'
+          ? t('browser_login_not_yet', '还没检测到登录：请在上面的画面里完成登录（扫码后要在手机上点「确认登录」）')
+          : t('browser_login_unreadable', '已检测到登录，但暂时读不到账号信息。请稍等几秒再点一次「我已登录」；一直这样请联系我们，问题已自动记录'),
+        'warning'
+      );
+      return;
+    }
     if (data.status === 'mismatch') {
       setPhase('mismatch');
       setMessage(

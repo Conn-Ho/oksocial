@@ -187,8 +187,32 @@ describe('BrowserSlotService', () => {
     it('「我已登录」 forces a whoami even without the cookie', async () => {
       const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: loggedIn });
       expect(await service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'connected', integrationId: 'int1' });
-      expect(fleet.loginCookies).not.toHaveBeenCalled();
       expect(fleet.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('「我已登录」 without a login says no login is seen yet', async () => {
+      const notLoggedIn = async () => ({ ok: false, code: 'NOT_LOGGED_IN', message: 'Please log in', durationMs: 1 });
+      const { service, fleet } = setup({ slotRow: pending, provider: withCookies, run: notLoggedIn });
+      expect(await service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'waiting', reason: 'not_logged_in' });
+      expect(fleet.loginCookies).toHaveBeenCalledWith('s1', 'xiaohongshu.com', ['galaxy_creator_session_id']);
+    });
+
+    it('「我已登录」 with the login cookie but an account opencli cannot read says so, and logs it for us', async () => {
+      const stale = async () => ({ ok: false, code: 'NOT_LOGGED_IN', message: 'dashboard rendered but no user_id surface', durationMs: 1 });
+      const { service } = setup({ slotRow: pending, provider: withCookies, run: stale, cookies: async () => ['galaxy_creator_session_id'] });
+      const warn = jest.spyOn((service as any)._logger, 'warn').mockImplementation(() => undefined);
+      expect(await service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'waiting', reason: 'unreadable' });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('xiaohongshu'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no user_id surface'));
+    });
+
+    it('「我已登录」 on a platform without a cookie probe goes by what whoami says', async () => {
+      const authRequired = async () => ({ ok: false, code: 'AUTH_REQUIRED', message: 'log in', durationMs: 1 });
+      expect(await setup({ slotRow: pending, run: authRequired }).service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'waiting', reason: 'not_logged_in' });
+      const broken = async () => ({ ok: false, code: 'COMMAND_FAILED', message: 'selector changed', durationMs: 1 });
+      const { service } = setup({ slotRow: pending, run: broken });
+      jest.spyOn((service as any)._logger, 'warn').mockImplementation(() => undefined);
+      expect(await service.checkLogin('org1', 'row1', undefined, true)).toEqual({ status: 'waiting', reason: 'unreadable' });
     });
 
     it('a check still running answers waiting at once instead of piling up', async () => {

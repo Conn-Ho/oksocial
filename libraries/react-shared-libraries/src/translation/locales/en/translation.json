@@ -3112,5 +3112,7 @@
   "terms_changes_heading": "Changes to these terms",
   "terms_changes_body": "When these terms change in important ways, we will post the changes on our website and notify you by email. Continuing to use the service after a change means you accept the new terms.",
   "select_current_page": "Select this page",
-  "auto_action_support": "{{action}}: {{platforms}}"
+  "auto_action_support": "{{action}}: {{platforms}}",
+  "browser_login_not_yet": "No login detected yet: finish logging in on the screen above (after scanning, tap Confirm on your phone)",
+  "browser_login_unreadable": "You seem to be logged in, but the account can't be read yet. Wait a few seconds and click \"I've logged in\" again; if it keeps happening, contact us (we have logged the problem)"
 }

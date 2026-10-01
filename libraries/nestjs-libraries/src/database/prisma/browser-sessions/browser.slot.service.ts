@@ -1,4 +1,4 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { BrowserSlotRepository } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.repository';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
@@ -12,6 +12,7 @@ import {
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
 import {
   BrowserSession,
+  BrowserSessionIdentity,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
@@ -21,9 +22,14 @@ import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/p
 export const PENDING_SLOT_TTL_MS = 30 * 60 * 1000;
 // whoami opens the platform in the account's browser: at most this often per login session
 export const WHOAMI_EVERY_MS = 20_000;
+// opencli codes that mean the browser is simply not logged in
+const LOGGED_OUT_CODES = ['NOT_LOGGED_IN', 'AUTH_REQUIRED'];
+
+// why a 我已登录 check found no account: nothing logged in yet, or a login opencli cannot read
+export type BrowserLoginWaitReason = 'not_logged_in' | 'unreadable';
 
 export type BrowserLoginCheck =
-  | { status: 'waiting' }
+  | { status: 'waiting'; reason?: BrowserLoginWaitReason }
   | { status: 'mismatch'; expected: string; got: string }
   | { status: 'connected'; integrationId: string; web?: { label: string } };
 
@@ -140,6 +146,7 @@ export class BrowserSlotService {
 
   /** Polled by the login dialog: links the channel as soon as the browser is logged in. */
   // Login sessions being checked right now, and when each last ran whoami (this process).
+  private readonly _logger = new Logger(BrowserSlotService.name);
   private _checking = new Set<string>();
   private _lastWhoami = new Map<string, number>();
 
@@ -163,27 +170,52 @@ export class BrowserSlotService {
     }
   }
 
-  /** The logged-in account, or null. Reads only login cookies until one exists, then whoami (throttled). */
-  private async identify(row: { id: string; slot: string }, provider: SocialProvider, force: boolean) {
+  /**
+   * The logged-in account, or why there is none. Polls read only login cookies until one exists,
+   * then whoami (throttled). 我已登录 (`force`) runs whoami at once and, when it finds no account, tells
+   * an empty login from one opencli cannot read (the platform changed its page): the latter is logged.
+   */
+  private async identify(
+    row: { id: string; slot: string; providerIdentifier: string },
+    provider: SocialProvider,
+    force: boolean
+  ): Promise<{ identity: BrowserSessionIdentity } | { identity: null; reason?: BrowserLoginWaitReason }> {
     const session = provider.browserSession!;
-    if (!force && session.loginCookies) {
-      const present = await this.fleet
-        .loginCookies(row.slot, session.loginCookies.domain, session.loginCookies.names)
-        // Chrome still starting, or a worker without the probe: keep waiting
-        .catch(() => [] as string[]);
-      if (!present.length) {
-        return null;
-      }
+    const cookies = () =>
+      session.loginCookies
+        ? this.fleet
+            .loginCookies(row.slot, session.loginCookies.domain, session.loginCookies.names)
+            // Chrome still starting, or a worker without the probe: keep waiting
+            .catch(() => [] as string[])
+        : Promise.resolve(null);
+    if (!force && session.loginCookies && !(await cookies())?.length) {
+      return { identity: null };
     }
     if (!force && Date.now() - (this._lastWhoami.get(row.id) ?? 0) < WHOAMI_EVERY_MS) {
-      return null;
+      return { identity: null };
     }
     this._lastWhoami.set(row.id, Date.now());
     const res = await this.fleet
       .run(row.slot, session.whoami, 60_000)
       // the slot has no bridge profile yet while Chrome starts: keep waiting
       .catch(() => null);
-    return res && !isRunFailure(res) ? session.identity(res.data) : null;
+    const identity = res && !isRunFailure(res) ? session.identity(res.data) : null;
+    if (identity || !force) {
+      return identity ? { identity } : { identity: null };
+    }
+    const failure = res && isRunFailure(res) ? res : null;
+    const present = await cookies();
+    const loggedIn =
+      present !== null ? present.length > 0 : !!failure && !LOGGED_OUT_CODES.includes(failure.code ?? '');
+    if (!loggedIn) {
+      return { identity: null, reason: 'not_logged_in' };
+    }
+    this._logger.warn(
+      `login of ${row.providerIdentifier} (slot ${row.slot}) is not readable: ${
+        failure ? `${failure.code ?? 'failed'} ${failure.message ?? ''}` : 'whoami found no account'
+      }`
+    );
+    return { identity: null, reason: 'unreadable' };
   }
 
   private async check(
@@ -193,10 +225,11 @@ export class BrowserSlotService {
     force: boolean
   ): Promise<BrowserLoginCheck> {
     const provider = this.browserProvider(row.providerIdentifier);
-    const identity = await this.identify(row, provider, force);
-    if (!identity) {
-      return { status: 'waiting' };
+    const found = await this.identify(row, provider, force);
+    if (!found.identity) {
+      return 'reason' in found && found.reason ? { status: 'waiting', reason: found.reason } : { status: 'waiting' };
     }
+    const identity = found.identity;
     this._lastWhoami.delete(row.id);
 
     const existing = row.integrationId
