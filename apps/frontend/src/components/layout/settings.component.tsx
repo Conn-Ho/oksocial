@@ -33,6 +33,7 @@ import { Autopost } from '@gitroom/frontend/components/autopost/autopost';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { GlobalSettings } from '@gitroom/frontend/components/settings/global.settings';
 import { ApprovedAppsComponent } from '@gitroom/frontend/components/approved-apps/approved-apps.component';
+import { TeamSettings } from '@gitroom/frontend/components/teams/team.settings';
 export const SettingsPopup: FC<{
   getRef?: Ref<any>;
 }> = (props) => {
@@ -82,18 +83,34 @@ export const SettingsPopup: FC<{
     close();
   }, []);
 
-  // ?tab= opens a section directly (e.g. 同步与 AI from the inbox and monitor pages)
-  const [tab, setTab] = useState(url.get('tab') || 'global_settings');
+  // ?tab= opens a section directly (e.g. 同步与 AI from the inbox and monitor pages, 团队 from the team menu)
+  const tabParam = url.get('tab');
+  const [tab, setTab] = useState(tabParam || 'global_settings');
+  useEffect(() => {
+    if (tabParam) {
+      setTab(tabParam);
+    }
+  }, [tabParam]);
+  // on the settings page the open section stays in the address, so such a link works from here too
+  const openTab = useCallback((key: string) => {
+    setTab(key);
+    if (window.location.pathname === '/settings') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', key);
+      window.history.replaceState(null, '', `/settings?${params}`);
+    }
+  }, []);
 
   const t = useT();
   const list = useMemo(() => {
     const arr = [];
     arr.push({ tab: 'global_settings', label: t('global_settings', 'Global Settings') });
+    arr.push({ tab: 'team', label: t('settings_team', '团队') });
     arr.push({ tab: 'sync_ai', label: t('sync_ai', '同步与 AI') });
     arr.push({ tab: 'proxies', label: t('browser_proxies', '出口代理') });
     // Populate tabs based on user permissions
     if (user?.tier?.team_members && isGeneral) {
-      arr.push({ tab: 'teams', label: t('teams', 'Teams') });
+      arr.push({ tab: 'teams', label: t('settings_members', '成员管理') });
     }
     if (user?.tier?.webhooks) {
       arr.push({ tab: 'webhooks', label: t('webhooks_1', 'Webhooks') });
@@ -132,7 +149,7 @@ export const SettingsPopup: FC<{
               key={tabKey}
               type="button"
               aria-current={tabKey === tab ? 'page' : undefined}
-              onClick={() => setTab(tabKey)}
+              onClick={() => openTab(tabKey)}
               className={clsx(
                 'shrink-0 whitespace-nowrap md:whitespace-normal text-start rounded-[8px] px-[12px] min-h-[36px] text-[14px] transition-colors',
                 tabKey === tab
@@ -154,6 +171,8 @@ export const SettingsPopup: FC<{
         </div>
       </div>
       <div className="bg-newBgColorInner flex-1 flex-col flex p-[16px] md:p-[20px] gap-[12px]">
+        {/* outside the profile form below: the team section has a form of its own */}
+        {tab === 'team' && <TeamSettings />}
         <FormProvider {...form}>
           <form onSubmit={form.handleSubmit(submit)}>
             {!!getRef && (
