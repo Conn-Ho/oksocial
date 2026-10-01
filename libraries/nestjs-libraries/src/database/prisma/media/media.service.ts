@@ -20,6 +20,7 @@ import { organizationId } from '@gitroom/nestjs-libraries/temporal/temporal.sear
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { MediaProcessorJob } from '@gitroom/nestjs-libraries/upload/media.processor.interface';
 import { extname } from 'path';
+import { MediaKind } from '@gitroom/helpers/utils/media.kind';
 import { randomBytes } from 'crypto';
 import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
 import { ssrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
@@ -96,8 +97,9 @@ export class MediaService {
     private _creditsService: CreditsService
   ) {}
 
+  // deleting from the library or the picker moves the file to the 网盘 回收站 for 30 days
   async deleteMedia(org: string, id: string) {
-    return this._mediaRepository.deleteMedia(org, id);
+    return this._mediaRepository.trash(org, [id]);
   }
 
   getMediaById(id: string) {
@@ -172,13 +174,15 @@ export class MediaService {
     org: string,
     fileName: string,
     filePath: string,
-    originalName?: string
+    originalName?: string,
+    fileSize?: number
   ) {
     return this._mediaRepository.saveFile(
       org,
       fileName,
       filePath,
-      originalName
+      originalName,
+      fileSize
     );
   }
 
@@ -188,9 +192,10 @@ export class MediaService {
     org: string,
     fileName: string,
     filePath: string,
-    originalName?: string
+    originalName?: string,
+    fileSize?: number
   ) {
-    const media = await this.saveFile(org, fileName, filePath, originalName);
+    const media = await this.saveFile(org, fileName, filePath, originalName, fileSize);
     const client = this._temporalService.client.getRawClient();
     if (
       !this.processor ||
@@ -463,8 +468,8 @@ export class MediaService {
     );
   }
 
-  getMedia(org: string, page: number, search?: string) {
-    return this._mediaRepository.getMedia(org, page, search);
+  getMedia(org: string, page: number, search?: string, kind?: MediaKind) {
+    return this._mediaRepository.getMedia(org, page, search, kind);
   }
 
   saveMediaInformation(org: string, data: SaveMediaInformationDto) {

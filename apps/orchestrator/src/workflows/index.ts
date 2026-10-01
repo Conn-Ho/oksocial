@@ -25,3 +25,4 @@ export * from './weekly.report.workflow';
 export * from './automation.workflow';
 export * from './monitor.workflow';
 export * from './billing.credits.workflow';
+export * from './media.trash.workflow';
