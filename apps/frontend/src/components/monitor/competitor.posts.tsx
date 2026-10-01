@@ -195,7 +195,7 @@ export const CompetitorPosts: FC<{ platforms: MonitorPlatform[]; channels: Chann
   const [query, setQuery] = useState<MonitorPostsQuery>(START);
   const [days, setDays] = useState(30);
   const from = useMemo(() => (days ? dayjs().subtract(days, 'day').startOf('day').toISOString() : undefined), [days]);
-  const { data, isLoading } = useMonitorPosts({ ...query, from });
+  const { data, error, isLoading } = useMonitorPosts({ ...query, from });
   const rows = data?.items || [];
 
   const change = useCallback((patch: Partial<MonitorPostsQuery>) => setQuery((q) => ({ ...q, ...patch, page: 1 })), []);
@@ -232,7 +232,9 @@ export const CompetitorPosts: FC<{ platforms: MonitorPlatform[]; channels: Chann
         </p>
       </div>
       <Filters query={query} days={days} platforms={platforms} onChange={change} onDays={changeDays} />
-      {!isLoading && !rows.length ? (
+      {error ? (
+        <Empty>{(error as Error).message}</Empty>
+      ) : !isLoading && !rows.length ? (
         <Empty>{t('competitor_posts_empty', '这段时间还没有读到竞品的帖子。先在「竞品」里添加账号，第一次读取后这里就有数据。')}</Empty>
       ) : (
         <ScrollRegion label={t('competitor_posts', '竞品帖文')}>
@@ -252,7 +254,7 @@ export const CompetitorPosts: FC<{ platforms: MonitorPlatform[]; channels: Chann
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-newBorder align-top hover:bg-boxHover/40">
+                <tr key={row.id} className="border-t border-newBorder align-top">
                   <td className="px-[12px] py-[10px] max-w-[360px]">
                     <PostCell row={row} />
                   </td>
@@ -275,7 +277,7 @@ export const CompetitorPosts: FC<{ platforms: MonitorPlatform[]; channels: Chann
           </table>
         </ScrollRegion>
       )}
-      {data && data.total > 0 && <Pager page={query.page} pages={data.pages} total={data.total} onPage={(page) => setQuery((q) => ({ ...q, page }))} />}
+      {!error && data && data.total > 0 && <Pager page={query.page} pages={data.pages} total={data.total} onPage={(page) => setQuery((q) => ({ ...q, page }))} />}
     </section>
   );
 };

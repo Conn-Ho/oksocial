@@ -24,13 +24,12 @@ const FilterChips: FC<{ label: string; value: string; options: Array<{ value: st
   return (
     <div className="flex items-center gap-[8px] text-[13px]">
       <span className="text-textItemBlur shrink-0">{label}</span>
-      <div role="radiogroup" aria-label={label} className="flex gap-[4px] overflow-x-auto">
+      <div role="group" aria-label={label} className="flex gap-[4px] overflow-x-auto">
         {[{ value: '', label: t('all', '全部') }, ...options].map((o) => (
           <button
             key={o.value}
             type="button"
-            role="radio"
-            aria-checked={value === o.value}
+            aria-pressed={value === o.value}
             onClick={() => onChange(o.value)}
             className={clsx(
               'px-[10px] h-[28px] rounded-full text-[12px] shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-btnPrimary',

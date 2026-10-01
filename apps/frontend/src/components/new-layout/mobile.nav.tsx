@@ -36,7 +36,7 @@ export const MobileNav: FC = () => {
   const t = useT();
   const pathname = usePathname();
   const { firstMenu, secondMenu } = useVisibleMenuItems();
-  const unreplied = useInboxUnreplied();
+  const unreplied = useInboxUnreplied(firstMenu.some((item) => item.path === '/inbox'));
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
 

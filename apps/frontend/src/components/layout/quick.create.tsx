@@ -9,6 +9,7 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { canManageChannels, canWritePosts } from '@gitroom/helpers/auth/org.roles';
 import { useAddProvider } from '@gitroom/frontend/components/launches/add.provider.component';
+import { useIntegrationList } from '@gitroom/frontend/components/launches/helpers/use.integration.list';
 
 /**
  * What a 「新建」 link asked a page to open (`?<name>=<value>`), opened once the page can (`ready`),
@@ -66,7 +67,9 @@ export const QuickCreate: FC = () => {
   const ref = useClickAway<HTMLDivElement>(() => setOpen(false));
   const close = useCallback(() => setOpen(false), []);
   const addAccount = useAddProvider(() => mutate('/integrations/list'));
-  const canWrite = canWritePosts(user?.role);
+  const { data: integrations, isLoading } = useIntegrationList();
+  // the post editor opens only with a channel to post to (the calendar shows none without)
+  const canWrite = canWritePosts(user?.role) && (isLoading || !!integrations?.length);
   const canManage = canManageChannels(user?.role);
   const links = LINKS.filter((l) => (l.write ? canWrite : canManage));
 
@@ -84,8 +87,8 @@ export const QuickCreate: FC = () => {
     <div className="relative self-center" ref={ref} onKeyDown={onKeyDown}>
       <button
         type="button"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls="quick-create-list"
         aria-label={t('quick_create', '新建')}
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-[4px] h-[32px] px-[10px] md:px-[12px] rounded-full bg-btnPrimary text-white text-[13px] font-[600] hover:bg-btnPrimaryHover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-btnPrimary"
@@ -95,19 +98,17 @@ export const QuickCreate: FC = () => {
       </button>
       {open && (
         <div
-          role="menu"
-          aria-label={t('quick_create', '新建')}
+          id="quick-create-list"
           className="absolute end-0 top-[calc(100%+6px)] z-[300] w-[240px] max-w-[calc(100vw-32px)] p-[6px] flex flex-col bg-newBgColorInner rounded-[12px] ring-1 ring-newBorder shadow-[0_8px_24px_rgba(10,15,30,0.12)]"
         >
           {links.map((l) => (
-            <Link key={l.key} role="menuitem" href={l.href} onClick={close} className={itemClass}>
+            <Link key={l.key} href={l.href} onClick={close} className={itemClass}>
               <ItemText label={t(`quick_create_${l.key}`, l.label)} hint={t(`quick_create_${l.key}_hint`, l.hint)} />
             </Link>
           ))}
           {canManage && (
             <button
               type="button"
-              role="menuitem"
               onClick={() => {
                 close();
                 addAccount();

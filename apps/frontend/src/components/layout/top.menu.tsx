@@ -340,7 +340,7 @@ export const useVisibleMenuItems = () => {
 
 export const TopMenu: FC<{ variant?: 'rail' | 'row' }> = ({ variant = 'rail' }) => {
   const { firstMenu, secondMenu } = useVisibleMenuItems();
-  const unreplied = useInboxUnreplied();
+  const unreplied = useInboxUnreplied(firstMenu.some((item) => item.path === '/inbox'));
   const row = variant === 'row';
   return (
     <>

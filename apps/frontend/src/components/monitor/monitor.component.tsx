@@ -105,7 +105,7 @@ export const MonitorComponent: FC = () => {
   const [selected, setSelected] = useState('');
   const { data: targets, mutate, isLoading } = useMonitorTargets(kind);
   const { data: platforms } = useMonitorPlatforms();
-  const { data: integrations } = useIntegrationList();
+  const { data: integrations, isLoading: loadingChannels } = useIntegrationList();
   const canManage = canManageChannels(user?.role);
   const canWrite = canWritePosts(user?.role);
   const list = targets || [];
@@ -153,7 +153,7 @@ export const MonitorComponent: FC = () => {
   const openAdd = useCallback(() => openAddFor(kind), [kind, openAddFor]);
 
   // 「新建」 › 添加监控 from another page: /monitor?add=POST (or ACCOUNT / KEYWORD)
-  useOpenFromQuery('add', canManage && !!platforms, (value) => {
+  useOpenFromQuery('add', canManage && !!platforms && !loadingChannels, (value) => {
     const what = KIND_TABS.find((tab) => tab.kind === value)?.kind ?? 'POST';
     setKind(what);
     setLibrary(false);

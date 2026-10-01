@@ -196,8 +196,16 @@ export const useMonitorPosts = (query: MonitorPostsQuery) => {
     Object.entries(query).flatMap(([k, v]) => (v === undefined || v === '' ? [] : [[k, String(v)]]))
   );
   const key = `/monitoring/items?${params.toString()}`;
-  const load = useCallback(async () => (await fetch(key)).json(), [key]);
-  return useSWR<{ total: number; page: number; pages: number; items: MonitorPostRow[] }>(key, load);
+  const load = useCallback(async () => {
+    const res = await fetch(key);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body?.message || `HTTP ${res.status}`);
+    }
+    return body;
+  }, [key]);
+  // a new sort or filter keeps the rows shown until the next page of them arrives
+  return useSWR<{ total: number; page: number; pages: number; items: MonitorPostRow[] }>(key, load, { keepPreviousData: true });
 };
 
 /** POST/PUT/DELETE with the API's error message as the thrown message. */

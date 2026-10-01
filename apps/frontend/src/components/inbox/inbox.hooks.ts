@@ -87,15 +87,15 @@ export const useInboxList = (filters: InboxFilters) => {
   return useSWR<{ total: number; page: number; pages: number; items: InboxItem[] }>(key, load);
 };
 
-export const useInboxCounts = () => {
+export const useInboxCounts = (enabled = true) => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/inbox/counts')).json(), []);
-  return useSWR<Partial<Record<InboxKind, number>>>('/inbox/counts', load, { refreshInterval: 60_000 });
+  return useSWR<Partial<Record<InboxKind, number>>>(enabled ? '/inbox/counts' : null, load, { refreshInterval: 60_000 });
 };
 
-/** Everything not answered yet, over all kinds: the 互动 badge in the menu (polled every minute). */
-export const useInboxUnreplied = () => {
-  const { data } = useInboxCounts();
+/** Everything not answered yet, over all kinds: the 互动 badge in the menu (polled every minute while shown). */
+export const useInboxUnreplied = (shown: boolean) => {
+  const { data } = useInboxCounts(shown);
   return KIND_TABS.reduce((sum, { kind }) => sum + (typeof data?.[kind] === 'number' ? data[kind]! : 0), 0);
 };
 
