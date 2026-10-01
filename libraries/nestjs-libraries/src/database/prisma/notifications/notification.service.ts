@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { NotificationsRepository } from '@gitroom/nestjs-libraries/database/prisma/notifications/notifications.repository';
+import {
+  isNotificationRead,
+  NotificationCenterFilter,
+  NotificationsRepository,
+  NOTIFICATIONS_PAGE_SIZE,
+} from '@gitroom/nestjs-libraries/database/prisma/notifications/notifications.repository';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
 import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { TemporalService } from 'nestjs-temporal-core';
@@ -9,6 +14,16 @@ import { WebhookSender } from '@gitroom/nestjs-libraries/database/prisma/webhook
 import { NotificationCategory } from '@prisma/client';
 
 export type NotificationType = 'success' | 'fail' | 'info';
+
+// 通知中心 tabs, in display order; rows without a category are 系统
+export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  'PUBLISH',
+  'ENGAGEMENT',
+  'MONITOR',
+  'CHANNEL',
+  'AUTOMATION',
+  'SYSTEM',
+];
 
 @Injectable()
 export class NotificationService {
@@ -32,6 +47,52 @@ export class NotificationService {
       organizationId,
       page
     );
+  }
+
+  private async lastRead(userId: string) {
+    return (await this._notificationRepository.getLastReadNotification(userId))?.lastReadNotifications ?? new Date(0);
+  }
+
+  /** 通知中心: a page of the organization's notifications with the member's read state and unread counts. */
+  async center(organizationId: string, userId: string, query: NotificationCenterFilter & { page?: number }) {
+    const lastRead = await this.lastRead(userId);
+    const page = Math.max(1, query.page || 1);
+    const [{ total, rows }, unread] = await Promise.all([
+      this._notificationRepository.centerList(
+        organizationId,
+        userId,
+        lastRead,
+        { category: query.category, read: query.read },
+        page
+      ),
+      this._notificationRepository.unreadByCategory(organizationId, userId, lastRead),
+    ]);
+    const counts = Object.fromEntries(NOTIFICATION_CATEGORIES.map((c) => [c, 0])) as Record<NotificationCategory, number>;
+    for (const row of unread) {
+      counts[row.category ?? 'SYSTEM'] += row._count._all;
+    }
+    return {
+      notifications: rows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        link: r.link,
+        createdAt: r.createdAt,
+        category: r.category ?? ('SYSTEM' as NotificationCategory),
+        read: isNotificationRead(r.createdAt, lastRead, r.reads.length > 0),
+      })),
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / NOTIFICATIONS_PAGE_SIZE)),
+      unread: { ALL: Object.values(counts).reduce((a, b) => a + b, 0), ...counts },
+    };
+  }
+
+  markRead(organizationId: string, userId: string, ids: string[]) {
+    return this._notificationRepository.markRead(organizationId, userId, [...new Set(ids)]);
+  }
+
+  markAllRead(userId: string) {
+    return this._notificationRepository.markAllRead(userId);
   }
 
   getNotifications(organizationId: string, userId: string) {

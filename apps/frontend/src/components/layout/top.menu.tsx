@@ -236,6 +236,13 @@ export const useMenuItem = () => {
       hide: !usageBilling,
     },
     {
+      // reached from the bell, not the menu: listed so the header shows its title
+      name: t('notification_center', '通知中心'),
+      icon: <span />,
+      path: '/notifications',
+      hide: true,
+    },
+    {
       name: t('billing', 'Billing'),
       icon: (
         <svg
