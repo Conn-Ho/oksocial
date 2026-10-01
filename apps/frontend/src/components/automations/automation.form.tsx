@@ -352,7 +352,8 @@ export const AutomationForm: FC<{ type: AutomationType; existing?: Automation; o
       )}
       {type === 'LEAD_COLLECTOR' && (
         <>
-          <Chips label={t('sources', '线索来源')} options={{ COMMENT: t('automation_kind_comment', '评论'), DM: t('automation_kind_dm', '私信'), MENTION: t('automation_kind_mention', '@提及') }} value={config.sources || []} onChange={(v) => set({ sources: v })} />
+          {/* no 私信: DMs are handled in okchat */}
+          <Chips label={t('sources', '线索来源')} options={{ COMMENT: t('automation_kind_comment', '评论'), MENTION: t('automation_kind_mention', '@提及') }} value={(config.sources || []).filter((s: string) => s !== 'DM')} onChange={(v) => set({ sources: v })} />
           <Row label={t('lead_prompt', '什么样的人算线索（必填，500 字内）')}>
             <textarea value={config.prompt || ''} maxLength={500} onChange={(e) => set({ prompt: e.target.value })} className="bg-newTableHeader rounded-[4px] p-[8px] min-h-[70px] text-[14px]" />
           </Row>

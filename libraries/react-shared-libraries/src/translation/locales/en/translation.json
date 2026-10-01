@@ -2744,7 +2744,7 @@
   "analytics_x_official": "X (official API)",
   "sync_unit_item": "item",
   "sync_unit_read": "read",
-  "sync_section_0_intro": "Comments, DMs and @mentions your connected accounts receive (the Inbox syncs every 10 minutes).",
+  "sync_section_0_intro": "Comments and @mentions your connected accounts receive (the Inbox syncs every 10 minutes).",
   "sync_section_1_intro": "Posts under Monitoring › Posts, read at each post's own frequency.",
   "sync_section_2_intro": "Accounts under Monitoring › Competitors; their recent posts are read at each account's own frequency.",
   "sync_section_0_group_0": "Sync",
