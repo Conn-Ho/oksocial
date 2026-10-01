@@ -3116,5 +3116,6 @@
   "browser_login_not_yet": "No login detected yet: finish logging in on the screen above (after scanning, tap Confirm on your phone)",
   "browser_login_unreadable": "You seem to be logged in, but the account can't be read yet. Wait a few seconds and click \"I've logged in\" again; if it keeps happening, contact us (we have logged the problem)",
   "refresh_started": "Updating every account in the background; the report refreshes when it is done",
-  "browser_login_exit": "Exit IP: {{name}} (logins, posts and interactions all go through it)"
+  "browser_login_exit": "Exit IP: {{name}} (logins, posts and interactions all go through it)",
+  "inbox_reply_top_level": "This platform can't reply under a comment: your reply goes out as a new comment on the post. Start it with the person's name."
 }

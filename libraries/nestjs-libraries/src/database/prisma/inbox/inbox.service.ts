@@ -71,6 +71,15 @@ export class InboxService {
     );
   }
 
+  /** Kinds each provider answers with a new comment on the post instead of under the item, for the UI. */
+  topLevelReplies() {
+    return Object.fromEntries(
+      socialIntegrationList
+        .filter((p) => p.inbox?.topLevelReplies?.length)
+        .map((p) => [p.identifier, p.inbox!.topLevelReplies!])
+    );
+  }
+
   async sync(orgId: string, integrationId: string) {
     const integration = await this._integrationService.getIntegrationById(orgId, integrationId);
     if (!integration) {

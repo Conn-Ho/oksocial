@@ -40,6 +40,12 @@ export class InboxController {
     return this._inboxService.replyCapabilities();
   }
 
+  @Get('/capabilities/top-level')
+  @ApiOperation({ summary: '各平台以新评论方式回复的类型', description: '这些平台不能回复某条评论，回复会作为帖子下的一条新评论发出（例如知乎）。' })
+  topLevelReplies() {
+    return this._inboxService.topLevelReplies();
+  }
+
   @Get('/notices')
   @ApiOperation({ summary: '需要处理的账号提示', description: '例如小红书网页版没有登录，私信和评论通知读不到。' })
   notices(@GetOrgFromRequest() org: Organization) {

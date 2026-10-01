@@ -99,6 +99,13 @@ export const useInboxCapabilities = () => {
   return useSWR<Record<string, InboxKind[]>>('/inbox/capabilities', load);
 };
 
+/** Kinds a platform answers with a new comment on the post, not under the item (知乎). */
+export const useInboxTopLevelReplies = () => {
+  const fetch = useFetch();
+  const load = useCallback(async () => (await fetch('/inbox/capabilities/top-level')).json(), []);
+  return useSWR<Record<string, InboxKind[]>>('/inbox/capabilities/top-level', load);
+};
+
 export const useReplyTemplates = () => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/inbox/templates')).json(), []);

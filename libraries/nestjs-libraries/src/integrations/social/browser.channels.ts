@@ -4,6 +4,11 @@ import {
   BrowserSessionIdentity,
   ChannelStats,
   CreationCapabilities,
+  InboxCapabilities,
+  InboxFetched,
+  InboxFetchResult,
+  InboxKind,
+  InboxReplyItem,
   InteractAccount,
   InteractAuthor,
   InteractCapabilities,
@@ -79,6 +84,17 @@ export type ChannelInteractSpec = {
   following?: (read: Read, handle: string, limit: number) => Promise<InteractAccount[]>;
 };
 
+/**
+ * 互动收件箱: comments on the account's own posts (`read` runs opencli in its browser), and the write
+ * command that answers each kind. A kind without one is answered on the platform, not in oksocial.
+ */
+export type ChannelInboxSpec = {
+  fetch: (read: Read, integration: Integration) => Promise<InboxFetched[] | InboxFetchResult>;
+  reply?: Partial<Record<InboxKind, (item: InboxReplyItem, text: string) => Argv>>;
+  // kinds whose reply is a new comment on the post (the platform cannot answer under a comment)
+  topLevelReplies?: InboxKind[];
+};
+
 /** How one platform logs in and who is logged in, in terms of its `opencli <site> whoami` columns. */
 export type BrowserChannelSpec = {
   // dashless: Temporal derives the channel's worker queue from it
@@ -105,6 +121,7 @@ export type BrowserChannelSpec = {
   stats?: (run: Run, account: { internalId: string; profile?: string | null }) => Promise<ChannelStats>;
   monitor?: ChannelMonitorSpec;
   interact?: ChannelInteractSpec;
+  inbox?: ChannelInboxSpec;
 };
 
 type Run = (args: string[], timeoutMs?: number) => Promise<unknown>;
@@ -148,6 +165,7 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
   stats?: SocialProvider['stats'];
   monitor?: MonitorCapabilities;
   interact?: InteractCapabilities;
+  inbox?: InboxCapabilities;
 
   constructor(protected spec: BrowserChannelSpec) {
     super();
@@ -181,6 +199,9 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
     }
     if (spec.interact) {
       this.interact = this.interactOf(spec.interact);
+    }
+    if (spec.inbox) {
+      this.inbox = this.inboxOf(spec.inbox);
     }
     const catalog = CREATION_CATALOG.find((p) => p.identifier === (spec.platform ?? spec.identifier));
     if (catalog) {
@@ -237,6 +258,22 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
       replyToComment: replyToComment && (async (slot, c, text) => write(slot, replyToComment(c, text, this.reader(slot)))),
       followers: followers && ((slot, handle, limit) => followers(this.reader(slot), handle, limit)),
       following: following && ((slot, handle, limit) => following(this.reader(slot), handle, limit)),
+    };
+  }
+
+  private inboxOf(i: ChannelInboxSpec): InboxCapabilities {
+    const replies = Object.entries(i.reply ?? {}) as Array<[InboxKind, (item: InboxReplyItem, text: string) => Argv]>;
+    return {
+      fetch: (slot, integration) => i.fetch(this.reader(slot), integration),
+      // async: a reply the command cannot address (no comment id) rejects like a failed write
+      reply: Object.fromEntries(
+        replies.map(([kind, argv]) => [
+          kind,
+          async (slot: string, _integration: Integration, item: InboxReplyItem, text: string) =>
+            this.written(await this.exec(slot, argv(item, text), WRITE_TIMEOUT_MS)),
+        ])
+      ),
+      topLevelReplies: i.topLevelReplies,
     };
   }
 
@@ -433,7 +470,7 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'bilibili', name: 'B站', site: 'bilibili',
-    toolTip: '扫码登录 B站；数据、监控、关注和评论（含回复评论），投稿还在开发中',
+    toolTip: '扫码登录 B站；数据、监控、关注和评论，互动里能看到并回复自己视频下的评论，投稿还在开发中',
     loginUrl: 'https://passport.bilibili.com/login',
     loginCookies: { domain: 'bilibili.com', names: ['SESSDATA'] },
     idFrom: ['id'], nameFrom: ['username'], maxLength: 2000,
@@ -448,7 +485,7 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'zhihu', name: '知乎', site: 'zhihu',
-    toolTip: '扫码登录知乎；监控、点赞、收藏、评论和关注（含回关），发文章和想法还在开发中',
+    toolTip: '扫码登录知乎；监控、点赞、收藏、评论和关注（含回关），互动里能看到自己回答下的评论并回复（作为一条新评论），发文章和想法还在开发中',
     loginUrl: 'https://www.zhihu.com/signin',
     loginCookies: { domain: 'zhihu.com', names: ['z_c0'] },
     idFrom: ['uid', 'url_token'], nameFrom: ['name'], usernameFrom: ['url_token'], maxLength: 20000,
