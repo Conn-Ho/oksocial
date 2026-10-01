@@ -145,8 +145,9 @@ export const SettingsPopup: FC<{
           ))}
         </nav>
         <div>
+          {/* on phones it closes the page instead, below the section */}
           {showLogout && (
-            <div className="mt-4">
+            <div className="mt-4 hidden md:block">
               <LogoutComponent />
             </div>
           )}
@@ -218,6 +219,11 @@ export const SettingsPopup: FC<{
             </div>
           </form>
         </FormProvider>
+        {showLogout && (
+          <div className="md:hidden mt-[24px] pt-[16px] border-t border-newBorder">
+            <LogoutComponent />
+          </div>
+        )}
       </div>
     </>
   );
