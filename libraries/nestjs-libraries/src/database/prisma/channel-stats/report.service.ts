@@ -7,6 +7,7 @@ import { ChannelStatsService } from '@gitroom/nestjs-libraries/database/prisma/c
 import {
   buildPlatformReport,
   buildPostRows,
+  chinaDate,
   Granularity,
   PlatformReport,
   PostSortKey,
@@ -39,9 +40,10 @@ export type PostReportQuery = ReportQuery & {
   pageSize?: number;
 };
 
-/** What a share link shows of the top posts: what anyone can see on the platform, none of our ids. */
-const withPublicPosts = (report: PlatformReport) => ({
+/** What a share link shows: the report without our ids (accounts and posts are numbered instead). */
+const withoutIds = (report: PlatformReport) => ({
   ...report,
+  channels: report.channels.map((c, i) => ({ ...c, id: String(i + 1) })),
   topPosts: report.topPosts.map((p, i) => ({
     key: String(i + 1),
     title: p.title,
@@ -121,6 +123,8 @@ export class ReportService {
     return {
       from: range.from,
       to: range.to,
+      fromDate: chinaDate(range.from.getTime()),
+      toDate: chinaDate(range.to.getTime() - 1),
       total: rows.length,
       page,
       pageSize,
@@ -172,7 +176,7 @@ export class ReportService {
     }
     return {
       organization: share.organization.name,
-      report: withPublicPosts(await this.overview(share.organizationId, { days: share.days })),
+      report: withoutIds(await this.overview(share.organizationId, { days: share.days })),
     };
   }
 

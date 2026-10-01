@@ -67,7 +67,7 @@ describe('ReportService', () => {
     expect(ok.report.channels[0].name).toBe('WenWen');
   });
 
-  it('share links show the top posts without our internal ids', async () => {
+  it('share links show accounts and top posts without our internal ids', async () => {
     const share = { organizationId: 'o1', days: 7, expiresAt: null, passwordHash: null, organization: { name: '团队' } };
     const { service, repo } = setup(share);
     repo.postMetrics.mockResolvedValueOnce([
@@ -79,6 +79,7 @@ describe('ReportService', () => {
       expect(report.topPosts[0]).not.toHaveProperty(key);
     }
     expect(report.topPosts[0].key).toBe('1');
+    expect(report.channels.map((c) => c.id)).toEqual(['1', '2']);
   });
 
   it('plans without the feature cannot share', async () => {

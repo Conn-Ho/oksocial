@@ -237,8 +237,10 @@ export class WeeklyReportService {
   }
 
   async list(orgId: string, now = new Date()) {
+    const week = lastFullWeek(now.getTime());
     return {
-      week: lastFullWeek(now.getTime()),
+      // China dates, Monday and Sunday (what 立即生成 writes)
+      week: { start: chinaDate(week.start), end: chinaDate(new Date(week.end.getTime() - DAY_MS)) },
       aiEnabled: this._ai.enabled,
       creditsEnabled: this._credits.enabled,
       price: this._credits.price('ai_weekly_report'),

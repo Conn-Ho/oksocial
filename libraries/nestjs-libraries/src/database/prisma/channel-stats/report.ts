@@ -93,6 +93,9 @@ export type PlatformReport = {
   days: number;
   from: Date;
   to: Date;
+  // the period as China dates (both inclusive), for labels
+  fromDate: string;
+  toDate: string;
   previousFrom: Date;
   granularity: Granularity;
   generatedAt: Date;
@@ -407,6 +410,8 @@ export const buildPlatformReport = (
     days: Math.round(length / DAY_MS),
     from: range.from,
     to: range.to,
+    fromDate: chinaDate(range.from.getTime()),
+    toDate: chinaDate(range.to.getTime() - 1),
     previousFrom,
     granularity: range.granularity,
     generatedAt: now,

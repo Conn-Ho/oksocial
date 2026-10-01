@@ -160,7 +160,7 @@ describe('WeeklyReportService', () => {
   it('lists past weeks with the week 立即生成 would write and its price', async () => {
     const { service } = setup();
     expect(await service.list('o1', NOW)).toEqual({
-      week: { start: WEEK_START, end: WEEK_END },
+      week: { start: '2026-09-21', end: '2026-09-27' },
       aiEnabled: true,
       creditsEnabled: true,
       price: 30,

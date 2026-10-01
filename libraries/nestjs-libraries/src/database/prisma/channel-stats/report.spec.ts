@@ -115,6 +115,7 @@ describe('buildPlatformReport', () => {
     expect(report.totals.engagementRate).toEqual({ value: 5.5, previous: 5.5, change: 0 });
     expect(report.days).toBe(7);
     expect(report.previousFrom).toEqual(d('2026-10-01T12:00:00Z'));
+    expect([report.fromDate, report.toDate]).toEqual(['2026-10-08', '2026-10-15']);
   });
 
   it('account rows carry the growth rate over the period', () => {
