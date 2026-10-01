@@ -1,6 +1,7 @@
 import { Integration } from '@prisma/client';
 import {
   BrowserSession,
+  ChannelStats,
   CreationCapabilities,
   PostDetails,
   PostResponse,
@@ -8,6 +9,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
   BrowserSocialAbstract,
+  countFrom,
   firstRow,
   titleFrom,
 } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
@@ -32,7 +34,15 @@ export type BrowserChannelSpec = {
   nameFrom: string[];
   usernameFrom?: string[];
   maxLength: number;
+  // account totals from the platform's own commands (run = opencli in the account's browser)
+  stats?: (run: Run, account: { internalId: string; profile?: string | null }) => Promise<ChannelStats>;
 };
+
+type Run = (args: string[], timeoutMs?: number) => Promise<unknown>;
+
+const num = (value: unknown) => countFrom(value) ?? 0;
+const total = (rows: unknown, key: string) => (Array.isArray(rows) ? rows : []).reduce((sum: number, r: any) => sum + num(r?.[key]), 0);
+const rowsOf = (rows: unknown) => (Array.isArray(rows) ? rows : rows ? [rows] : []);
 
 const valueOf = (row: Record<string, unknown> | null, keys: string[]) => {
   for (const key of keys) {
@@ -60,6 +70,7 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
   creation?: CreationCapabilities;
   // whether posts can go out through this channel yet
   publishable = false;
+  stats?: SocialProvider['stats'];
 
   constructor(protected spec: BrowserChannelSpec) {
     super();
@@ -81,6 +92,10 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
         return { id, name, username: valueOf(me, spec.usernameFrom ?? spec.nameFrom) ?? name };
       },
     };
+    if (spec.stats) {
+      this.stats = (slot, integration) =>
+        spec.stats!((args, timeoutMs = 120_000) => this.exec(slot, args, timeoutMs), integration);
+    }
     const catalog = CREATION_CATALOG.find((p) => p.identifier === (spec.platform ?? spec.identifier));
     if (catalog) {
       const { identifier: _id, name: _name, maxLength: _max, ...caps } = catalog;
@@ -197,6 +212,12 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://passport.bilibili.com/login',
     loginCookies: { domain: 'bilibili.com', names: ['SESSDATA'] },
     idFrom: ['id'], nameFrom: ['username'], maxLength: 2000,
+    // followers from the profile; plays and likes summed over the latest 50 videos
+    stats: async (run) => {
+      const me = firstRow<Record<string, unknown>>(await run(['bilibili', 'me']));
+      const videos = rowsOf(await run(['bilibili', 'user-videos', String(me?.uid ?? ''), '--limit', '50'], 180_000));
+      return { followers: num(me?.followers), following: num(me?.following), posts: videos.length, views: total(videos, 'plays'), likes: total(videos, 'likes') };
+    },
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'zhihu', name: '知乎', site: 'zhihu',
@@ -204,6 +225,10 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://www.zhihu.com/signin',
     loginCookies: { domain: 'zhihu.com', names: ['z_c0'] },
     idFrom: ['uid', 'url_token'], nameFrom: ['name'], usernameFrom: ['url_token'], maxLength: 20000,
+    stats: async (run, account) => {
+      const me = firstRow<Record<string, unknown>>(await run(['zhihu', 'user', account.profile || account.internalId]));
+      return { followers: num(me?.followers), following: num(me?.following), posts: num(me?.answers) + num(me?.articles), likes: num(me?.voteup) };
+    },
   })),
   new JikeProvider(spec({
     identifier: 'jike', name: '即刻', site: 'jike',
@@ -217,6 +242,11 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://mp.toutiao.com/auth/page/login',
     loginCookies: { domain: 'toutiao.com', names: ['sessionid'] },
     idFrom: ['user_id'], nameFrom: ['nickname'], maxLength: 5000,
+    // the first page of articles: impressions (展现), likes and comments
+    stats: async (run) => {
+      const articles = rowsOf(await run(['toutiao', 'articles']));
+      return { posts: articles.length, views: total(articles, '展现'), likes: total(articles, '点赞'), comments: total(articles, '评论') };
+    },
   })),
   new InstagramWebProvider(spec({
     identifier: 'instagramweb', platform: 'instagram', name: 'Instagram', site: 'instagram',
@@ -224,6 +254,10 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://www.instagram.com/accounts/login/',
     loginCookies: { domain: 'instagram.com', names: ['sessionid'] },
     idFrom: ['user_id'], nameFrom: ['full_name', 'username'], usernameFrom: ['username'], maxLength: 2200,
+    stats: async (run, account) => {
+      const me = firstRow<Record<string, unknown>>(await run(['instagram', 'profile', account.profile || account.internalId]));
+      return { followers: num(me?.followers), following: num(me?.following), posts: num(me?.posts) };
+    },
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'facebookweb', platform: 'facebook', name: 'Facebook', site: 'facebook',
@@ -231,6 +265,10 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://www.facebook.com/login.php',
     loginCookies: { domain: 'facebook.com', names: ['c_user'] },
     idFrom: ['user_id'], nameFrom: ['vanity', 'user_id'], maxLength: 5000,
+    stats: async (run) => {
+      const me = firstRow<Record<string, unknown>>(await run(['facebook', 'profile']));
+      return { followers: num(me?.followers), following: num(me?.friends) };
+    },
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'tiktokweb', platform: 'tiktok', name: 'TikTok', site: 'tiktok',
@@ -252,6 +290,10 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     loginUrl: 'https://www.linkedin.com/login',
     loginCookies: { domain: 'linkedin.com', names: ['li_at'] },
     idFrom: ['plain_id', 'public_id'], nameFrom: ['name'], usernameFrom: ['public_id'], maxLength: 3000,
+    stats: async (run) => {
+      const me = firstRow<Record<string, unknown>>(await run(['linkedin', 'profile-analytics'], 180_000));
+      return { followers: num(me?.followers), following: num(me?.connections), views: num(me?.post_impressions) };
+    },
   })),
   new ConfiguredBrowserProvider(spec({
     identifier: 'redditweb', platform: 'reddit', name: 'Reddit', site: 'reddit',

@@ -105,3 +105,39 @@ describe('browser channels for every platform opencli can log in to', () => {
     expect(channel('shipinhao').publishable).toBe(true);
   });
 });
+
+describe('account stats of the new channels', () => {
+  const account = { internalId: 'id1', profile: 'xiaolu' } as any;
+
+  it('B站: followers from the profile, plays and likes summed over the latest videos', async () => {
+    const fleet = fakeFleet([
+      { ok: true, data: [{ name: '小鹿', uid: 1234, followers: 980, following: 12 }] },
+      { ok: true, data: [{ plays: '1.2万', likes: 300 }, { plays: 800, likes: 20 }] },
+    ]);
+    const c = withFleet(channel('bilibili'), fleet);
+    expect(await c.stats!('s1', account)).toEqual({ followers: 980, following: 12, posts: 2, views: 12800, likes: 320 });
+    expect(fleet.calls[1]).toEqual(['bilibili', 'user-videos', '1234', '--limit', '50']);
+  });
+
+  it('Instagram, 知乎, Facebook, LinkedIn and 头条号 map their profile numbers', async () => {
+    const cases: Array<[string, Run[], Record<string, number>, string[]]> = [
+      ['instagramweb', [{ ok: true, data: [{ followers: '1.5K', following: 80, posts: 42 }] }], { followers: 1500, following: 80, posts: 42 }, ['instagram', 'profile', 'xiaolu']],
+      ['zhihu', [{ ok: true, data: [{ followers: 300, following: 9, answers: 20, articles: 5, voteup: 1200 }] }], { followers: 300, following: 9, posts: 25, likes: 1200 }, ['zhihu', 'user', 'xiaolu']],
+      ['facebookweb', [{ ok: true, data: [{ followers: 210, friends: 150 }] }], { followers: 210, following: 150 }, ['facebook', 'profile']],
+      ['linkedinweb', [{ ok: true, data: [{ followers: 640, connections: 500, post_impressions: 9000 }] }], { followers: 640, following: 500, views: 9000 }, ['linkedin', 'profile-analytics']],
+      ['toutiao', [{ ok: true, data: [{ 展现: 1000, 阅读: 300, 点赞: 12, 评论: 3 }, { 展现: 500, 阅读: 100, 点赞: 8, 评论: 1 }] }], { posts: 2, views: 1500, likes: 20, comments: 4 }, ['toutiao', 'articles']],
+    ];
+    for (const [identifier, runs, expected, call] of cases) {
+      const fleet = fakeFleet(runs);
+      const c = withFleet(channel(identifier), fleet);
+      expect(await c.stats!('s1', account)).toEqual(expected);
+      expect(fleet.calls[0]).toEqual(call);
+    }
+  });
+
+  it('platforms without readable numbers yet have no stats', () => {
+    for (const identifier of ['shipinhao', 'jike', 'tiktokweb', 'youtubeweb', 'redditweb']) {
+      expect(channel(identifier).stats).toBeUndefined();
+    }
+  });
+});
