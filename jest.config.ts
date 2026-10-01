@@ -4,5 +4,6 @@ export default {
   projects: [
     '<rootDir>/libraries/nestjs-libraries/jest.config.ts',
     '<rootDir>/libraries/helpers/jest.config.ts',
+    '<rootDir>/apps/backend/jest.config.ts',
   ],
 };

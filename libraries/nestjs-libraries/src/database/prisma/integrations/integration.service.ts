@@ -30,6 +30,7 @@ import utc from 'dayjs/plugin/utc';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { TemporalService } from 'nestjs-temporal-core';
+import { OkchatLinkService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.link.service';
 
 dayjs.extend(utc);
 
@@ -44,7 +45,9 @@ export class IntegrationService {
     @Inject(forwardRef(() => RefreshIntegrationService))
     private _refreshIntegrationService: RefreshIntegrationService,
     private _temporalService: TemporalService,
-    private _channelStatsService: ChannelStatsService
+    private _channelStatsService: ChannelStatsService,
+    // okchat keeps its channel list in step with the team's accounts
+    private _okchat: OkchatLinkService
   ) {}
 
   async changeActiveCron(orgId: string) {
@@ -125,7 +128,7 @@ export class IntegrationService {
           })
       : undefined;
 
-    return this._integrationRepository.createOrUpdateIntegration(
+    const integration = await this._integrationRepository.createOrUpdateIntegration(
       additionalSettings,
       oneTimeToken,
       org,
@@ -143,6 +146,9 @@ export class IntegrationService {
       timezone,
       customInstanceDetails
     );
+    // a new account, or one logged in again (also renamed on the platform)
+    this._okchat.channelsChanged(org, provider);
+    return integration;
   }
 
   updateIntegrationGroup(org: string, id: string, group: string) {
@@ -170,8 +176,10 @@ export class IntegrationService {
     );
   }
 
-  updateNameAndUrl(id: string, name: string, url: string) {
-    return this._integrationRepository.updateNameAndUrl(id, name, url);
+  async updateNameAndUrl(id: string, name: string, url: string) {
+    const integration = await this._integrationRepository.updateNameAndUrl(id, name, url);
+    this._okchat.channelsChanged(integration.organizationId, integration.providerIdentifier);
+    return integration;
   }
 
   getIntegrationById(org: string, id: string) {
@@ -195,6 +203,7 @@ export class IntegrationService {
 
   async disconnectChannel(orgId: string, integration: Integration, err = '') {
     await this._integrationRepository.disconnectChannel(orgId, integration.id);
+    this._okchat.loginLost(orgId, integration.id);
     await this.informAboutRefreshError(orgId, integration, err);
   }
 
@@ -325,7 +334,9 @@ export class IntegrationService {
   }
 
   async refreshNeeded(org: string, id: string) {
-    return this._integrationRepository.refreshNeeded(org, id);
+    const integration = await this._integrationRepository.refreshNeeded(org, id);
+    this._okchat.loginLost(org, id);
+    return integration;
   }
 
   async setBetweenRefreshSteps(id: string) {
@@ -350,6 +361,7 @@ export class IntegrationService {
           integration.organizationId,
           integration.id
         );
+        this._okchat.loginLost(integration.organizationId, integration.id);
         return;
       }
 
@@ -372,7 +384,9 @@ export class IntegrationService {
   }
 
   async disableChannel(org: string, id: string) {
-    return this._integrationRepository.disableChannel(org, id);
+    const disabled = await this._integrationRepository.disableChannel(org, id);
+    this._okchat.channelsChanged(org);
+    return disabled;
   }
 
   async enableChannel(org: string, totalChannels: number, id: string) {
@@ -383,7 +397,9 @@ export class IntegrationService {
       throw new HttpException('已启用的账号数已达套餐上限，请先停用其他账号或升级套餐', 402);
     }
 
-    return this._integrationRepository.enableChannel(org, id);
+    const enabled = await this._integrationRepository.enableChannel(org, id);
+    this._okchat.channelsChanged(org);
+    return enabled;
   }
 
   async getPostsForChannel(org: string, id: string) {
@@ -391,11 +407,15 @@ export class IntegrationService {
   }
 
   async deleteChannel(org: string, id: string) {
-    return this._integrationRepository.deleteChannel(org, id);
+    const deleted = await this._integrationRepository.deleteChannel(org, id);
+    this._okchat.channelsChanged(org);
+    return deleted;
   }
 
   async disableIntegrations(org: string, totalChannels: number) {
-    return this._integrationRepository.disableIntegrations(org, totalChannels);
+    const disabled = await this._integrationRepository.disableIntegrations(org, totalChannels);
+    this._okchat.channelsChanged(org);
+    return disabled;
   }
 
   async checkForDeletedOnceAndUpdate(org: string, page: string) {

@@ -69,6 +69,8 @@ import { ApiKeysController } from '@gitroom/backend/api/routes/api.keys.controll
 import { SyncSettingsController } from '@gitroom/backend/api/routes/sync.settings.controller';
 import { AdminCouponsController } from '@gitroom/backend/api/routes/admin.coupons.controller';
 import { PublicPricingController } from '@gitroom/backend/api/routes/public.pricing.controller';
+import { OkchatController } from '@gitroom/backend/api/routes/okchat.controller';
+import { OkchatPublicController } from '@gitroom/backend/api/routes/okchat.public.controller';
 
 const authenticatedController = [
   UsersController,
@@ -102,6 +104,7 @@ const authenticatedController = [
   ApiKeysController,
   SyncSettingsController,
   AdminCouponsController,
+  OkchatController,
 ];
 @Module({
   imports: [UploadModule],
@@ -120,6 +123,8 @@ const authenticatedController = [
         PublicController,
         PublicReportsController,
         PublicPricingController,
+        // okchat's partner calls: signed (or an OAuth token), outside the session and API-key auth
+        OkchatPublicController,
         MonitorController,
         EnterpriseController,
         NoAuthIntegrationsController,

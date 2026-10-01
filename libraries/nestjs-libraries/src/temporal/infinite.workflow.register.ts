@@ -1,5 +1,6 @@
 import { Global, Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { TemporalService } from 'nestjs-temporal-core';
+import { okchatEnabled } from '@gitroom/nestjs-libraries/okchat/okchat.config';
 
 @Injectable()
 export class InfiniteWorkflowRegister implements OnModuleInit {
@@ -71,6 +72,17 @@ export class InfiniteWorkflowRegister implements OnModuleInit {
             taskQueue: 'main',
           });
       } catch (err) {}
+      // okchat 私信通道: only where okchat is configured
+      for (const [workflow, workflowId] of okchatEnabled()
+        ? [
+            ['okchatDmWorkflow', 'okchat-dm-workflow'],
+            ['okchatDeliveryWorkflow', 'okchat-delivery-workflow'],
+          ]
+        : []) {
+        try {
+          await this._temporalService.client?.getRawClient()?.workflow?.start(workflow, { workflowId, taskQueue: 'main' });
+        } catch (err) {}
+      }
     }
   }
 }

@@ -13,6 +13,7 @@ import { HealthController } from '@gitroom/orchestrator/health.controller';
 import { InboxActivity } from '@gitroom/orchestrator/activities/inbox.activity';
 import { MonitorActivity } from '@gitroom/orchestrator/activities/monitor.activity';
 import { BillingActivity } from '@gitroom/orchestrator/activities/billing.activity';
+import { OkchatActivity } from '@gitroom/orchestrator/activities/okchat.activity';
 
 const activities = [
   PostActivity,
@@ -25,6 +26,7 @@ const activities = [
   InboxActivity,
   MonitorActivity,
   BillingActivity,
+  OkchatActivity,
 ];
 @Module({
   imports: [
