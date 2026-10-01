@@ -442,13 +442,22 @@ export class OAuthService {
 
     const token = 'pos_' + makeSecureId(40);
     const encryptedToken = AuthService.fixedEncryption(token);
+    const exchanged = await this._oauthRepository.exchangeCodeForToken(
+      auth.id,
+      encryptedCode,
+      encryptedToken
+    );
+    // another request with the same code got the token first
+    if (!exchanged) {
+      throw new HttpException(
+        { error: 'invalid_grant' },
+        HttpStatus.BAD_REQUEST
+      );
+    }
     const {
       organizationId,
       organization: { paymentId },
-    } = await this._oauthRepository.exchangeCodeForToken(
-      auth.id,
-      encryptedToken
-    );
+    } = exchanged;
 
     return {
       id: organizationId,

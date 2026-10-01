@@ -165,6 +165,20 @@ describe('authorization requests of a first-party app', () => {
     const res = await service.exchangeCodeForToken(code, 'pca_okchat', 'pcs_secret', undefined, OKCHAT_CALLBACK);
     expect(res).toMatchObject({ token_type: 'bearer', scope: 'openid email profile', id: 'o1' });
     expect(res.access_token).toMatch(/^pos_/);
+    // the code is cleared only if it is still the one presented
+    expect((repo as any).exchangeCodeForToken).toHaveBeenCalledWith('a1', AuthService.fixedEncryption(code), AuthService.fixedEncryption(res.access_token));
+  });
+
+  it('a code exchanged twice at once gives one token: the other request is invalid_grant', async () => {
+    const { service, repo } = setup();
+    (repo as any).findByCode = jest.fn(async () => ({ id: 'a1', oauthAppId: 'app1', codeExpiresAt: new Date(Date.now() + 60_000), codeChallenge: null, redirectUri: OKCHAT_CALLBACK }));
+    // the other request cleared the code first
+    (repo as any).exchangeCodeForToken = jest.fn(async () => null);
+    repo.getAppByClientId.mockResolvedValue(okchatApp({ clientSecret: AuthService.fixedEncryption('pcs_secret') }));
+    await expect(service.exchangeCodeForToken('the-code', 'pca_okchat', 'pcs_secret', undefined, OKCHAT_CALLBACK)).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'invalid_grant' },
+    });
   });
 });
 

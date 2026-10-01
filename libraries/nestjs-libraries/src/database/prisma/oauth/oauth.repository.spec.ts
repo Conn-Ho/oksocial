@@ -3,6 +3,7 @@ import { OAuthRepository } from '@gitroom/nestjs-libraries/database/prisma/oauth
 const setup = () => {
   const oAuthAuthorization = {
     findFirst: jest.fn(async () => null),
+    findUnique: jest.fn(async () => ({ organizationId: 'o1', organization: { paymentId: null } })),
     updateMany: jest.fn(async () => ({ count: 1 })),
   };
   const model = { oAuthAuthorization, oAuthApp: {}, userOrganization: {} };
@@ -34,5 +35,30 @@ describe('OAuthRepository.hasFirstPartyGrant', () => {
       oauthApp: { firstParty: true, deletedAt: null },
       user: { deletedAt: null, organizations: { some: { organizationId: 'o1', disabled: false } } },
     });
+  });
+});
+
+describe('OAuthRepository.exchangeCodeForToken', () => {
+  it('clears the code only while it is still the one presented', async () => {
+    const { repo, oAuthAuthorization } = setup();
+    expect(await repo.exchangeCodeForToken('a1', 'enc-code', 'enc-token')).toEqual({ organizationId: 'o1', organization: { paymentId: null } });
+    expect(oAuthAuthorization.updateMany).toHaveBeenCalledWith({
+      where: { id: 'a1', authorizationCode: 'enc-code', revokedAt: null },
+      data: {
+        accessToken: 'enc-token',
+        authorizationCode: null,
+        codeExpiresAt: null,
+        codeChallenge: null,
+        codeChallengeMethod: null,
+        redirectUri: null,
+      },
+    });
+  });
+
+  it('another request used it first: null, and no token is read back', async () => {
+    const { repo, oAuthAuthorization } = setup();
+    oAuthAuthorization.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect(await repo.exchangeCodeForToken('a1', 'enc-code', 'enc-token')).toBeNull();
+    expect(oAuthAuthorization.findUnique).not.toHaveBeenCalled();
   });
 });

@@ -251,17 +251,13 @@ export class OAuthRepository {
     });
   }
 
-  exchangeCodeForToken(id: string, encryptedToken: string) {
-    return this._oauthAuth.model.oAuthAuthorization.update({
-      where: { id },
-      select: {
-        organizationId: true,
-        organization: {
-          select: {
-            paymentId: true,
-          }
-        }
-      },
+  /**
+   * Swaps the code for the token in one conditional write: two requests with the same code give one
+   * token, the other gets null.
+   */
+  async exchangeCodeForToken(id: string, encryptedCode: string, encryptedToken: string) {
+    const { count } = await this._oauthAuth.model.oAuthAuthorization.updateMany({
+      where: { id, authorizationCode: encryptedCode, revokedAt: null },
       data: {
         accessToken: encryptedToken,
         authorizationCode: null,
@@ -269,6 +265,20 @@ export class OAuthRepository {
         codeChallenge: null,
         codeChallengeMethod: null,
         redirectUri: null,
+      },
+    });
+    if (!count) {
+      return null;
+    }
+    return this._oauthAuth.model.oAuthAuthorization.findUnique({
+      where: { id },
+      select: {
+        organizationId: true,
+        organization: {
+          select: {
+            paymentId: true,
+          },
+        },
       },
     });
   }
