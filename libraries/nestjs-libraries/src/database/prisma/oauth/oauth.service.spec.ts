@@ -26,6 +26,7 @@ const grant = (over: any = {}) => ({
     email: 'a@b.com',
     activated: true,
     providerName: 'LOCAL',
+    emailVerifiedAt: new Date('2026-10-01T00:00:00Z'),
     name: '张',
     lastName: '三',
     picture: { path: '/uploads/me.png' },
@@ -61,21 +62,33 @@ afterEach(() => {
 });
 
 describe('isVerifiedEmail', () => {
-  it('an email sign-up activated from the mail, or a provider that checks addresses', () => {
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL' })).toBe(true);
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GOOGLE' })).toBe(true);
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'APPLE' })).toBe(true);
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: false, providerName: 'LOCAL' })).toBe(false);
-    expect(isVerifiedEmail({ email: 'wallet_0xabc', activated: true, providerName: 'WALLET' })).toBe(false);
-    expect(isVerifiedEmail({ email: 'farcaster_1@x.io', activated: true, providerName: 'FARCASTER' })).toBe(false);
-    // GitHub and generic OIDC may hand over an address nobody checked
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GITHUB' })).toBe(false);
-    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GENERIC' })).toBe(false);
+  const VERIFIED_AT = new Date('2026-10-01T00:00:00Z');
+
+  it('an address checked at sign-up or sign-in: the activation mail, or Google / Apple saying so', () => {
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL', emailVerifiedAt: VERIFIED_AT })).toBe(true);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GOOGLE', emailVerifiedAt: VERIFIED_AT })).toBe(true);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'APPLE', emailVerifiedAt: VERIFIED_AT })).toBe(true);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: false, providerName: 'LOCAL', emailVerifiedAt: VERIFIED_AT })).toBe(false);
   });
 
-  it('without an email provider, email sign-ups activate unchecked: not verified', () => {
-    delete process.env.EMAIL_PROVIDER;
+  it('an account activated without a check is not verified, whatever EMAIL_PROVIDER says now', () => {
+    // signed up while no email provider was configured: activated, never checked
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL', emailVerifiedAt: null })).toBe(false);
     expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL' })).toBe(false);
+    delete process.env.EMAIL_PROVIDER;
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'LOCAL', emailVerifiedAt: VERIFIED_AT })).toBe(true);
+  });
+
+  it('Google or Apple without their word on the address is not verified', () => {
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GOOGLE', emailVerifiedAt: null })).toBe(false);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'APPLE' })).toBe(false);
+  });
+
+  it('GitHub, generic OIDC, wallets and Farcaster never are', () => {
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GITHUB', emailVerifiedAt: VERIFIED_AT })).toBe(false);
+    expect(isVerifiedEmail({ email: 'a@b.com', activated: true, providerName: 'GENERIC', emailVerifiedAt: VERIFIED_AT })).toBe(false);
+    expect(isVerifiedEmail({ email: 'wallet_0xabc', activated: true, providerName: 'WALLET', emailVerifiedAt: VERIFIED_AT })).toBe(false);
+    expect(isVerifiedEmail({ email: 'farcaster_1@x.io', activated: true, providerName: 'FARCASTER', emailVerifiedAt: VERIFIED_AT })).toBe(false);
   });
 });
 
@@ -108,6 +121,9 @@ describe('userinfo for okchat (first-party)', () => {
   it('an unverified address says so (okchat refuses it)', async () => {
     const { service } = setup({ grant: grant({ user: { ...grant().user, activated: false } }) });
     expect((await service.getUserInfo('Bearer pos_token')).email_verified).toBe(false);
+    // activated without the mail (no email provider at sign-up)
+    const unchecked = setup({ grant: grant({ user: { ...grant().user, emailVerifiedAt: null } }) });
+    expect((await unchecked.service.getUserInfo('Bearer pos_token')).email_verified).toBe(false);
   });
 
   it('a bad or revoked token is 401; other clients keep the old rules', async () => {

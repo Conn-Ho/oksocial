@@ -298,6 +298,7 @@ export class OAuthRepository {
             email: true,
             activated: true,
             providerName: true,
+            emailVerifiedAt: true,
             name: true,
             lastName: true,
             picture: { select: { path: true } },

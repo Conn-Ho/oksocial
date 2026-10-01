@@ -37,6 +37,8 @@ export class UsersRepository {
       account: current.account,
       connectedAccount: current.connectedAccount,
       activated: current.activated,
+      // the check belongs to the address
+      emailVerifiedAt: current.emailVerifiedAt,
     };
     const targetCredentials = {
       email: target.email,
@@ -46,6 +48,8 @@ export class UsersRepository {
       account: target.account,
       connectedAccount: target.connectedAccount,
       activated: target.activated,
+      // the check belongs to the address
+      emailVerifiedAt: target.emailVerifiedAt,
     };
 
     // (email, providerName) is unique and checked per-statement, so park the
@@ -151,6 +155,7 @@ export class UsersRepository {
     });
   }
 
+  /** Activated from the emailed link: the address is checked too. */
   activateUser(id: string) {
     return this._user.model.user.update({
       where: {
@@ -158,7 +163,16 @@ export class UsersRepository {
       },
       data: {
         activated: true,
+        emailVerifiedAt: new Date(),
       },
+    });
+  }
+
+  /** The address was checked (a verification link, or Google / Apple said so); the first time stays. */
+  markEmailVerified(id: string) {
+    return this._user.model.user.updateMany({
+      where: { id, emailVerifiedAt: null },
+      data: { emailVerifiedAt: new Date() },
     });
   }
 

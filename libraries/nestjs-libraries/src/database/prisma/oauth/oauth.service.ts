@@ -26,21 +26,21 @@ type EmailClaimsApp = Pick<OAuthApp, 'clientId' | 'dynamic' | 'redirectUris'> & 
 // Sign-in methods whose address is not an email (wallets, Farcaster ids)
 const NO_EMAIL_PROVIDERS = ['WALLET', 'FARCASTER'];
 
-// Sign-ins whose provider checked the address (GitHub and generic OIDC may hand over an unchecked one)
-const VERIFYING_PROVIDERS = ['GOOGLE', 'APPLE'];
+// Sign-ins that can check the address: the activation mail (email sign-ups), Google and Apple when
+// they say they verified it. GitHub and generic OIDC may hand over an unchecked one.
+const VERIFYING_PROVIDERS = ['LOCAL', 'GOOGLE', 'APPLE'];
 
 /**
- * Whether the user's email address is verified: an email sign-up activated from the activation mail
- * (only sent when an email provider is configured; without one sign-ups activate unchecked), or a
- * sign-in whose provider checks addresses. Wallets and Farcaster ids are never emails. Pure (reads
- * EMAIL_PROVIDER).
+ * Whether the user's email address is verified: the check recorded on the user (emailVerifiedAt:
+ * the activation mail's link, or Google / Apple verifying it). Activation alone is not one: without
+ * an email provider sign-ups activate unchecked. Wallets and Farcaster ids are never emails. Pure.
  */
-export const isVerifiedEmail = (user: { email: string; activated: boolean; providerName?: string | null }) => {
+export const isVerifiedEmail = (user: { email: string; activated: boolean; providerName?: string | null; emailVerifiedAt?: Date | null }) => {
   const provider = String(user.providerName || '');
   if (!user.activated || NO_EMAIL_PROVIDERS.includes(provider) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email || '')) {
     return false;
   }
-  return provider === 'LOCAL' ? ['resend', 'nodemailer'].includes(process.env.EMAIL_PROVIDER || '') : VERIFYING_PROVIDERS.includes(provider);
+  return VERIFYING_PROVIDERS.includes(provider) && !!user.emailVerifiedAt;
 };
 
 /** An uploaded picture's address as another site loads it. Pure. */
