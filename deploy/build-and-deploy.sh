@@ -3,7 +3,9 @@
 # loads it into social-ops-1 over the internal network (no registry round trip), deploys it with
 # deploy.sh (health-checked, rolls back), and stops the builder again. Run from a checkout:
 #   deploy/build-and-deploy.sh [commit, default origin/main] [--no-deploy]
-# The builder's key may only run `docker load` on the server, and only from the builder's address.
+# The build runs detached on the builder (a quiet 10-minute build outlives an idle SSH session);
+# this script only starts it and polls its status file. The builder's key may only run
+# `docker load` on the server, and only from the builder's address.
 set -euo pipefail
 ZONE=asia-east2-a
 PROJECT=agentdesk-505102
@@ -22,23 +24,42 @@ done
 git fetch -q origin
 sha=$(git rev-parse "$REF")
 gc() { gcloud compute "$@" --zone "$ZONE" --project "$PROJECT"; }
+on_builder() { gc ssh "$BUILDER" --ssh-flag=-oServerAliveInterval=20 --command "$1" 2>/dev/null; }
 
 started=$(date +%s)
+since() { echo "$(( $(date +%s) - started ))s"; }
 if [ "$(gc instances describe "$BUILDER" --format='value(status)')" != RUNNING ]; then
   gc instances start "$BUILDER" --quiet >/dev/null
 fi
-until gc ssh "$BUILDER" --command true >/dev/null 2>&1; do sleep 5; done
+until on_builder true; do sleep 5; done
 trap 'gc instances stop "$BUILDER" --quiet --async >/dev/null 2>&1 || true' EXIT
 
 echo "building ${sha:0:8} on $BUILDER"
-gc ssh "$BUILDER" --command "set -euo pipefail
-cd ~/oksocial && git fetch -q origin && git checkout -q --detach $sha
-docker build -q -f Dockerfile.dev --build-arg NEXT_PUBLIC_VERSION=$sha -t $IMAGE:$sha . >/dev/null
-echo \"  built after \$(( \$(date +%s) - $started ))s, loading into $SERVER\"
-docker save $IMAGE:$sha | ssh -o BatchMode=yes -i ~/.ssh/deploy_ed25519 mac@$SERVER_IP
-docker rmi -f $IMAGE:$sha >/dev/null"
-echo "  loaded after $(( $(date +%s) - started ))s"
+# status file: running | loaded | failed:<step>; the log keeps the build output
+on_builder "cat > /tmp/build-$sha.sh <<'SCRIPT'
+set -uo pipefail
+status() { echo \"\$1\" > /tmp/build-$sha.status; }
+status running
+cd ~/oksocial && git fetch -q origin && git checkout -q --detach $sha || { status failed:checkout; exit 1; }
+docker build -f Dockerfile.dev --build-arg NEXT_PUBLIC_VERSION=$sha -t $IMAGE:$sha . || { status failed:build; exit 1; }
+docker save $IMAGE:$sha | ssh -o BatchMode=yes -o ServerAliveInterval=20 -i ~/.ssh/deploy_ed25519 mac@$SERVER_IP || { status failed:load; exit 1; }
+docker rmi -f $IMAGE:$sha >/dev/null
+status loaded
+SCRIPT
+nohup bash /tmp/build-$sha.sh > /tmp/build-$sha.log 2>&1 &"
+
+while :; do
+  sleep 15
+  state=$(on_builder "cat /tmp/build-$sha.status 2>/dev/null" || echo unreachable)
+  case "$state" in
+    loaded) echo "  loaded into $SERVER after $(since)"; break ;;
+    failed:*)
+      echo "  $state after $(since); last lines of the log:" >&2
+      on_builder "tail -25 /tmp/build-$sha.log" >&2 || true
+      exit 1 ;;
+  esac
+done
 if [ "$DEPLOY" = 1 ]; then
   gc ssh "$SERVER" --command "~/oksocial/deploy/deploy.sh $sha"
-  echo "done after $(( $(date +%s) - started ))s"
+  echo "done after $(since)"
 fi
