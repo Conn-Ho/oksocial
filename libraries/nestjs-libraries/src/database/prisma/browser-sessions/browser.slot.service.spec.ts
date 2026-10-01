@@ -18,6 +18,7 @@ import {
   simulatedAccountsAllowed,
 } from '@gitroom/nestjs-libraries/database/prisma/browser-sessions/browser.slot.service';
 import { BROWSER_KEEPALIVE_SECONDS } from '@gitroom/nestjs-libraries/integrations/browser.social.abstract';
+import { BrowserFleetError } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 
 const provider = {
   identifier: 'xiaohongshu',
@@ -382,6 +383,35 @@ describe('BrowserSlotService', () => {
     const none = setup({ slotRow: null });
     await expect(none.service.releaseForIntegration('org1', 'api-channel')).resolves.toEqual({ ok: true });
     expect(none.fleet.removeSlot).not.toHaveBeenCalled();
+  });
+
+  describe('deleting a team', () => {
+    const live = [
+      { id: 'r1', slot: 's1', status: 'ACTIVE' },
+      { id: 'r2', slot: 's2', status: 'PENDING' },
+      { id: 'r3', slot: 's3', status: 'ACTIVE' },
+    ];
+
+    it('removes every browser of the team from the fleet, logins in progress included', async () => {
+      const { service, fleet, repo } = setup();
+      (repo as any).liveForOrganization = jest.fn(async () => live);
+      expect(await service.releaseForOrganization('org1')).toEqual({ released: 3, failed: 0 });
+      expect((repo as any).liveForOrganization).toHaveBeenCalledWith('org1');
+      expect(fleet.removeSlot.mock.calls).toEqual([['s1', true], ['s2', true], ['s3', true]]);
+      expect(repo.release.mock.calls).toEqual([['r1'], ['r2'], ['r3']]);
+    });
+
+    it('a browser the worker no longer has counts as removed; one it could not remove stays for a retry', async () => {
+      const { service, fleet, repo } = setup();
+      (repo as any).liveForOrganization = jest.fn(async () => live);
+      fleet.removeSlot.mockImplementation(async (slot: string) => {
+        if (slot === 's1') throw new BrowserFleetError('slot s1 not found', 404);
+        if (slot === 's2') throw new BrowserFleetError('browser worker 502', 502);
+        return { ok: true };
+      });
+      expect(await service.releaseForOrganization('org1')).toEqual({ released: 2, failed: 1 });
+      expect(repo.release.mock.calls).toEqual([['r1'], ['r3']]);
+    });
   });
 
   it('cancelLogin removes a pending browser but keeps a connected one', async () => {

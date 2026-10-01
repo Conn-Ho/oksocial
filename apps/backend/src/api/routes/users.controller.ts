@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpException,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -37,6 +39,12 @@ import {
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { AllowViewer, RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.decorator';
 import { ChecklistService } from '@gitroom/nestjs-libraries/database/prisma/onboarding/checklist.service';
+import { TeamsService } from '@gitroom/nestjs-libraries/database/prisma/organizations/teams.service';
+import {
+  CreateTeamDto,
+  DeleteTeamDto,
+  UpdateTeamDto,
+} from '@gitroom/nestjs-libraries/dtos/settings/team.dto';
 
 @ApiTags('User')
 @Controller('/user')
@@ -48,7 +56,8 @@ export class UsersController {
     private _orgService: OrganizationService,
     private _userService: UsersService,
     private _trackService: TrackService,
-    private _checklistService: ChecklistService
+    private _checklistService: ChecklistService,
+    private _teamsService: TeamsService
   ) {}
 
   @Get('/chatbase-token')
@@ -170,21 +179,7 @@ export class UsersController {
       throw new HttpException('没有权限', 400);
     }
 
-    response.cookie('impersonate', id, {
-      domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
-        ? {
-            secure: true,
-            httpOnly: true,
-            sameSite: 'none',
-          }
-        : {}),
-      expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
-    });
-
-    if (process.env.NOT_SECURED) {
-      response.header('impersonate', id);
-    }
+    this.setSessionCookie(response, 'impersonate', id);
   }
 
   @Post('/switch')
@@ -323,20 +318,128 @@ export class UsersController {
     });
   }
 
+  // 切换团队: the teams the user can open, with avatar and role
   @Get('/organizations')
   async getOrgs(@GetUserFromRequest() user: User) {
-    return (await this._orgService.getOrgsByUserId(user.id)).filter(
-      (f) => !f.users[0].disabled
+    return this._teamsService.list(user.id);
+  }
+
+  // 创建团队: the caller owns it and works in it from now on
+  @Post('/organizations')
+  @AllowViewer()
+  async createOrg(
+    @GetUserFromRequest() user: User,
+    @Body() body: CreateTeamDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const team = await this._teamsService.create(user.id, body.name);
+    this.switchTeam(user, req, response, team);
+    return { id: team.id, name: team.name };
+  }
+
+  // 团队设置 › 基本信息 of the team the caller works in
+  @Get('/organizations/current')
+  getCurrentOrg(
+    @GetUserFromRequest() user: User,
+    @GetOrgFromRequest() organization: Organization
+  ) {
+    return this._teamsService.info(
+      organization.id,
+      this.roleIn(organization),
+      user.id
     );
+  }
+
+  @Put('/organizations/current')
+  @RequireRoles('ADMIN')
+  updateCurrentOrg(
+    @GetOrgFromRequest() organization: Organization,
+    @Body() body: UpdateTeamDto
+  ) {
+    return this._teamsService.update(
+      organization.id,
+      this.roleIn(organization),
+      body
+    );
+  }
+
+  // 删除团队: the caller moves to another of their teams
+  @Delete('/organizations/current')
+  @RequireRoles('ADMIN')
+  async deleteCurrentOrg(
+    @GetUserFromRequest() user: User,
+    @GetOrgFromRequest() organization: Organization,
+    @Body() body: DeleteTeamDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const next = await this._teamsService.delete(
+      user.id,
+      organization.id,
+      this.roleIn(organization),
+      body.name
+    );
+    this.switchTeam(user, req, response, next);
+    return { id: next.id };
   }
 
   @Post('/change-org')
   @AllowViewer()
-  changeOrg(
+  async changeOrg(
+    @GetUserFromRequest() user: User,
     @Body('id') id: string,
+    @Req() req: Request,
     @Res({ passthrough: true }) response: Response
   ) {
-    response.cookie('showorg', id, {
+    if (this.isImpersonating(user, req)) {
+      const membershipId = await this._teamsService.membershipIn(user.id, id);
+      if (membershipId) {
+        this.setSessionCookie(response, 'impersonate', membershipId);
+      }
+    } else {
+      this.setSessionCookie(response, 'showorg', id);
+    }
+    response.status(200).send();
+  }
+
+  // the caller's role in the team they work in (AuthMiddleware keeps only their membership)
+  private roleIn(organization: Organization): string | undefined {
+    // @ts-ignore
+    return organization?.users?.[0]?.role;
+  }
+
+  /**
+   * Works in `team` from the next request on: the team cookie, or for an impersonation the
+   * impersonated user's membership there.
+   */
+  private switchTeam(
+    user: User,
+    req: Request,
+    response: Response,
+    team: { id: string; membershipId: string }
+  ) {
+    if (this.isImpersonating(user, req)) {
+      this.setSessionCookie(response, 'impersonate', team.membershipId);
+      return;
+    }
+    this.setSessionCookie(response, 'showorg', team.id);
+  }
+
+  // a super admin working as someone else: the session follows a membership, not the team cookie
+  private isImpersonating(user: User, req: Request) {
+    return (
+      !!user?.isSuperAdmin &&
+      !!(req.cookies.impersonate || req.headers.impersonate)
+    );
+  }
+
+  private setSessionCookie(
+    response: Response,
+    name: 'showorg' | 'impersonate',
+    value: string
+  ) {
+    response.cookie(name, value, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
       ...(!process.env.NOT_SECURED
         ? {
@@ -349,10 +452,8 @@ export class UsersController {
     });
 
     if (process.env.NOT_SECURED) {
-      response.header('showorg', id);
+      response.header(name, value);
     }
-
-    response.status(200).send();
   }
 
   @Post('/delete-account')

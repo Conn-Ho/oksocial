@@ -707,6 +707,15 @@ export class PostsService {
     return { error: true };
   }
 
+  /** 删除团队: every post that would still publish is deleted, its workflow stopped. */
+  async cancelScheduled(orgId: string) {
+    const groups = await this._postRepository.scheduledGroups(orgId);
+    for (const { group } of groups) {
+      await this.deletePost(orgId, group);
+    }
+    return groups.length;
+  }
+
   /** 帖子 list: one page of a status tab, with the counts of every tab under the same filters. */
   async managePosts(orgId: string, query: ManagePostsQueryDto) {
     const { posts, total, counts } = await this._postRepository.managePosts(orgId, query);

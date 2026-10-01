@@ -101,6 +101,14 @@ export class AutomationRepository {
     });
   }
 
+  /** Turns off every automation of the organization (its team is being deleted). */
+  disableAll(orgId: string) {
+    return this._automations.model.automation.updateMany({
+      where: { organizationId: orgId, enabled: true, deletedAt: null },
+      data: { enabled: false },
+    });
+  }
+
   enabledAutomations() {
     return this._automations.model.automation.findMany({
       where: { enabled: true, deletedAt: null, organization: { deletedAt: null } },
