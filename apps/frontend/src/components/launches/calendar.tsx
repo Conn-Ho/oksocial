@@ -94,8 +94,8 @@ export const hours = Array.from(
   (_, i) => i
 );
 
-// Shared hook for post actions (edit, delete, statistics)
-const usePostActions = (onMutate?: () => void) => {
+// Shared hook for post actions (edit, delete, statistics); the 帖子 list uses it too
+export const usePostActions = (onMutate?: () => void) => {
   const t = useT();
   const fetch = useFetch();
   const modal = useModals();

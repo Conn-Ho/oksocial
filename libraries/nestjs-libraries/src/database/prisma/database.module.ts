@@ -79,6 +79,8 @@ import { BrandService } from '@gitroom/nestjs-libraries/database/prisma/brands/b
 import { CreationRepository } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.repository';
 import { AiCreationService } from '@gitroom/nestjs-libraries/database/prisma/creation/creation.service';
 import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.ai.service';
+import { ChannelTagsRepository } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.repository';
+import { ChannelTagsService } from '@gitroom/nestjs-libraries/database/prisma/channel-tags/channel.tags.service';
 
 @Global()
 @Module({
@@ -144,6 +146,8 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     CreationRepository,
     CreationAiService,
     AiCreationService,
+    ChannelTagsRepository,
+    ChannelTagsService,
     ExtractContentService,
     OpenaiService,
     RelayImageService,

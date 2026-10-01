@@ -33,6 +33,9 @@ import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/m
 import copy from 'copy-to-clipboard';
 import { BrowserProxyModal } from '@gitroom/frontend/components/launches/browser.proxy.modal';
 import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
+import { ChannelTagsModal } from '@gitroom/frontend/components/launches/channel.tags.modal';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { canManageChannels } from '@gitroom/helpers/auth/org.roles';
 
 export const Menu: FC<{
   canEnable: boolean;
@@ -59,6 +62,7 @@ export const Menu: FC<{
     refreshChannel,
   } = props;
   const t = useT();
+  const user = useUser();
 
   const fetch = useFetch();
   const router = useRouter();
@@ -318,6 +322,20 @@ export const Menu: FC<{
     });
     setShow(false);
   }, [integrations, t]);
+  // 添加标签: a channel can carry several tags (the channel list and the editor filter by them)
+  const editTags = useCallback(() => {
+    modal.openModal({
+      title: t('channel_tags_title', '账号标签'),
+      withCloseButton: true,
+      classNames: {
+        modal: 'bg-transparent text-textColor w-[560px] max-w-[95vw]',
+      },
+      children: (close: () => void) => (
+        <ChannelTagsModal integration={findIntegration} close={close} onSaved={() => mutate()} />
+      ),
+    });
+    setShow(false);
+  }, [t, findIntegration]);
   const browserProxy = useCallback(() => {
     modal.openModal({
       title: t('browser_proxies', '出口代理'),
@@ -577,6 +595,33 @@ export const Menu: FC<{
                 ]
                   .filter((f) => f)
                   .join(' / ')}
+              </div>
+            </div>
+          )}
+          {canManageChannels(user?.role) && (
+            <div
+              className="flex gap-[12px] items-center py-[8px] px-[10px]"
+              onClick={editTags}
+            >
+              <div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width={18}
+                  height={18}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <path
+                    d="M3 11.2V4.5C3 3.67 3.67 3 4.5 3H11.2C11.6 3 11.98 3.16 12.26 3.44L20.56 11.74C21.15 12.33 21.15 13.27 20.56 13.86L13.86 20.56C13.27 21.15 12.33 21.15 11.74 20.56L3.44 12.26C3.16 11.98 3 11.6 3 11.2Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" />
+                </svg>
+              </div>
+              <div className="text-[14px]">
+                {t('channel_add_tags', '添加标签')}
               </div>
             </div>
           )}

@@ -26,6 +26,8 @@ import utc from 'dayjs/plugin/utc';
 import { MediaService } from '@gitroom/nestjs-libraries/database/prisma/media/media.service';
 import { ShortLinkService } from '@gitroom/nestjs-libraries/short-linking/short.link.service';
 import { CreateTagDto } from '@gitroom/nestjs-libraries/dtos/posts/create.tag.dto';
+import { ManagePostsQueryDto } from '@gitroom/nestjs-libraries/dtos/posts/manage.posts.dto';
+import { retryDate } from '@gitroom/helpers/posts/posts.manage';
 import {
   minifyPostsList,
   minifyPosts,
@@ -705,6 +707,38 @@ export class PostsService {
     return { error: true };
   }
 
+  /** 帖子 list: one page of a status tab, with the counts of every tab under the same filters. */
+  async managePosts(orgId: string, query: ManagePostsQueryDto) {
+    const { posts, total, counts } = await this._postRepository.managePosts(orgId, query);
+    const limit = query.limit || 20;
+    return { posts, total, page: query.page || 1, pages: Math.ceil(total / limit), counts };
+  }
+
+  /** 失败重试: failed posts go back to the queue (now, or at their time if it is still ahead). */
+  async retryPosts(orgId: string, groups: string[]) {
+    const posts = await this._postRepository.failedTopLevel(orgId, [...new Set(groups)]);
+    for (const post of posts) {
+      await this._postRepository.retryGroup(orgId, post.group, retryDate(post.publishDate));
+      // startWorkflow keeps posts waiting for (or refused) approval from publishing
+      await this.startWorkflow(
+        post.integration.providerIdentifier.split('-')[0].toLowerCase(),
+        post.id,
+        orgId,
+        'QUEUE'
+      );
+    }
+    return { retried: posts.length };
+  }
+
+  /** 批量删除: every chosen group, the way the calendar deletes one. */
+  async deletePosts(orgId: string, groups: string[]) {
+    const unique = [...new Set(groups)];
+    for (const group of unique) {
+      await this.deletePost(orgId, group);
+    }
+    return { deleted: unique.length };
+  }
+
   async countPostsFromDay(orgId: string, date: Date) {
     return this._postRepository.countPostsFromDay(orgId, date);
   }
@@ -1369,7 +1403,7 @@ export class PostsService {
               },
             ],
           },
-          'WEB'
+          'AI'
         );
       }
     }

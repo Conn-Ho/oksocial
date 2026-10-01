@@ -144,7 +144,8 @@ export const BulkImportModal: FC<{
         const media = await resolveMedia(row.mediaRefs);
         const res = await fetch('/posts', {
           method: 'POST',
-          body: JSON.stringify(toCreatePostBody(row, media)),
+          // source: the 帖子 list shows these as 批量导入
+          body: JSON.stringify({ ...toCreatePostBody(row, media), source: 'bulk' }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

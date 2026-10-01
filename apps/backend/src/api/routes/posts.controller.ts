@@ -38,6 +38,11 @@ import { RequireRoles } from '@gitroom/backend/services/auth/permissions/roles.d
 import { ReviewPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/review.posts.dto';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { needsApproval, canReviewPosts } from '@gitroom/helpers/auth/org.roles';
+import {
+  ManagePostsQueryDto,
+  PostGroupsDto,
+} from '@gitroom/nestjs-libraries/dtos/posts/manage.posts.dto';
+import { webCreationMethod } from '@gitroom/helpers/posts/posts.manage';
 
 @ApiTags('Posts')
 @Controller('/posts')
@@ -85,6 +90,34 @@ export class PostsController {
       'PUBLISH'
     );
     return result;
+  }
+
+  // 帖子 list (next to the calendar); declared before "/:id" like the approvals.
+  @Get('/manage')
+  @ApiOperation({ summary: '帖子列表', description: '按状态（待发布/待审核/草稿/已发布/失败）、来源、账号和定时时间筛选团队的帖子，附带每个状态的数量。' })
+  managePosts(
+    @GetOrgFromRequest() org: Organization,
+    @Query() query: ManagePostsQueryDto
+  ) {
+    return this._postsService.managePosts(org.id, query);
+  }
+
+  @Post('/manage/retry')
+  @ApiOperation({ summary: '失败重试', description: '把发布失败的帖子放回发布队列；定时已过的立即发布。' })
+  retryPosts(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: PostGroupsDto
+  ) {
+    return this._postsService.retryPosts(org.id, body.groups);
+  }
+
+  @Post('/manage/delete')
+  @ApiOperation({ summary: '批量删除帖子' })
+  deletePosts(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: PostGroupsDto
+  ) {
+    return this._postsService.deletePosts(org.id, body.groups);
   }
 
   @Get('/:id/statistics')
@@ -288,7 +321,14 @@ export class PostsController {
     const approval = requireApproval && (hold || canReviewPosts(role))
       ? { mode: hold ? ('hold' as const) : ('approve' as const), userId: user.id }
       : undefined;
-    const created = await this._postsService.createPost(org.id, body, 'WEB', false, approval);
+    const created = await this._postsService.createPost(
+      org.id,
+      body,
+      // the Excel import marks its posts so the 帖子 list can tell them apart
+      webCreationMethod(rawBody?.source),
+      false,
+      approval
+    );
     if (hold && (body.type === 'schedule' || body.type === 'now') && created.length) {
       await this._notificationService.inAppNotification(
         org.id,

@@ -309,6 +309,8 @@ describe('history, media library and drafts', () => {
     ]);
     const bodies = posts.createPost.mock.calls.map((c: any[]) => c[1]);
     expect(bodies.every((b: any) => b.type === 'draft')).toBe(true);
+    // AI 创作 drafts show as such in the 帖子 list
+    expect(posts.createPost.mock.calls.every((c: any[]) => c[2] === 'AI')).toBe(true);
     expect(bodies[0].posts[0].value[0].image).toHaveLength(2);
     expect(bodies[1].posts[0].value[0].image).toHaveLength(0);
     expect(bodies[2].posts[0].value.map((v: any) => v.content)).toEqual(['<p>第一条</p>', '<p>第二条</p>']);
