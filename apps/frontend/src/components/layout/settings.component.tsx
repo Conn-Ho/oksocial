@@ -34,6 +34,7 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { GlobalSettings } from '@gitroom/frontend/components/settings/global.settings';
 import { ApprovedAppsComponent } from '@gitroom/frontend/components/approved-apps/approved-apps.component';
 import { TeamSettings } from '@gitroom/frontend/components/teams/team.settings';
+import { PERSONAL_KEY } from '@gitroom/frontend/components/new-layout/sidebar/user.avatar';
 export const SettingsPopup: FC<{
   getRef?: Ref<any>;
 }> = (props) => {
@@ -76,6 +77,8 @@ export const SettingsPopup: FC<{
       method: 'POST',
       body: JSON.stringify(val),
     });
+    // the sidebar's account card shows the name and picture
+    swr.mutate(PERSONAL_KEY);
     if (getRef) {
       return;
     }
@@ -161,14 +164,6 @@ export const SettingsPopup: FC<{
             </button>
           ))}
         </nav>
-        <div>
-          {/* on phones it closes the page instead, below the section */}
-          {showLogout && (
-            <div className="mt-4 hidden md:block">
-              <LogoutComponent />
-            </div>
-          )}
-        </div>
       </div>
       <div className="bg-newBgColorInner flex-1 flex-col flex p-[16px] md:p-[20px] gap-[12px]">
         {/* outside the profile form below: the team section has a form of its own */}
@@ -238,6 +233,7 @@ export const SettingsPopup: FC<{
             </div>
           </form>
         </FormProvider>
+        {/* phones only: on desktop 退出登录 is in the sidebar's account menu */}
         {showLogout && (
           <div className="md:hidden mt-[24px] pt-[16px] border-t border-newBorder">
             <LogoutComponent />

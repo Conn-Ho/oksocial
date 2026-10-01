@@ -4,6 +4,7 @@ import React, { FC, ReactNode } from 'react';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { usageRatio } from '@gitroom/helpers/utils/sidebar.account';
 import {
   Usage,
   UsageRow,
@@ -18,12 +19,10 @@ import {
   unitLabel,
 } from '@gitroom/frontend/components/usage/usage.format';
 
-const ratio = (used: number | null, limit: number) =>
-  limit === -1 || used === null
-    ? 0
-    : limit === 0
-    ? 1
-    : Math.min(1, used / limit);
+
+/** A usage bar's fill: amber near the limit, red at it. Shared with the sidebar's plan card. */
+export const limitBarClass = (r: number) =>
+  r >= 1 ? 'bg-red-500' : r >= 0.8 ? 'bg-amber-500' : 'bg-textColor/70';
 
 /** One limit: label, used / limit, and a bar that turns amber near the limit and red at it. */
 const LimitTile: FC<{
@@ -34,7 +33,7 @@ const LimitTile: FC<{
   hint?: string;
   bar?: boolean;
 }> = ({ label, value, used, limit, hint, bar = true }) => {
-  const r = ratio(used, limit);
+  const r = usageRatio(used, limit) ?? 0;
   return (
     <div className="flex flex-col gap-[8px] rounded-[10px] border border-newBorder p-[14px] min-w-0">
       <div className="flex items-baseline justify-between gap-[8px]">
@@ -55,11 +54,7 @@ const LimitTile: FC<{
           <div
             className={clsx(
               'h-full rounded-full origin-left transition-transform duration-500 ease-out',
-              r >= 1
-                ? 'bg-red-500'
-                : r >= 0.8
-                ? 'bg-amber-500'
-                : 'bg-textColor/70'
+              limitBarClass(r)
             )}
             style={{ transform: `scaleX(${r})` }}
           />

@@ -1,23 +1,32 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import useCookie from 'react-use-cookie';
 import EventEmitter from 'events';
 
 export const modeEmitter = new EventEmitter();
 
-const ModeComponent = () => {
+/** The light / dark theme kept in the `mode` cookie, and the switch between them. */
+export const useThemeMode = () => {
   const [mode, setMode] = useCookie('mode', 'light');
 
+  // from the theme on screen, not this hook's copy: another switch (phone sheet, account menu) may
+  // have changed it since this one mounted
   const changeMode = useCallback(() => {
-    modeEmitter.emit('mode', mode === 'dark' ? 'light' : 'dark');
-    setMode(mode === 'dark' ? 'light' : 'dark');
-  }, [mode]);
+    const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+    modeEmitter.emit('mode', next);
+    setMode(next);
+  }, [setMode]);
 
   useEffect(() => {
     document.body.classList.remove('dark', 'light');
     document.body.classList.add(mode);
   }, [mode]);
+  return { mode, changeMode };
+};
+
+const ModeComponent = () => {
+  const { mode, changeMode } = useThemeMode();
   return (
     <div onClick={changeMode} className="select-none cursor-pointer">
       {mode === 'dark' ? (

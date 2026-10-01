@@ -1,9 +1,12 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { OrgRole } from '@gitroom/helpers/auth/org.roles';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { useToaster } from '@gitroom/react/toaster/toaster';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 /** A team in 切换团队 (GET /user/organizations). */
 export type TeamSummary = {
@@ -43,6 +46,45 @@ export const useTeams = () => {
   const fetch = useFetch();
   const load = useCallback(async () => (await fetch('/user/organizations')).json(), []);
   return useSWR<TeamSummary[]>('organizations', load, STATIC);
+};
+
+/**
+ * 切换团队: the API moves the session to the team and the page reloads into it. `switching` is the
+ * team being opened, so its row can show it while the page reloads.
+ */
+export const useSwitchTeam = () => {
+  const fetch = useFetch();
+  const user = useUser();
+  const t = useT();
+  const toaster = useToaster();
+  const [switching, setSwitching] = useState<string | null>(null);
+  const switchTo = useCallback(
+    async (team: TeamSummary) => {
+      if (team.id === user?.orgId) {
+        return;
+      }
+      setSwitching(team.id);
+      const res = await fetch('/user/change-org', {
+        method: 'POST',
+        body: JSON.stringify({ id: team.id }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        setSwitching(null);
+        toaster.show(t('team_switch_failed', '切换团队失败，请稍后再试'), 'warning');
+        return;
+      }
+      window.location.reload();
+    },
+    [user?.orgId, t]
+  );
+  return { switching, switchTo };
+};
+
+/** The team the member works in now, from the same cached list. */
+export const useCurrentTeam = () => {
+  const user = useUser();
+  const { data: teams } = useTeams();
+  return Array.isArray(teams) ? teams.find((team) => team.id === user?.orgId) : undefined;
 };
 
 export const useTeamInfo = () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { SWRConfiguration } from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import type {
   AddonQuote,
@@ -113,7 +113,7 @@ export type ReferralSummary = {
 };
 
 /** One SWR resource: the parsed body, or an error carrying the API's message. */
-export const useJson = <T>(key: string | null) => {
+export const useJson = <T>(key: string | null, config?: SWRConfiguration<T>) => {
   const fetch = useFetch();
   const load = useCallback(async (url: string) => {
     const res = await fetch(url);
@@ -123,10 +123,21 @@ export const useJson = <T>(key: string | null) => {
     }
     return body as T;
   }, []);
-  return useSWR<T>(key, load, { shouldRetryOnError: false });
+  return useSWR<T>(key, load, { shouldRetryOnError: false, ...config });
 };
 
 export const useUsage = () => useJson<Usage>('/usage');
+
+// the sidebar is on every page: it reads /usage once and does not refetch on every focus; the usage
+// page, 签到 and purchases revalidate the same key, which updates the card too. (No long deduping
+// window: the first hook's window would hold back the usage page's own fetch.)
+const SIDEBAR_USAGE: SWRConfiguration<Usage> = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+};
+
+/** The plan card's /usage: null (no request) when billing is off. */
+export const useSidebarUsage = (enabled: boolean) => useJson<Usage>(enabled ? '/usage' : null, SIDEBAR_USAGE);
 
 export const useCatalogue = () => useJson<Catalogue>('/usage/catalogue');
 
