@@ -21,7 +21,7 @@ export class UploadWidgetAuthMiddleware implements NestMiddleware {
     if (!ticket) {
       res
         .status(HttpStatus.UNAUTHORIZED)
-        .json({ msg: 'Upload ticket not found or expired' });
+        .json({ msg: '上传凭证不存在或已过期' });
       return;
     }
 

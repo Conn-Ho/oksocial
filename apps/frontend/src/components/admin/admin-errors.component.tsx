@@ -9,6 +9,7 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Button } from '@gitroom/react/form/button';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 interface ErrorRow {
   id: string;
@@ -44,6 +45,7 @@ const safeParse = (value: string) => {
 const ErrorDetailsModal: FC<{ row: ErrorRow }> = ({ row }) => {
   const modal = useModals();
   const toaster = useToaster();
+  const t = useT();
   const parsedMessage = useMemo(() => safeParse(row.message), [row.message]);
   const parsedBody = useMemo(() => safeParse(row.body), [row.body]);
 
@@ -55,15 +57,19 @@ const ErrorDetailsModal: FC<{ row: ErrorRow }> = ({ row }) => {
         2
       )
     );
-    toaster.show('Debug code copied to clipboard', 'success');
-  }, [parsedMessage, parsedBody, row, toaster]);
+    toaster.show(t('debug_json_copied', '调试 JSON 已复制到剪贴板'), 'success');
+  }, [parsedMessage, parsedBody, row, toaster, t]);
 
   return (
     <div className="rounded-[4px] border border-newTableBorder bg-newBgColorInner px-[16px] pb-[16px] relative w-full max-h-[80vh] overflow-auto">
       <div className="sticky top-0 bg-newBgColorInner py-[16px] flex items-center justify-between gap-[12px] z-10 border-b border-newTableBorder mb-[12px]">
-        <div className="text-[16px] font-[600]">Error Details</div>
+        <div className="text-[16px] font-[600]">
+          {t('error_details', '错误详情')}
+        </div>
         <div className="flex gap-[8px] items-center">
-          <Button onClick={copyAll}>Copy Debug Code</Button>
+          <Button onClick={copyAll}>
+            {t('copy_debug_json', '复制调试 JSON')}
+          </Button>
           <button
             className="outline-none w-[28px] h-[28px] flex items-center justify-center hover:bg-tableBorder cursor-pointer rounded"
             type="button"
@@ -89,22 +95,22 @@ const ErrorDetailsModal: FC<{ row: ErrorRow }> = ({ row }) => {
 
       <div className="grid grid-cols-2 gap-[12px] text-[13px] mb-[12px]">
         <div>
-          <div className="opacity-60">Platform</div>
+          <div className="opacity-60">{t('platform', '平台')}</div>
           <div>{row.platform}</div>
         </div>
         <div>
-          <div className="opacity-60">Created</div>
+          <div className="opacity-60">{t('created_at', '创建时间')}</div>
           <div>{new Date(row.createdAt).toLocaleString()}</div>
         </div>
         <div>
-          <div className="opacity-60">Organization</div>
+          <div className="opacity-60">{t('organization', '团队')}</div>
           <div>
             {row.organization?.name}{' '}
             <span className="opacity-60">({row.organization?.id})</span>
           </div>
         </div>
         <div>
-          <div className="opacity-60">Users</div>
+          <div className="opacity-60">{t('users', '用户')}</div>
           <div className="break-all">
             {row.organization?.users
               ?.map((u) => u.user?.email)
@@ -113,19 +119,23 @@ const ErrorDetailsModal: FC<{ row: ErrorRow }> = ({ row }) => {
           </div>
         </div>
         <div className="col-span-2">
-          <div className="opacity-60">Post ID</div>
+          <div className="opacity-60">{t('post_id', '帖子 ID')}</div>
           <div>{row.postId}</div>
         </div>
       </div>
 
-      <div className="text-[13px] font-[600] mb-[6px]">message</div>
+      <div className="text-[13px] font-[600] mb-[6px]">
+        {t('error_message', '错误信息')}
+      </div>
       <pre className="text-[12px] bg-sixth p-[12px] rounded overflow-auto max-h-[40vh] whitespace-pre-wrap break-all">
         {typeof parsedMessage === 'string'
           ? parsedMessage
           : JSON.stringify(parsedMessage, null, 2)}
       </pre>
 
-      <div className="text-[13px] font-[600] mb-[6px] mt-[12px]">body</div>
+      <div className="text-[13px] font-[600] mb-[6px] mt-[12px]">
+        {t('request_body', '请求内容')}
+      </div>
       <pre className="text-[12px] bg-sixth p-[12px] rounded overflow-auto max-h-[40vh] whitespace-pre-wrap break-all">
         {typeof parsedBody === 'string'
           ? parsedBody
@@ -173,6 +183,7 @@ export const AdminErrorsComponent: FC = () => {
   const user = useUser();
   const modal = useModals();
   const toaster = useToaster();
+  const t = useT();
 
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(20);
@@ -225,15 +236,15 @@ export const AdminErrorsComponent: FC = () => {
           2
         )
       );
-      toaster.show('Debug code copied to clipboard', 'success');
+      toaster.show(t('debug_json_copied', '调试 JSON 已复制到剪贴板'), 'success');
     },
-    [toaster]
+    [toaster, t]
   );
 
   if (!user?.isSuperAdmin) {
     return (
       <div className="text-textColor p-[20px]">
-        You do not have access to this page.
+        {t('no_access_to_page', '你没有访问此页面的权限。')}
       </div>
     );
   }
@@ -243,15 +254,19 @@ export const AdminErrorsComponent: FC = () => {
   return (
     <div className="flex flex-col gap-[16px] text-textColor">
       <div className="flex items-center justify-between">
-        <div className="text-[20px] font-[600]">Errors</div>
+        <div className="text-[20px] font-[600]">
+          {t('errors', '错误日志')}
+        </div>
         <div className="text-[13px] opacity-70">
-          {data ? `${data.total} total` : ''}
+          {data
+            ? t('total_records', '共 {{total}} 条', { total: data.total })
+            : ''}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-[12px] items-end bg-newBgColorInner border border-newTableBorder rounded-[8px] p-[12px]">
         <div className="flex flex-col gap-[6px]">
-          <div className="text-[12px] opacity-70">Platform</div>
+          <div className="text-[12px] opacity-70">{t('platform', '平台')}</div>
           <select
             value={platform}
             onChange={(e) => {
@@ -260,7 +275,7 @@ export const AdminErrorsComponent: FC = () => {
             }}
             className="bg-newBgColorInner h-[38px] border border-newTableBorder rounded-[8px] px-[10px] text-[14px] text-textColor min-w-[180px]"
           >
-            <option value="">All platforms</option>
+            <option value="">{t('all_platforms', '全部平台')}</option>
             {(platforms || []).map((p) => (
               <option key={p} value={p}>
                 {p}
@@ -270,7 +285,9 @@ export const AdminErrorsComponent: FC = () => {
         </div>
 
         <div className="flex flex-col gap-[6px]">
-          <div className="text-[12px] opacity-70">Email contains</div>
+          <div className="text-[12px] opacity-70">
+            {t('email_contains', '邮箱包含')}
+          </div>
           <div className="flex gap-[8px]">
             <input
               value={emailInput}
@@ -281,7 +298,7 @@ export const AdminErrorsComponent: FC = () => {
               placeholder="user@example.com"
               className="bg-newBgColorInner h-[38px] border border-newTableBorder rounded-[8px] px-[10px] text-[14px] text-textColor min-w-[240px]"
             />
-            <Button onClick={onApplyEmail}>Apply</Button>
+            <Button onClick={onApplyEmail}>{t('filter', '筛选')}</Button>
           </div>
         </div>
 
@@ -294,11 +311,11 @@ export const AdminErrorsComponent: FC = () => {
               setUnknownFirst(e.target.checked);
             }}
           />
-          Unknown Error first
+          {t('unknown_errors_first', '未知错误优先')}
         </label>
 
         <div className="flex flex-col gap-[6px]">
-          <div className="text-[12px] opacity-70">Per page</div>
+          <div className="text-[12px] opacity-70">{t('per_page', '每页条数')}</div>
           <select
             value={limit}
             onChange={(e) => {
@@ -316,24 +333,26 @@ export const AdminErrorsComponent: FC = () => {
         </div>
 
         <Button secondary onClick={onClear}>
-          Clear filters
+          {t('clear_filters', '清除筛选')}
         </Button>
       </div>
 
       {isLoading ? (
         <LoadingComponent />
       ) : error ? (
-        <div className="text-red-400">Failed to load errors.</div>
+        <div className="text-red-400">
+          {t('failed_to_load_errors', '错误日志加载失败。')}
+        </div>
       ) : !data || data.items.length === 0 ? (
-        <div className="opacity-70">No errors found.</div>
+        <div className="opacity-70">{t('no_errors_found', '暂无错误记录。')}</div>
       ) : (
         <div className="border border-newTableBorder rounded-[8px] overflow-hidden">
           <div className="grid grid-cols-[170px_120px_220px_1fr_220px] gap-[12px] px-[12px] py-[10px] bg-newBgColorInner text-[12px] uppercase opacity-70 border-b border-newTableBorder">
-            <div>Created</div>
-            <div>Platform</div>
-            <div>User / Org</div>
-            <div>Message</div>
-            <div className="text-right">Actions</div>
+            <div>{t('created_at', '创建时间')}</div>
+            <div>{t('platform', '平台')}</div>
+            <div>{t('user_and_team', '用户 / 团队')}</div>
+            <div>{t('error_message', '错误信息')}</div>
+            <div className="text-right">{t('actions', '操作')}</div>
           </div>
           {data.items.map((row) => {
             const isUnknown = (row.message || '').includes('Unknown Error');
@@ -376,9 +395,9 @@ export const AdminErrorsComponent: FC = () => {
                 </div>
                 <div className="flex gap-[8px] justify-end">
                   <Button secondary onClick={() => openDetails(row)}>
-                    View
+                    {t('view', '查看')}
                   </Button>
-                  <Button onClick={() => copyRow(row)}>Copy</Button>
+                  <Button onClick={() => copyRow(row)}>{t('copy', '复制')}</Button>
                 </div>
               </div>
             );
@@ -388,7 +407,10 @@ export const AdminErrorsComponent: FC = () => {
 
       <div className="flex items-center justify-between">
         <div className="text-[13px] opacity-70">
-          Page {page + 1} of {totalPages}
+          {t('page_x_of_y', '第 {{page}} / {{total}} 页', {
+            page: page + 1,
+            total: totalPages,
+          })}
         </div>
         <div className="flex gap-[8px]">
           <Button
@@ -396,13 +418,13 @@ export const AdminErrorsComponent: FC = () => {
             disabled={page === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
-            Previous
+            {t('previous', '上一页')}
           </Button>
           <Button
             disabled={!data?.hasMore}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t('next_page', '下一页')}
           </Button>
         </div>
       </div>

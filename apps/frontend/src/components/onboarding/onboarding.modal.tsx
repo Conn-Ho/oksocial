@@ -448,7 +448,7 @@ const OnboardingStep2: FC<{ onBack: () => void; onNext: () => void }> = ({
                 onClick={() => setTab(item)}
               >
                 <McpClientIcon client={item} />
-                {item}
+                {item === otherTab ? t('other_agents', '其他代理') : item}
               </button>
             ))}
           </div>

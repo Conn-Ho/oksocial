@@ -311,7 +311,7 @@ export class AuthController {
     try {
       return await new FarcasterProvider().createSigner();
     } catch (err: any) {
-      return { error: err.message || 'Failed to create signer' };
+      return { error: err.message || '创建 Farcaster 签名失败' };
     }
   }
 
@@ -323,7 +323,7 @@ export class AuthController {
     try {
       return await new FarcasterProvider().signerStatus(signerUuid);
     } catch (err: any) {
-      return { error: err.message || 'Failed to check signer' };
+      return { error: err.message || '查询 Farcaster 签名状态失败' };
     }
   }
 
@@ -359,7 +359,7 @@ export class AuthController {
   ) {
     // a cross-site form post can spoof any body field, a json body cannot
     if (!req.headers['content-type']?.includes('application/json')) {
-      return response.status(400).send('Invalid request');
+      return response.status(400).send('请求无效');
     }
 
     const { jwt, token } = await this._authService.checkExists(

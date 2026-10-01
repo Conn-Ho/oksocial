@@ -112,7 +112,7 @@ export const useMenuItem = () => {
       role: ['ADMIN', 'SUPERADMIN', 'MANAGER'],
     },
     {
-      name: 'Agent',
+      name: t('agent', 'AI 助手'),
       icon: (
         <svg
           xmlns="http://www.w3.org/2000/svg"

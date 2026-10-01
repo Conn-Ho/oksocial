@@ -17,22 +17,22 @@ import { InstagramPreview } from '@gitroom/frontend/components/new-launch/provid
 const postType = [
   {
     value: 'post',
-    label: 'Post / Reel',
+    label: '帖子 / Reels',
   },
   {
     value: 'story',
-    label: 'Story',
+    label: '快拍（Story）',
   },
 ];
 
 const graduationStrategies = [
   {
     value: 'MANUAL',
-    label: 'Manual',
+    label: '手动',
   },
   {
     value: 'SS_PERFORMANCE',
-    label: 'Auto (based on performance)',
+    label: '自动（根据表现）',
   },
 ];
 const InstagramCollaborators: FC<{
@@ -48,7 +48,7 @@ const InstagramCollaborators: FC<{
   return (
     <>
       <Select
-        label="Post Type"
+        label={t('label_post_type', '帖子类型')}
         {...register('post_type', {
           value: 'post',
         })}
@@ -63,7 +63,10 @@ const InstagramCollaborators: FC<{
 
       {postCurrentType !== 'story' && (
         <InstagramCollaboratorsTags
-          label="Collaborators (max 3) - accounts can't be private"
+          label={t(
+            'label_collaborators',
+            '协作者（最多3人）- 账号不能为私密'
+          )}
           {...register('collaborators', {
             value: [],
           })}
@@ -94,7 +97,7 @@ const InstagramCollaborators: FC<{
 
           {isTrialReel && (
             <Select
-              label="Graduation Strategy"
+              label={t('graduation_strategy', '转正策略')}
               {...register('graduation_strategy', {
                 value: 'MANUAL',
               })}

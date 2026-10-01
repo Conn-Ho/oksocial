@@ -12,33 +12,35 @@ import { MediumTags } from '@gitroom/frontend/components/new-launch/providers/me
 import { MediaComponent } from '@gitroom/frontend/components/media/media.component';
 import { Select } from '@gitroom/react/form/select';
 import { YoutubePreview } from '@gitroom/frontend/components/new-launch/providers/youtube/youtube.preview';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 const type = [
   {
-    label: 'Public',
+    label: '公开',
     value: 'public',
   },
   {
-    label: 'Private',
+    label: '私享',
     value: 'private',
   },
   {
-    label: 'Unlisted',
+    label: '不公开列出',
     value: 'unlisted',
   },
 ];
 
 const madeForKids = [
   {
-    label: 'No',
+    label: '否',
     value: 'no',
   },
   {
-    label: 'Yes',
+    label: '是',
     value: 'yes',
   },
 ];
 const YoutubeSettings: FC = () => {
   const { register, control } = useSettings();
+  const t = useT();
   return (
     <div className="flex flex-col">
       <Input label="Title" {...register('title')} maxLength={100} />
@@ -48,32 +50,32 @@ const YoutubeSettings: FC = () => {
           value: 'public',
         })}
       >
-        {type.map((t) => (
-          <option key={t.value} value={t.value}>
-            {t.label}
+        {type.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
           </option>
         ))}
       </Select>
       <Select
-        label="Made for kids"
+        label={t('made_for_kids', '面向儿童')}
         {...register('selfDeclaredMadeForKids', {
           value: 'no',
         })}
       >
-        {madeForKids.map((t) => (
-          <option key={t.value} value={t.value}>
-            {t.label}
+        {madeForKids.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
           </option>
         ))}
       </Select>
-      <MediumTags label="Tags" {...register('tags')} />
+      <MediumTags label={t('label_tags', '标签')} {...register('tags')} />
       <div className="mt-[20px]">
         <MediaComponent
           type="image"
           width={1280}
           height={720}
-          label="Thumbnail"
-          description="Thumbnail picture (optional)"
+          label={t('label_thumbnail', '缩略图')}
+          description={t('thumbnail_optional', '缩略图（可选）')}
           {...register('thumbnail')}
         />
       </div>

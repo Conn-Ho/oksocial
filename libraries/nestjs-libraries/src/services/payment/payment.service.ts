@@ -83,7 +83,7 @@ export class PaymentService {
     );
     if (current.platform !== platform) {
       throw new HttpException(
-        `Your subscription is managed on ${current.platform}, please use ${current.platform} to manage it`,
+        `你的订阅在 ${current.platform} 上管理，请到 ${current.platform} 操作`,
         400
       );
     }
@@ -110,8 +110,8 @@ export class PaymentService {
 
     throw new HttpException(
       current.platform !== requested.platform
-        ? `Your subscription is managed on ${current.platform}, please use ${current.platform} to manage it`
-        : `Your subscription is managed by ${subscription.provider}`,
+        ? `你的订阅在 ${current.platform} 上管理，请到 ${current.platform} 操作`
+        : `你的订阅由 ${subscription.provider} 管理`,
       400
     );
   }

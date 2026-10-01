@@ -145,10 +145,10 @@ export class MediaService {
       // Network-level failure (DNS, connection refused, SSRF block, etc.) —
       // fetch rejects rather than returning a non-ok response. Keep the real
       // reason reachable for callers that want to surface it
-      throw new BadRequestException('Failed to fetch URL', { cause: err });
+      throw new BadRequestException('下载不到这个链接的文件', { cause: err });
     }
     if (!response.ok || !response.body) {
-      throw new BadRequestException('Failed to fetch URL');
+      throw new BadRequestException('下载不到这个链接的文件');
     }
 
     // Cheap early exit when the server declares the size; Content-Length may
@@ -157,7 +157,7 @@ export class MediaService {
     const declaredSize = Number(response.headers.get('content-length'));
     if (declaredSize && declaredSize > getMaxSize('video/mp4')) {
       await response.body.cancel();
-      throw new BadRequestException('File is too large.');
+      throw new BadRequestException('文件太大了');
     }
 
     const uploaded = await uploadStreamToStorage(
@@ -228,7 +228,7 @@ export class MediaService {
     const convertOnly = !USABLE_AS_IS.has(extname(name).toLowerCase());
     await this._mediaRepository.finishProcessing(org, id, {
       ...(convertOnly
-        ? { error: 'No media processor is available to convert this file' }
+        ? { error: '没有可用的媒体处理服务，无法转换这个文件' }
         : {}),
     });
     return this._mediaRepository.getMediaStatus(org, id);
@@ -245,7 +245,7 @@ export class MediaService {
 
   private async checkUploadSession(org: string, sessionId: string) {
     if ((await ioRedis.get(`uploadSession:${sessionId}`)) !== org) {
-      throw new HttpException('Upload session not found or expired', 404);
+      throw new HttpException('上传会话不存在或已过期', 404);
     }
   }
 
@@ -309,7 +309,7 @@ export class MediaService {
   async getMediaStatus(org: string, id: string) {
     const media = await this._mediaRepository.getMediaStatus(org, id);
     if (!media) {
-      throw new HttpException('Media not found', 404);
+      throw new HttpException('媒体文件不存在', 404);
     }
 
     return media;
@@ -400,7 +400,7 @@ export class MediaService {
       !['completed', 'unchanged', 'failed'].includes(result.status)
     ) {
       await this._mediaRepository.finishProcessing(org, mediaId, {
-        error: `Unexpected processor result: ${JSON.stringify(result).slice(
+        error: `媒体处理结果异常：${JSON.stringify(result).slice(
           0,
           500
         )}`,
@@ -482,7 +482,7 @@ export class MediaService {
     }
 
     if (!video.trial && org.isTrailing) {
-      throw new HttpException('This video is not available in trial mode', 406);
+      throw new HttpException('试用期间不能生成这种视频', 406);
     }
 
     return true;
@@ -507,7 +507,7 @@ export class MediaService {
     }
 
     if (!video.trial && org.isTrailing) {
-      throw new HttpException('This video is not available in trial mode', 406);
+      throw new HttpException('试用期间不能生成这种视频', 406);
     }
 
     await video.instance.processAndValidate(body.customParams);
@@ -548,7 +548,7 @@ export class MediaService {
 
     const client = this._temporalService.client.getRawClient();
     if (!client) {
-      throw new HttpException('Video generation is not available', 503);
+      throw new HttpException('视频生成服务暂不可用', 503);
     }
 
     const jobId = `video_${org.id}_${makeId(10)}`;
@@ -583,7 +583,7 @@ export class MediaService {
   }> {
     // the job id carries the organization, so one org can't poll another's job
     if (!jobId.startsWith(`video_${org.id}_`)) {
-      throw new HttpException('Video job not found', 404);
+      throw new HttpException('视频生成任务不存在', 404);
     }
 
     const handle = await this._temporalService.client.getWorkflowHandle(jobId);
@@ -591,7 +591,7 @@ export class MediaService {
     try {
       status = (await handle.describe()).status.name;
     } catch (err) {
-      throw new HttpException('Video job not found', 404);
+      throw new HttpException('视频生成任务不存在', 404);
     }
 
     if (status === 'RUNNING') {

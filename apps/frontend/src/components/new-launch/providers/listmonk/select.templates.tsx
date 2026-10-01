@@ -42,7 +42,7 @@ export const SelectTemplates: FC<{
   return (
     <Select
       name={name}
-      label="Select Template"
+      label={t('select_template', '选择模板')}
       onChange={onChangeInner}
       value={currentMedia}
     >

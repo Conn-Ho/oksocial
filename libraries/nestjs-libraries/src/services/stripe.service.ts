@@ -1161,7 +1161,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (!info.supported) {
       return {
         applied: false,
-        reason: 'Applying a coupon is not supported for this user',
+        reason: '这个用户不支持使用优惠券',
       };
     }
 
@@ -1170,7 +1170,7 @@ export class StripeService extends PaymentProviderAbstract {
         ? body.value < 1 || body.value > 100
         : body.value < 1 || body.value > info.monthlyPrice
     ) {
-      return { applied: false, reason: 'Invalid coupon value' };
+      return { applied: false, reason: '优惠券面额无效' };
     }
 
     const org = await this._organizationService.getOrgById(organizationId);
@@ -1181,7 +1181,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (!stripeSubscription) {
       return {
         applied: false,
-        reason: 'No active subscription found for this customer',
+        reason: '这个客户没有有效的订阅',
       };
     }
 
@@ -1216,14 +1216,14 @@ export class StripeService extends PaymentProviderAbstract {
     if (!stripeSubscription) {
       return {
         cancelled: false,
-        reason: 'No active subscription found for this customer',
+        reason: '这个客户没有有效的订阅',
       };
     }
 
     if (!stripeSubscription.discounts.length) {
       return {
         cancelled: false,
-        reason: 'No coupon is applied to this subscription',
+        reason: '这个订阅没有使用优惠券',
       };
     }
 
@@ -1237,7 +1237,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (!org?.paymentId) {
       return {
         eligible: false as const,
-        reason: 'No payment customer found for this organization',
+        reason: '这个团队没有付款记录',
       };
     }
 
@@ -1253,7 +1253,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (!subscriptions.length) {
       return {
         eligible: false as const,
-        reason: 'No active subscription found for this customer',
+        reason: '这个客户没有有效的订阅',
       };
     }
 
@@ -1267,7 +1267,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (charges.some((f) => f.refunded || f.amount_refunded > 0)) {
       return {
         eligible: false as const,
-        reason: 'A refund was already issued for this customer',
+        reason: '这个客户已经退过款了',
       };
     }
 
@@ -1306,7 +1306,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (!lastCharge || !chargeSubscription) {
       return {
         eligible: false as const,
-        reason: 'No subscription payment found for this customer',
+        reason: '这个客户没有订阅付款记录',
       };
     }
 
@@ -1314,7 +1314,7 @@ export class StripeService extends PaymentProviderAbstract {
     if (lastCharge.created < sixtyDaysAgo) {
       return {
         eligible: false as const,
-        reason: 'The last subscription payment is older than 60 days',
+        reason: '最近一次订阅付款已超过 60 天',
       };
     }
 

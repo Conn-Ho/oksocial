@@ -18,7 +18,7 @@ const ConnectedComponent: FC<{
   const disconnect = useCallback(async () => {
     if (
       !(await deleteDialog(
-        'Are you sure you want to disconnect this repository?'
+        t('confirm_disconnect_repository', '确定要断开这个仓库的连接吗？')
       ))
     ) {
       return;
@@ -78,7 +78,7 @@ const ConnectComponent: FC<{
       }),
     });
     if (response.status === 404) {
-      toast.show('Repository not found', 'warning');
+      toast.show(t('repository_not_found', '找不到该仓库'), 'warning');
       return;
     }
     setConnected(`${select}/${repo}`);
@@ -108,7 +108,7 @@ const ConnectComponent: FC<{
           onChange={(e) => setUrl(e.target.value)}
           name="github"
           label=""
-          placeholder="Full GitHub URL"
+          placeholder={t('full_github_url', '完整的 GitHub 仓库 URL')}
         />
         <Button
           className="h-[44px] mt-[7px]"

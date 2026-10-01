@@ -211,7 +211,7 @@ const PriceBreakdown: FC = () => {
   const dueToday = checkout?.total?.total?.amount || '$0.00';
   const nextBillingTotal = recurring?.dueNext?.total?.amount;
   const nextBillingDate = recurring?.trial?.trialEnd
-    ? dayjs(recurring.trial.trialEnd * 1000).format('MMMM D, YYYY')
+    ? dayjs(recurring.trial.trialEnd * 1000).format('YYYY-MM-DD')
     : null;
   const billingInterval =
     recurring?.interval === 'month'
@@ -256,7 +256,9 @@ const PriceBreakdown: FC = () => {
               <span className="font-[500]">
                 {discountDisplay.displayName || discountDisplay.promotionCode}
                 {discountDisplay.percentOff &&
-                  ` (${discountDisplay.percentOff}% off)`}
+                  t('percent_off', '（{{percent}}% 折扣）', {
+                    percent: discountDisplay.percentOff,
+                  })}
               </span>
             </div>
             <span className="font-[500]">
@@ -360,11 +362,11 @@ const AppliedCouponDisplay: FC<{
 
     if (expiresAt && typeof expiresAt === 'number') {
       const date = new Date(expiresAt * 1000);
-      return dayjs(date).format('MMMM D, YYYY');
+      return dayjs(date).format('YYYY-MM-DD');
     }
 
     if (expiresAt && typeof expiresAt === 'string') {
-      return dayjs(expiresAt).format('MMMM D, YYYY');
+      return dayjs(expiresAt).format('YYYY-MM-DD');
     }
 
     return null;
@@ -620,7 +622,7 @@ const SubmitBar: FC<{ loading: boolean }> = ({ loading }) => {
             <span className="text-textColor font-[600]">
               {dayjs(
                 checkout.checkout.recurring?.trial?.trialEnd * 1000
-              ).format('MMMM D, YYYY')}{' '}
+              ).format('YYYY-MM-DD')}{' '}
               —{' '}
             </span>
             <span className="text-textColor font-[600]">

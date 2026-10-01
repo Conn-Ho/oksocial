@@ -7,6 +7,7 @@ import SafeImage from '@gitroom/react/helpers/safe.image';
 import { useCopilotAction, useCopilotReadable } from '@copilotkit/react-core';
 import { useStateCallback } from '@gitroom/react/helpers/use.state.callback';
 import { timer } from '@gitroom/helpers/utils/timer';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 export const PickPlatforms: FC<{
   integrations: Integrations[];
   selectedIntegrations: Integrations[];
@@ -18,6 +19,7 @@ export const PickPlatforms: FC<{
 }> = (props) => {
   const { hide, isMain, integrations, selectedIntegrations, onChange } = props;
   const ref = useRef<HTMLDivElement>(null);
+  const t = useT();
   const [isLeft, setIsLeft] = useState(false);
   const [isRight, setIsRight] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useStateCallback<
@@ -93,7 +95,7 @@ export const PickPlatforms: FC<{
         if (
           !props.singleSelect &&
           !(await deleteDialog(
-            'Are you sure you want to remove this platform?'
+            t('confirm_remove_platform', '确定要移除这个平台吗？')
           ))
         ) {
           return;

@@ -57,7 +57,7 @@ export class LocalStorage implements IUploadProvider {
       body = dataUrl.buffer;
     } else {
       if (!(await isSafePublicHttpsUrl(path))) {
-        throw new Error('Unsafe URL');
+        throw new Error('不安全的链接地址');
       }
       const loadImage = await fetch(path, {
         // @ts-ignore — undici option, not in lib.dom fetch types
@@ -73,7 +73,7 @@ export class LocalStorage implements IUploadProvider {
     // publicly served uploads directory on the app's own origin.
     const detected = await fileTypeFromBuffer(body);
     if (!detected || !LOCAL_STORAGE_ALLOWED_MIME.has(detected.mime)) {
-      throw new Error('Unsupported file type.');
+      throw new Error('不支持这种文件格式');
     }
 
     const { filePath, path: publicUrl } = this.newFilePath(detected.ext);
@@ -87,7 +87,7 @@ export class LocalStorage implements IUploadProvider {
     try {
       const detected = await fileTypeFromBuffer(file.buffer);
       if (!detected || !LOCAL_STORAGE_ALLOWED_MIME.has(detected.mime)) {
-        throw new Error('Unsupported file type.');
+        throw new Error('不支持这种文件格式');
       }
       const safeMime = detected.mime;
 
@@ -113,7 +113,7 @@ export class LocalStorage implements IUploadProvider {
   ): Promise<UploadedStream> {
     try {
       if (!LOCAL_STORAGE_ALLOWED_MIME.has(mimetype)) {
-        throw new Error('Unsupported file type.');
+        throw new Error('不支持这种文件格式');
       }
 
       const { filename, filePath, path } = this.newFilePath(ext);

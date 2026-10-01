@@ -313,7 +313,7 @@ const CommentBody: FC<{ comment: PreviewComment }> = ({ comment }) => {
       </div>
       <div className="text-[12px] text-textItemBlur">
         {comment.name || t('reviewer', 'Reviewer')} ·{' '}
-        {dayjs(comment.createdAt).format('MMM D, YYYY HH:mm')}
+        {dayjs(comment.createdAt).format('YYYY-MM-DD HH:mm')}
       </div>
     </div>
   );

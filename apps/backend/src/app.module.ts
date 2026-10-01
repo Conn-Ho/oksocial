@@ -41,6 +41,7 @@ import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
         },
       ],
       storage: new ThrottlerStorageRedisService(ioRedis),
+      errorMessage: '请求太频繁了，请稍后再试',
     }),
   ],
   controllers: [],

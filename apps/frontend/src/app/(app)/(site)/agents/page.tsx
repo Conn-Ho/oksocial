@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
-  title: 'oksocial - Agent',
+  title: 'oksocial AI 助手',
   description: '',
 };
 

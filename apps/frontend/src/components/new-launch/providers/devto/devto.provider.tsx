@@ -15,10 +15,12 @@ import clsx from 'clsx';
 import { Canonical } from '@gitroom/react/form/canonical';
 import { useIntegration } from '@gitroom/frontend/components/launches/helpers/use.integration';
 import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const DevtoSettings: FC = () => {
   const form = useSettings();
   const { date } = useIntegration();
+  const t = useT();
   return (
     <>
       <Input label="Title" {...form.register('title')} />
@@ -28,8 +30,8 @@ const DevtoSettings: FC = () => {
         {...form.register('canonical')}
       />
       <MediaComponent
-        label="Cover picture"
-        description="Add a cover picture"
+        label={t('label_cover_picture', '封面图片')}
+        description={t('add_a_cover_picture', '添加封面图片')}
         {...form.register('main_image')}
       />
       <div className="mt-[20px]">
@@ -37,7 +39,7 @@ const DevtoSettings: FC = () => {
       </div>
       <div>
         <DevtoTags
-          label="Tags (Maximum 4)"
+          label={t('label_tags_maximum_4', '标签（最多4个）')}
           {...form.register('tags', {
             value: [],
           })}

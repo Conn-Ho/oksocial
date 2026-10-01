@@ -13,6 +13,7 @@ import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { deleteDialog } from '@gitroom/react/helpers/delete.dialog';
 import useSWR from 'swr';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export const ChatbaseComponent: FC = () => {
   const { isChatBase } = useVariables();
@@ -50,6 +51,7 @@ export const ChatbaseComponentLoad: FC = () => {
 
 const ChatBaseCode: FC<{ token: string }> = ({ token }) => {
   const fetch = useFetch();
+  const t = useT();
 
   useEffect(() => {
     if (!window.chatbase || window.chatbase('getState') !== 'initialized') {
@@ -111,13 +113,17 @@ const ChatBaseCode: FC<{ token: string }> = ({ token }) => {
           }
 
           const approved = await deleteDialog(
-            `You are cancelling your ${
-              preview.tier || ''
-            } subscription and will receive a refund of ${preview.amount} ${(
-              preview.currency || ''
-            ).toUpperCase()}. Do you approve?`,
-            'Yes, cancel and refund',
-            'Cancel subscription'
+            t(
+              'chatbase_refund_confirm',
+              '你将取消 {{tier}} 订阅，并获得 {{amount}} {{currency}} 的退款。确认继续吗？',
+              {
+                tier: preview.tier || '',
+                amount: preview.amount,
+                currency: (preview.currency || '').toUpperCase(),
+              }
+            ),
+            t('yes_cancel_and_refund', '确认取消并退款'),
+            t('cancel_subscription', '取消订阅')
           );
 
           if (!approved) {

@@ -146,7 +146,7 @@ export class BillingController {
       if (e instanceof HttpException) {
         throw e;
       }
-      throw new HttpException((e as Error)?.message || 'Sync failed', 400);
+      throw new HttpException((e as Error)?.message || '同步失败', 400);
     }
   }
 
@@ -171,8 +171,8 @@ export class BillingController {
   ) {
     await this._notificationService.sendEmail(
       process.env.EMAIL_FROM_ADDRESS,
-      'Subscription Cancelled',
-      `Organization ${org.name} has cancelled their subscription because: ${body.feedback}`,
+      `团队「${org.name}」取消了订阅`,
+      `团队「${org.name}」取消了订阅，原因：${body.feedback}`,
       user.email
     );
 
@@ -193,7 +193,7 @@ export class BillingController {
     @GetOrgFromRequest() org: Organization
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).getCharges(org.id);
@@ -206,7 +206,7 @@ export class BillingController {
     @Body() body: { chargeIds: string[] }
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).refundCharges(org.id, body.chargeIds);
@@ -218,7 +218,7 @@ export class BillingController {
     @GetOrgFromRequest() org: Organization
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).cancelSubscription(org.id);
@@ -230,7 +230,7 @@ export class BillingController {
     @GetOrgFromRequest() org: Organization
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).getCouponInfo(org.id);
@@ -243,7 +243,7 @@ export class BillingController {
     @Body() body: AdminApplyCouponDto
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).applyCoupon(org.id, body);
@@ -255,7 +255,7 @@ export class BillingController {
     @GetOrgFromRequest() org: Organization
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return (await this.provider(org)).cancelCoupon(org.id);
@@ -276,8 +276,8 @@ export class BillingController {
     if (refund.refunded) {
       await this._notificationService.sendEmail(
         process.env.EMAIL_FROM_ADDRESS,
-        'Refund issued from Chatbase',
-        `Organization ${org.name} received a refund of ${refund.amount} ${refund.currency} and their subscription was cancelled`,
+        `团队「${org.name}」已通过 Chatbase 退款`,
+        `团队「${org.name}」已退款 ${refund.amount} ${refund.currency}，订阅已取消`,
         user.email
       );
     }

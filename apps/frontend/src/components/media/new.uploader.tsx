@@ -120,12 +120,20 @@ export function useUppyUploader(props: {
 
             if (!isAllowed) {
               const error = new Error(
-                `File type "${fileType}" is not allowed for file "${file.name}". Allowed types: ${allowedFileTypes}`
+                t(
+                  'file_type_not_allowed_for_file',
+                  '文件“{{name}}”的类型 {{type}} 不受支持，支持的类型：{{allowed}}',
+                  { name: file.name, type: fileType, allowed: allowedFileTypes }
+                )
               );
               uppy2.log(error.message, 'error');
               uppy2.info(error.message, 'error', 5000);
               toast.show(
-                `File type "${fileType}" is not allowed. Allowed types: ${allowedFileTypes}`,
+                t(
+                  'file_type_not_allowed',
+                  '不支持 {{type}} 类型的文件，支持的类型：{{allowed}}',
+                  { type: fileType, allowed: allowedFileTypes }
+                ),
                 'warning'
               );
               uppy2.removeFile(file.id);
@@ -152,12 +160,16 @@ export function useUppyUploader(props: {
 
             if (isImage && file.size > maxImageSize) {
               const error = new Error(
-                `Image file "${file.name}" is too large. Maximum size allowed is 30MB.`
+                t(
+                  'image_file_too_large_named',
+                  '图片“{{name}}”太大了，单张图片最大 30MB。',
+                  { name: file.name }
+                )
               );
               uppy2.log(error.message, 'error');
               uppy2.info(error.message, 'error', 5000);
               toast.show(
-                `Image file is too large. Maximum size allowed is 30MB.`
+                t('image_file_too_large', '图片太大了，单张图片最大 30MB。')
               );
               uppy2.removeFile(file.id); // Remove file from queue
               return reject(error);
@@ -165,12 +177,16 @@ export function useUppyUploader(props: {
 
             if (isVideo && file.size > maxVideoSize) {
               const error = new Error(
-                `Video file "${file.name}" is too large. Maximum size allowed is 1GB.`
+                t(
+                  'video_file_too_large_named',
+                  '视频“{{name}}”太大了，单个视频最大 1GB。',
+                  { name: file.name }
+                )
               );
               uppy2.log(error.message, 'error');
               uppy2.info(error.message, 'error', 5000);
               toast.show(
-                `Video file is too large. Maximum size allowed is 1GB.`
+                t('video_file_too_large', '视频太大了，单个视频最大 1GB。')
               );
               uppy2.removeFile(file.id); // Remove file from queue
               return reject(error);

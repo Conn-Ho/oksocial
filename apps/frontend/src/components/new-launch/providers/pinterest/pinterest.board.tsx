@@ -41,12 +41,12 @@ export const PinterestBoard: FC<{
     return null;
   }
   if (!orgs.length) {
-    return 'No boards found, you have to create a board first';
+    return t('no_pinterest_boards', '没有找到图板，请先创建一个图板');
   }
   return (
     <Select
       name={name}
-      label="Select board"
+      label={t('label_select_board', '选择看板')}
       onChange={onChangeInner}
       value={currentMedia}
     >

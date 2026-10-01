@@ -389,7 +389,7 @@ export class PostActivity {
       );
 
       if (!subscription) {
-        throw new Error('No active subscription found for this organization.');
+        throw new Error('当前团队没有有效的订阅，无法发布');
       }
     }
 

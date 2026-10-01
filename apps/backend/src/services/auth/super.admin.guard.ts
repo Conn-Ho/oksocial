@@ -30,7 +30,7 @@ export class SuperAdminGuard implements CanActivate {
       isOAuthApp ||
       !(await this._organizationService.canUseSuperAdminApi(orgId))
     ) {
-      throw new HttpException({ msg: 'Unauthorized' }, 403);
+      throw new HttpException({ msg: '没有权限' }, 403);
     }
 
     return true;

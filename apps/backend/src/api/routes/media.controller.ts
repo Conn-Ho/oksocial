@@ -97,7 +97,7 @@ export class MediaController {
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
-      throw new BadRequestException('No file provided');
+      throw new BadRequestException('请选择文件');
     }
     return this._mediaService.saveFile(
       org.id,
@@ -142,7 +142,7 @@ export class MediaController {
     @Body('preventSave') preventSave: string = 'false'
   ) {
     if (!file) {
-      throw new BadRequestException('No file provided');
+      throw new BadRequestException('请选择文件');
     }
 
     if (preventSave === 'true') {

@@ -265,7 +265,7 @@ export class MonitorService implements OnModuleInit {
   async getTarget(orgId: string, id: string) {
     const target = await this._repository.getTarget(orgId, id);
     if (!target) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('监控对象不存在', 404);
     }
     return { ...target, snapshots: await this._repository.snapshots(id) };
   }
@@ -284,7 +284,7 @@ export class MonitorService implements OnModuleInit {
   async updateTarget(orgId: string, id: string, data: MonitorTargetChanges) {
     const target = await this._repository.getTarget(orgId, id);
     if (!target) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('监控对象不存在', 404);
     }
     await this.checkReader(orgId, target.platform, data.integrationId);
     return this._repository.updateTarget(orgId, id, {
@@ -364,7 +364,7 @@ export class MonitorService implements OnModuleInit {
   async runNow(orgId: string, id: string) {
     const target = await this._repository.getTarget(orgId, id);
     if (!target) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('监控对象不存在', 404);
     }
     if (this._reading.has(id)) {
       return { started: false };
@@ -520,11 +520,11 @@ export class MonitorService implements OnModuleInit {
   async compare(orgId: string, targetId: string, integrationId: string, days: number) {
     const target = await this._repository.getTarget(orgId, targetId);
     if (!target || target.kind !== 'ACCOUNT') {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('监控对象不存在', 404);
     }
     const integration = await this._integrationService.getIntegrationById(orgId, integrationId);
     if (!integration || integration.deletedAt) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在或已停用', 404);
     }
     const now = new Date();
     const competitorPosts = await this._repository.postsSince(targetId, new Date(now.getTime() - days * DAY_MS));
@@ -548,7 +548,7 @@ export class MonitorService implements OnModuleInit {
     if (input.itemId) {
       const item = await this._repository.getItem(orgId, input.itemId);
       if (!item || item.kind === 'COMMENT') {
-        throw new HttpException('Not found', 404);
+        throw new HttpException('这条帖子不存在', 404);
       }
       // lists often carry only a title: read the full post when the text is not longer than that
       if (item.content && item.content.length > (item.title?.length ?? 0)) {
@@ -559,7 +559,7 @@ export class MonitorService implements OnModuleInit {
     if (input.targetId) {
       const target = await this._repository.getTarget(orgId, input.targetId);
       if (!target || target.kind !== 'POST') {
-        throw new HttpException('Not found', 404);
+        throw new HttpException('监控对象不存在', 404);
       }
       if (target.content) {
         return { title: target.title, content: target.content, url: target.url };
@@ -586,7 +586,7 @@ export class MonitorService implements OnModuleInit {
   private async channelFor(orgId: string, integrationId: string) {
     const integration = await this._integrationService.getIntegrationById(orgId, integrationId);
     if (!integration || integration.deletedAt || integration.disabled) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在或已停用', 404);
     }
     return integration;
   }
@@ -641,7 +641,7 @@ export class MonitorService implements OnModuleInit {
     }
   ) {
     if (!this._ai.enabled) {
-      throw new HttpException('AI is not configured', 503);
+      throw new HttpException('还没有配置 AI 服务', 503);
     }
     const integration = await this.channelFor(orgId, input.integrationId);
     return this._credits.withCredits(orgId, 'ai_rewrite', input.itemId || input.targetId, async () =>

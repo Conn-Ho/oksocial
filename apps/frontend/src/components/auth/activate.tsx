@@ -50,7 +50,7 @@ export function Activate() {
       if (result.success) {
         setStatus('sent');
         setCooldown(COOLDOWN_SECONDS);
-      } else if (result.message === 'Account is already activated') {
+      } else if (result.message === '账号已经激活过了') {
         setStatus('already_activated');
       } else {
         form.setError('email', {
@@ -138,7 +138,7 @@ export function Activate() {
                 disabled={cooldown > 0}
               >
                 {cooldown > 0
-                  ? `${t('resend_available_in', 'You can resend in')} ${cooldown}s`
+                  ? `${t('resend_available_in', '可重发倒计时')} ${cooldown} 秒`
                   : t('resend_activation_email', 'Resend Activation Email')}
               </Button>
             </form>

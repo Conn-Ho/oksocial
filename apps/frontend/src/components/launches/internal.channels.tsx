@@ -14,35 +14,35 @@ import clsx from 'clsx';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 const delayOptions = [
   {
-    name: 'Immediately',
+    name: '立即',
     value: 0,
   },
   {
-    name: '1 hour',
+    name: '1 小时',
     value: 3600000,
   },
   {
-    name: '2 hours',
+    name: '2 小时',
     value: 7200000,
   },
   {
-    name: '3 hours',
+    name: '3 小时',
     value: 10800000,
   },
   {
-    name: '8 hours',
+    name: '8 小时',
     value: 28800000,
   },
   {
-    name: '12 hours',
+    name: '12 小时',
     value: 43200000,
   },
   {
-    name: '15 hours',
+    name: '15 小时',
     value: 54000000,
   },
   {
-    name: '24 hours',
+    name: '24 小时',
     value: 86400000,
   },
 ];
@@ -164,7 +164,7 @@ const Plug: FC<{
       </div>
       <div className="w-full max-w-[600px] overflow-y-auto pb-[10px] text-[12px] flex flex-col gap-[10px]">
         {!allowedIntegrations.length ? (
-          'No available accounts'
+          t('no_available_accounts', '没有可用的账号')
         ) : (
           <div
             className={clsx(

@@ -510,7 +510,7 @@ export class IntegrationsController {
         verificationCode: result.verification_code,
       };
     } catch (err: any) {
-      return { error: err.message || 'Registration failed' };
+      return { error: err.message || '注册失败' };
     }
   }
 

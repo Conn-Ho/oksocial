@@ -7,6 +7,8 @@ import { isUSCitizen } from './isuscitizen.utils';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
 import { CalendarIcon } from '@gitroom/frontend/components/ui/icons';
+import i18next from '@gitroom/react/translation/i18next';
+import 'dayjs/locale/zh';
 export const DatePicker: FC<{
   date: dayjs.Dayjs;
   onChange: (day: dayjs.Dayjs) => void;
@@ -51,6 +53,7 @@ export const DatePicker: FC<{
           className="animate-fadeIn absolute bottom-[100%] mb-[16px] start-[50%] -translate-x-[50%] bg-sixth border border-tableBorder text-textColor rounded-[16px] z-[300] p-[16px] flex flex-col"
         >
           <Calendar
+            locale={i18next.resolvedLanguage || 'zh'}
             onChange={changeDate('date')}
             value={date.toDate()}
             dayClassName={(date, modifiers) => {

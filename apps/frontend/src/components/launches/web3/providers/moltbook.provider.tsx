@@ -25,7 +25,7 @@ export const MoltbookProvider: FC<Web3ProviderInterface> = (props) => {
 
   const register = async () => {
     if (!agentName.trim()) {
-      toaster.show('Please enter an agent name', 'warning');
+      toaster.show(t('please_enter_agent_name', '请输入代理名称'), 'warning');
       return;
     }
 
@@ -55,7 +55,7 @@ export const MoltbookProvider: FC<Web3ProviderInterface> = (props) => {
 
       pollForClaim(data.apiKey);
     } catch (err) {
-      setError('Failed to register agent');
+      setError(t('failed_to_register_agent', '代理注册失败'));
       setStep('error');
     }
   };
@@ -82,7 +82,7 @@ export const MoltbookProvider: FC<Web3ProviderInterface> = (props) => {
 
   const copyClaimUrl = useCallback(() => {
     copy(claimUrl);
-    toaster.show('Claim URL copied to clipboard', 'success');
+    toaster.show(t('claim_url_copied', '认领链接已复制到剪贴板'), 'success');
   }, [claimUrl, toaster]);
 
   useEffect(() => {
@@ -105,7 +105,7 @@ export const MoltbookProvider: FC<Web3ProviderInterface> = (props) => {
               name="agentName"
               disableForm={true}
               onChange={(e) => setAgentName(e.target.value)}
-              placeholder="MyPostizAgent"
+              placeholder="MyAgent"
             />
             <Input
               label={t('description_optional', 'Description (optional)')}
@@ -113,7 +113,7 @@ export const MoltbookProvider: FC<Web3ProviderInterface> = (props) => {
               name="agentDescription"
               disableForm={true}
               onChange={(e) => setAgentDescription(e.target.value)}
-              placeholder="Social media scheduler"
+              placeholder={t('moltbook_description_placeholder', '社交媒体排期助手')}
             />
             <Button className="w-full" onClick={register}>
               {t('register_agent', 'Register Agent')}

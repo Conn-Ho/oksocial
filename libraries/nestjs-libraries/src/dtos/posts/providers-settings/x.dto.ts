@@ -16,7 +16,7 @@ export class XDto {
   @IsOptional()
   @Matches(/^(https:\/\/x\.com\/i\/communities\/\d+)?$/, {
     message:
-      'Invalid X community URL. It should be in the format: https://x.com/i/communities/1493446837214187523',
+      'X 社群链接不正确，格式应为：https://x.com/i/communities/1493446837214187523',
   })
   community?: string;
 
@@ -39,7 +39,7 @@ export class XDto {
 
   @ValidateIf((o) => o.post_type === 'article')
   @IsString()
-  @MinLength(1, { message: 'Article title is required' })
+  @MinLength(1, { message: '请填写文章标题' })
   @JSONSchema({
     description: 'The title of the article, required when post_type is article',
   })

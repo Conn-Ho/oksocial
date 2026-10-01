@@ -84,6 +84,7 @@ export const PlugPop: FC<{
   const { closeAll } = useModals();
   const fetch = useFetch();
   const toaster = useToaster();
+  const t = useT();
   const values = useMemo(() => {
     if (!data?.data) {
       return {};
@@ -102,7 +103,7 @@ export const PlugPop: FC<{
           ...acc,
           [field.name]: field.validation
             ? string().matches(convertBackRegex(field.validation), {
-                message: 'Invalid value',
+                message: t('invalid_value', '格式不正确'),
               })
             : null,
         };
@@ -125,11 +126,9 @@ export const PlugPop: FC<{
         })),
       }),
     });
-    toaster.show('Plug updated', 'success');
+    toaster.show(t('plug_updated', '插件已更新'), 'success');
     closeAll();
   }, []);
-
-  const t = useT();
 
   return (
     <FormProvider {...form}>
@@ -174,6 +173,7 @@ export const PlugItem: FC<{
   };
 }> = (props) => {
   const { plug, addPlug, data } = props;
+  const t = useT();
   const [activated, setActivated] = useState(!!data?.activated);
   useEffect(() => {
     setActivated(!!data?.activated);
@@ -214,7 +214,9 @@ export const PlugItem: FC<{
           )}
         </div>
         <div className="flex-1">{plug.description}</div>
-        <Button>{!data ? 'Set Plug' : 'Edit Plug'}</Button>
+        <Button>
+          {!data ? t('set_plug', '设置插件') : t('edit_plug', '编辑插件')}
+        </Button>
       </div>
     </div>
   );
@@ -222,6 +224,7 @@ export const PlugItem: FC<{
 export const Plug = () => {
   const plug = usePlugs();
   const modals = useModals();
+  const t = useT();
   const fetch = useFetch();
   const load = useCallback(async () => {
     return (await fetch(`/integrations/${plug.providerId}/plugs`)).json();
@@ -243,7 +246,9 @@ export const Plug = () => {
             mutate();
           },
           size: '500px',
-          title: `Auto Plug: ${p.title}`,
+          title: t('top_title_auto_plug', '自动插件：{{title}}', {
+            title: p.title,
+          }),
           children: (
             <PlugPop
               plug={p}

@@ -1,9 +1,8 @@
 export const dynamic = 'force-dynamic';
 import { LaunchesComponent } from '@gitroom/frontend/components/launches/launches.component';
 import { Metadata } from 'next';
-import { isGeneralServerSide } from '@gitroom/helpers/utils/is.general.server.side';
 export const metadata: Metadata = {
-  title: `${isGeneralServerSide() ? 'oksocial Calendar' : 'Gitroom Launches'}`,
+  title: 'oksocial 日历',
   description: '',
 };
 export default async function Index() {

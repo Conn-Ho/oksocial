@@ -1,8 +1,8 @@
 import { IsBoolean, IsIn, IsString, MinLength } from 'class-validator';
 
 export class GeneratorDto {
-  @IsString()
-  @MinLength(10)
+  @IsString({ message: '请描述要写的内容' })
+  @MinLength(10, { message: '至少写 10 个字' })
   research: string;
 
   @IsBoolean()

@@ -48,7 +48,7 @@ export const AfterActivate = () => {
         <LoadingComponent />
       ) : (
         <>
-          This user is already activated,
+          {t('account_already_activated', '账号已激活。')}
           <br />
           <Link href="/auth/login" className="underline">
             {t(

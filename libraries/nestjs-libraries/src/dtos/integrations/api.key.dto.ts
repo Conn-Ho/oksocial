@@ -3,7 +3,7 @@ import { IsString, MinLength } from 'class-validator';
 export class ApiKeyDto {
   @IsString()
   @MinLength(4, {
-    message: 'Must be at least 4 characters',
+    message: '至少要 4 个字符',
   })
   api: string;
 }

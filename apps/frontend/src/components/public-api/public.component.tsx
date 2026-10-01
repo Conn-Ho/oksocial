@@ -256,12 +256,13 @@ export const CopyButton = ({
   label: string;
 }) => {
   const toaster = useToaster();
+  const t = useT();
   return (
     <button
       type="button"
       onClick={() => {
         copy(text);
-        toaster.show(`${label} copied to clipboard`, 'success');
+        toaster.show(t('copied_to_clipboard', '已复制到剪贴板'), 'success');
       }}
       className="cursor-pointer px-[16px] h-[36px] bg-btnSimple hover:bg-boxHover transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
     >

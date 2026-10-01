@@ -4,6 +4,7 @@ import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useDecisionModal } from '@gitroom/frontend/components/layout/new-modal';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 export const CheckPayment: FC<{
   check: string;
   mutate: () => void;
@@ -24,6 +25,7 @@ export const CheckPaymentInner: FC<{
   const fetch = useFetch();
   const toaster = useToaster();
   const modal = useDecisionModal();
+  const t = useT();
 
   useEffect(() => {
     if (showLoader) {
@@ -49,11 +51,13 @@ export const CheckPaymentInner: FC<{
     }
     if (status === 1) {
       modal.open({
-        title: 'Invalid Payment',
+        title: t('invalid_payment', '支付校验失败'),
         onlyApprove: true,
-        approveLabel: 'OK',
-        description:
-          'We could not validate your payment method, please try again',
+        approveLabel: t('ok', '确定'),
+        description: t(
+          'could_not_validate_payment_method',
+          '无法验证你的支付方式，请重试'
+        ),
       });
       setShowLoader(false);
     }

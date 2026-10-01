@@ -25,19 +25,19 @@ export const YoutubeContinue = withContinueProvider<
   endpoint: 'pages',
   swrKey: 'load-youtube-channels',
   titleKey: 'select_channel',
-  titleDefault: 'Select YouTube Channel:',
+  titleDefault: '选择 YouTube 频道：',
   emptyStateMessages: [
     {
       key: 'youtube_no_channels_found',
-      text: "We couldn't find any YouTube channels connected to your account.",
+      text: '没有找到与你的账号关联的 YouTube 频道。',
     },
     {
       key: 'youtube_ensure_channel_exists',
-      text: 'Please ensure you have a YouTube channel created.',
+      text: '请确认你已经创建了 YouTube 频道。',
     },
     {
       key: 'youtube_try_again',
-      text: 'Please close this dialog, delete the integration and try again.',
+      text: '请关闭此对话框，删除该频道后重试。',
     },
   ],
   getItemId: (item) => item.id,
@@ -78,7 +78,7 @@ export const YoutubeContinue = withContinueProvider<
       )}
       {item.subscriberCount && (
         <div className="text-xs text-gray-400">
-          {parseInt(item.subscriberCount).toLocaleString()} subscribers
+          {parseInt(item.subscriberCount).toLocaleString()} 位订阅者
         </div>
       )}
     </>

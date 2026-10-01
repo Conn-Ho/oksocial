@@ -35,8 +35,7 @@ const SaveSetModal: FC<{
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
         <Input
-          label="Set Name"
-          translationKey="label_set_name"
+          label={t('set_name', '集合名称')}
           name="setName"
           value={name}
           disableForm={true}

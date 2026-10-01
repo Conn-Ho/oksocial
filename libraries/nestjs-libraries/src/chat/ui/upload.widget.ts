@@ -12,7 +12,7 @@ export const UPLOAD_WIDGET_URI = 'ui://postiz/upload';
 // The upload is a plain multipart fetch on purpose: no custom headers and no
 // XHR progress listeners, so the browser never sends a CORS preflight
 export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -49,8 +49,8 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
 </head>
 <body>
   <label id="drop" class="disabled">
-    Choose files or drop them here
-    <small>Images up to ${megabytes('image/png')} MB and videos up to ${megabytes('video/mp4')} MB</small>
+    选择文件，或把文件拖到这里
+    <small>图片最大 ${megabytes('image/png')} MB，视频最大 ${megabytes('video/mp4')} MB</small>
     <input id="file" type="file" accept="image/*,video/mp4" multiple />
   </label>
   <div id="files"></div>
@@ -84,7 +84,7 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
   function start(result) {
     var content = (result && result.structuredContent) || {};
     if (!content.sessionId) {
-      fail(content.error || 'The upload widget could not be opened.');
+      fail(content.error || '上传窗口没能打开。');
       return;
     }
     sessionId = content.sessionId;
@@ -98,7 +98,7 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       var waiting = pending[data.id];
       if (!waiting) return;
       delete pending[data.id];
-      if (data.error) waiting.reject(new Error(data.error.message || 'The host rejected the request'));
+      if (data.error) waiting.reject(new Error(data.error.message || '宿主应用拒绝了这个请求'));
       else waiting.resolve(data.result);
       return;
     }
@@ -110,15 +110,15 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
   function getTicket() {
     return request('tools/call', { name: 'uploadWidgetTicketTool', arguments: { sessionId: sessionId } }).then(function (result) {
       var content = (result && result.structuredContent) || {};
-      if (!content.ticket) throw new Error(content.error || 'Could not get an upload ticket');
+      if (!content.ticket) throw new Error(content.error || '没能获取上传凭证');
       return content.ticket;
     });
   }
 
   function readError(res) {
     return res.json().then(
-      function (body) { return new Error(body.message || body.msg || 'Upload failed (' + res.status + ')'); },
-      function () { return new Error('Upload failed (' + res.status + ')'); }
+      function (body) { return new Error(body.message || body.msg || '上传失败（' + res.status + '）'); },
+      function () { return new Error('上传失败（' + res.status + '）'); }
     );
   }
 
@@ -135,7 +135,7 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
   function waitUntilReady(media, ticket, deadline) {
     if (media.status !== 'processing') return Promise.resolve(media);
     deadline = deadline || Date.now() + 15 * 60 * 1000;
-    if (Date.now() > deadline) return Promise.reject(new Error('Processing is taking too long, check the media library later'));
+    if (Date.now() > deadline) return Promise.reject(new Error('处理时间太长了，请稍后到媒体库查看'));
     return wait(3000)
       .then(function () { return fetch(BACKEND + '/media-widget/status?ticket=' + encodeURIComponent(ticket)).catch(function () { return null; }); })
       .then(function (res) {
@@ -210,12 +210,12 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
         var copy = document.createElement('button');
         copy.type = 'button';
         copy.className = 'copy';
-        copy.textContent = 'Copy link';
+        copy.textContent = '复制链接';
         copy.addEventListener('click', function () {
           copyText(path).then(
-            function () { copy.textContent = 'Copied'; },
-            function () { copy.textContent = 'Copy failed'; }
-          ).then(function () { setTimeout(function () { copy.textContent = 'Copy link'; }, 1500); });
+            function () { copy.textContent = '已复制'; },
+            function () { copy.textContent = '复制失败'; }
+          ).then(function () { setTimeout(function () { copy.textContent = '复制链接'; }, 1500); });
         });
         box.appendChild(copy);
       }
@@ -244,7 +244,7 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       .then(function () {
         return request('ui/message', {
           role: 'user',
-          content: [{ type: 'text', text: 'Schedule ' + summary + ' to:' }],
+          content: [{ type: 'text', text: '把 ' + summary + ' 排期发布到：' }],
         });
       })
       .catch(function () {});
@@ -261,24 +261,24 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
         return files.reduce(function (chain, file) {
           var set = row(file);
           return chain.then(function () {
-            set('', 'Uploading…');
+            set('', '上传中…');
             return uploadFile(file, ticket)
               .then(function (media) {
-                if (media.status === 'processing') set('', 'Processing…');
+                if (media.status === 'processing') set('', '处理中…');
                 return waitUntilReady(media, ticket);
               })
               .then(function (media) {
-                if (media.status === 'failed') throw new Error(media.processingError || 'Processing failed');
+                if (media.status === 'failed') throw new Error(media.processingError || '处理失败');
                 var item = { id: media.id, path: media.path, name: media.originalName || file.name };
                 uploaded.push(item);
                 done.push(item);
-                set('ok', 'Uploaded', media.path);
+                set('ok', '已上传', media.path);
               })
-              .catch(function (err) { set('bad', err.message || 'Upload failed'); });
+              .catch(function (err) { set('bad', err.message || '上传失败'); });
           });
         }, Promise.resolve());
       })
-      .catch(function (err) { fail(err.message || 'Upload failed'); })
+      .catch(function (err) { fail(err.message || '上传失败'); })
       .then(function () {
         busy = false;
         drop.className = '';
@@ -310,7 +310,7 @@ export const uploadWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
     protocolVersion: '2026-01-26',
   }).then(
     function () { notify('ui/notifications/initialized', {}); resize(); },
-    function () { fail('This app cannot display the upload widget.'); }
+    function () { fail('当前应用无法显示上传窗口。'); }
   );
 })();
 </script>

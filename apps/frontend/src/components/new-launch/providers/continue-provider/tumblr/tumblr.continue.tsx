@@ -26,19 +26,19 @@ export const TumblrContinue = withContinueProvider<
   endpoint: 'pages',
   swrKey: 'load-tumblr-blogs',
   titleKey: 'select_tumblr_blog',
-  titleDefault: 'Select Tumblr Blog:',
+  titleDefault: '选择 Tumblr 博客：',
   emptyStateMessages: [
     {
       key: 'tumblr_no_blogs_found',
-      text: "We couldn't find any Tumblr blogs connected to your account.",
+      text: '没有找到与你的账号关联的 Tumblr 博客。',
     },
     {
       key: 'tumblr_ensure_blog_exists',
-      text: 'Please ensure your Tumblr account has a blog you can post to.',
+      text: '请确认你的 Tumblr 账号下有可以发布内容的博客。',
     },
     {
       key: 'tumblr_try_again',
-      text: 'Please close this dialog, delete the integration and try again.',
+      text: '请关闭此对话框，删除该频道后重试。',
     },
   ],
   getItemId: (item) => item.id,
@@ -66,10 +66,10 @@ export const TumblrContinue = withContinueProvider<
       )}
       {!!item.followers && (
         <div className="text-xs text-gray-400">
-          {item.followers.toLocaleString()} followers
+          {item.followers.toLocaleString()} 位关注者
         </div>
       )}
-      {item.primary && <div className="text-xs text-gray-400">Primary</div>}
+      {item.primary && <div className="text-xs text-gray-400">主博客</div>}
     </>
   ),
 });

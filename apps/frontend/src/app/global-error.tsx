@@ -18,13 +18,13 @@ export default function GlobalError({
     const eventId = Sentry.captureException(error);
     Sentry.showReportDialog({
       eventId,
-      title: 'Something broke!',
-      subtitle: 'Please help us fix the issue by providing some details.',
-      labelComments: 'What happened?',
-      labelName: 'Your name',
-      labelEmail: 'Your email',
-      labelSubmit: 'Send Report',
-      lang: 'en',
+      title: '页面出错了',
+      subtitle: '请告诉我们发生了什么，帮助我们尽快修复。',
+      labelComments: '发生了什么？',
+      labelName: '你的名字',
+      labelEmail: '你的邮箱',
+      labelSubmit: '提交反馈',
+      lang: 'zh-cn',
     });
 
   }, [error]);

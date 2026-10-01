@@ -2,6 +2,7 @@
 
 import { FC, useCallback, useMemo, useState } from 'react';
 import { ReactTags } from 'react-tag-autocomplete';
+import { reactTagsLabels } from '@gitroom/frontend/components/launches/helpers/react.tags.labels';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import useSWR from 'swr';
 import { Input } from '@gitroom/react/form/input';
@@ -431,7 +432,7 @@ export const TagsComponentA: FC<{
       {showModal && <ShowModal {...showModal} />}
       <div className="flex-1 flex tags-top">
         <ReactTags
-          placeholderText={t('add_a_tag', 'Add a tag')}
+          {...reactTagsLabels(t)}
           suggestions={suggestionsArray}
           selected={tagValue}
           onAdd={onAddition}

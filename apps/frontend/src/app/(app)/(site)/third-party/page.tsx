@@ -2,11 +2,8 @@ import { ThirdPartyComponent } from '@gitroom/frontend/components/third-parties/
 
 export const dynamic = 'force-dynamic';
 import { Metadata } from 'next';
-import { isGeneralServerSide } from '@gitroom/helpers/utils/is.general.server.side';
 export const metadata: Metadata = {
-  title: `${
-    isGeneralServerSide() ? 'oksocial Integrations' : 'Gitroom Integrations'
-  }`,
+  title: 'oksocial 集成',
   description: '',
 };
 export default async function Index() {

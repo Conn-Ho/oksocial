@@ -169,7 +169,12 @@ const TikTokSettings: FC<{
           </option>
         ))}
       </Select>
-      {isUploadMode && <div className="-mt-[23px] mb-[23px] text-red-600">After posting you fill find a notification inside your Inbox about your post (not content studio)</div>}
+      {isUploadMode && <div className="-mt-[23px] mb-[23px] text-red-600">
+          {t(
+            'tiktok_upload_inbox_notice',
+            '发布后，你会在 TikTok 收件箱（而不是内容工作室）里收到这条帖子的通知'
+          )}
+        </div>}
       <div className={clsx('flex flex-col', directPostOnly)}>
         <Select
           label={

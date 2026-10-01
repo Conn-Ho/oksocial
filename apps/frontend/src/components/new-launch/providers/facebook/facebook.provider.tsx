@@ -8,7 +8,10 @@ import {
   FacebookDto,
   FACEBOOK_PRESETS,
 } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/facebook.dto';
-import { getPresetBackground } from '@gitroom/frontend/components/new-launch/providers/facebook/facebook.background';
+import {
+  getPresetBackground,
+  presetNameZh,
+} from '@gitroom/frontend/components/new-launch/providers/facebook/facebook.background';
 import { Input } from '@gitroom/react/form/input';
 import { Select } from '@gitroom/react/form/select';
 import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
@@ -20,11 +23,11 @@ import { useEffect } from 'react';
 const postType = [
   {
     value: 'post',
-    label: 'Post',
+    label: '帖子',
   },
   {
     value: 'story',
-    label: 'Story',
+    label: '快拍（Story）',
   },
 ];
 
@@ -52,7 +55,7 @@ export const FacebookSettings = () => {
     <>
       <div className="pt-[20px]">
         <Select
-          label="Post Type"
+          label={t('label_post_type', '帖子类型')}
           {...register('post_type', {
             value: 'post',
           })}
@@ -71,11 +74,11 @@ export const FacebookSettings = () => {
       {postCurrentType !== 'story' && (
         <>
           <Input
-            label={'Embedded URL (only for text Post)'}
+            label={t('facebook_embedded_url', '嵌入链接 URL（仅限纯文字帖子）')}
             {...register('url')}
           />
           <Input
-            label={'Video Title (only for video Post)'}
+            label={t('facebook_video_title', '视频标题（仅限视频帖子）')}
             {...register('title')}
           />
         </>
@@ -84,7 +87,10 @@ export const FacebookSettings = () => {
       {presetAvailable && (
         <>
           <Select
-            label="Background (applies to text-only posts shorter than 130 characters)"
+            label={t(
+              'facebook_background_label',
+              '背景（适用于 130 字以内的纯文字帖子）'
+            )}
             hideErrors
             {...register('text_format_preset_id')}
             style={
@@ -106,7 +112,7 @@ export const FacebookSettings = () => {
                     bg ? { background: bg.background, color: bg.text } : undefined
                   }
                 >
-                  {item.name}
+                  {presetNameZh(item.name)}
                 </option>
               );
             })}

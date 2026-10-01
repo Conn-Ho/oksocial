@@ -2,8 +2,10 @@
 
 import { FC, useCallback, useEffect, useState } from 'react';
 import { ReactTags } from 'react-tag-autocomplete';
+import { reactTagsLabels } from '@gitroom/frontend/components/launches/helpers/react.tags.labels';
 import { useCustomProviderFunction } from '@gitroom/frontend/components/launches/helpers/use.custom.provider.function';
 import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 export const DevtoTags: FC<{
   name: string;
   label: string;
@@ -15,6 +17,7 @@ export const DevtoTags: FC<{
   }) => void;
 }> = (props) => {
   const { onChange, name, label } = props;
+  const t = useT();
   const form = useSettings();
   const customFunc = useCustomProviderFunction();
   const [tags, setTags] = useState<any[]>([]);
@@ -53,6 +56,7 @@ export const DevtoTags: FC<{
     <div>
       <div className={`text-[14px] mb-[6px]`}>{label}</div>
       <ReactTags
+        {...reactTagsLabels(t)}
         suggestions={tags}
         selected={tagValue}
         onAdd={onAddition}

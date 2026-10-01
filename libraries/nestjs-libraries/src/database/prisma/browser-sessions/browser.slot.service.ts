@@ -53,7 +53,7 @@ export const simulatedAccountsAllowed = (
 
 const assertSimulatedAllowed = (superAdmin: boolean | undefined) => {
   if (!simulatedAccountsAllowed(superAdmin)) {
-    throw new HttpException('Forbidden', 403);
+    throw new HttpException('没有权限', 403);
   }
 };
 
@@ -81,10 +81,10 @@ export class BrowserSlotService {
   private browserProvider(identifier: string) {
     const provider = this._integrationManager.getSocialIntegration(identifier);
     if (!provider?.browserSession) {
-      throw new HttpException('This channel does not use a browser login', 400);
+      throw new HttpException('这个平台不支持浏览器登录', 400);
     }
     if (!this.fleet.configured) {
-      throw new HttpException('Browser fleet is not configured', 503);
+      throw new HttpException('还没有配置浏览器服务', 503);
     }
     return provider;
   }
@@ -110,7 +110,7 @@ export class BrowserSlotService {
       ? await this._repository.getByIntegration(orgId, integrationId)
       : null;
     if (integrationId && !existing) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在', 404);
     }
     // reconnecting a simulated channel is simulated too, whatever the request says
     const simulated = !!options.simulated || !!existing?.slot.startsWith(SIM_SLOT_PREFIX);
@@ -150,7 +150,7 @@ export class BrowserSlotService {
   async checkLogin(orgId: string, id: string, timezone?: number, force = false): Promise<BrowserLoginCheck> {
     const row = await this._repository.getById(orgId, id);
     if (!row || row.status === 'RELEASED') {
-      throw new HttpException('Login session not found', 404);
+      throw new HttpException('登录窗口已失效，请关闭后重新登录', 404);
     }
     if (this._checking.has(row.id)) {
       return { status: 'waiting' };
@@ -244,11 +244,11 @@ export class BrowserSlotService {
 
   private webSession(row: { providerIdentifier: string } | null) {
     if (!row) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在', 404);
     }
     const web = this.browserProvider(row.providerIdentifier).browserSession!.web;
     if (!web) {
-      throw new HttpException('This channel has no second site to log in to', 400);
+      throw new HttpException('这个账号没有需要另外登录的站点', 400);
     }
     return web;
   }
@@ -302,7 +302,7 @@ export class BrowserSlotService {
   async loginQr(orgId: string, id: string) {
     const row = await this._repository.getById(orgId, id);
     if (!row || row.status === 'RELEASED') {
-      throw new HttpException('Login session not found', 404);
+      throw new HttpException('登录窗口已失效，请关闭后重新登录', 404);
     }
     const reveal = this.browserProvider(row.providerIdentifier).browserSession!.qrReveal;
     const image = await this.fleet.qr(row.slot, reveal).catch(() => null);
@@ -374,11 +374,11 @@ export class BrowserSlotService {
   async setChannelProxy(orgId: string, integrationId: string, proxyId: string | null) {
     const row = await this._repository.getByIntegration(orgId, integrationId);
     if (!row) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在', 404);
     }
     const proxy = proxyId ? await this._repository.getProxy(orgId, proxyId) : null;
     if (proxyId && !proxy) {
-      throw new HttpException('Proxy not found', 404);
+      throw new HttpException('出口代理不存在', 404);
     }
     await this.fleet.setProxy(row.slot, proxy ? AuthService.fixedDecryption(proxy.url) : null);
     await this._repository.setProxy(row.id, proxy?.id ?? null);

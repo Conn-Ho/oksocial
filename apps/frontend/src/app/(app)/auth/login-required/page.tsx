@@ -1,7 +1,10 @@
+import { getT } from '@gitroom/react/translation/get.translation.service.backend';
+
 export default async function LoginRequiredPage() {
+  const t = await getT();
   return (
     <div className="fixed left-0 top-0 w-full h-full bg-[#121212] z-[100] flex justify-center items-center text-4xl">
-      Login to use the wizard to generate API code
+      {t('login_to_use_api_wizard', '请先登录，再使用向导生成 API 代码')}
     </div>
   );
 }

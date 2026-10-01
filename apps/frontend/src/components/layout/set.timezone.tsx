@@ -4,9 +4,20 @@ import { FC, useEffect } from 'react';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import 'dayjs/locale/zh';
+import i18next from '@gitroom/react/translation/i18next';
+import { fallbackLng } from '@gitroom/react/translation/i18n.config';
 dayjs.extend(timezone);
 dayjs.extend(utc);
 dayjs.extend(relativeTime);
+
+// Relative times ("3 小时前") and month / weekday names follow the UI language on every page,
+// not only once the calendar (which loads the other locales) has been opened
+const updateDayjsLocale = () => {
+  dayjs.locale(i18next.resolvedLanguage || fallbackLng);
+};
+i18next.on('languageChanged', updateDayjsLocale);
+updateDayjsLocale();
 
 const { utc: originalUtc } = dayjs;
 

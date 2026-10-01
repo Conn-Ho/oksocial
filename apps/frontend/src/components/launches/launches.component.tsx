@@ -642,7 +642,7 @@ export const LaunchesComponent = () => {
                           ? '/no-channels.svg'
                           : '/no-channels-colors.svg'
                       }
-                      alt="No channels"
+                      alt={t('no_channels', '还没有频道')}
                       className="mx-auto min-w-[100%]"
                     />
                     <div className="font-[600] text-[20px]">

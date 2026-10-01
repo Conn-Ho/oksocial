@@ -26,17 +26,17 @@ export class PinterestSettingsDto {
   dominant_color: string;
 
   @IsDefined({
-    message: 'Board is required',
+    message: '请选择画板',
   })
   @IsString({
-    message: 'Board is required',
+    message: '请选择画板',
   })
   @MinLength(1, {
-    message: 'Board is required',
+    message: '请选择画板',
   })
   @Matches(/^\d+$/, {
     message:
-      'Board must be the numeric board id (use the boards list of the channel to find it), not the board name',
+      '画板要填数字 ID（可在账号的画板列表里查到），不能填画板名称',
   })
   @JSONSchema({
     description:

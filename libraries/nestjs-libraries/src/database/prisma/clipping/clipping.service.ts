@@ -60,7 +60,7 @@ const STALE_HOURS = 4;
 // What the customer reads when the real reason is not theirs to fix. The reason
 // itself (a provider's answer, a stack) is only logged
 const SOMETHING_WENT_WRONG =
-  'Something went wrong while clipping this video, the clipping minutes were given back.';
+  '剪辑这个视频时出错了，剪辑时长已退回。';
 
 @Injectable()
 export class ClippingService {
@@ -123,9 +123,9 @@ export class ClippingService {
   private failureMessage(failure?: ProcessorFailure | null) {
     switch (failure?.code) {
       case 'SOURCE_UNAVAILABLE':
-        return 'This video is private, removed, or restricted by age or region, so it cannot be clipped.';
+        return '这个视频是私密的、已被删除，或有年龄、地区限制，无法剪辑。';
       case 'UNSUPPORTED_INPUT':
-        return 'This link is not a video that can be clipped. Live streams are not supported.';
+        return '这个链接不是可以剪辑的视频，也不支持直播。';
       default:
         // the message and the stderr tail can carry presigned urls, which are
         // as good as a key to the file for as long as they live
@@ -133,9 +133,9 @@ export class ClippingService {
           'Clipping job failed:',
           JSON.stringify(failure)?.replace(/https?:\/\/[^\s"'\\]+/g, '[url]')
         );
-        return `The video could not be processed (${
+        return `视频处理失败（${
           failure?.code || 'FAILED'
-        }).`;
+        }）。`;
     }
   }
 
@@ -183,15 +183,15 @@ export class ClippingService {
       !this.storage.signDownloadUrl ||
       !this.storage.signUploadUrl
     ) {
-      throw new HttpException('Clipping is not available', 503);
+      throw new HttpException('视频剪辑暂不可用', 503);
     }
 
     if (!this.isYoutubeUrl(body.url)) {
-      throw new HttpException('Only YouTube videos can be clipped', 400);
+      throw new HttpException('只能剪辑 YouTube 视频', 400);
     }
 
     if (org.isTrailing) {
-      throw new HttpException('Clipping is not available in trial mode', 406);
+      throw new HttpException('试用期间不能使用视频剪辑', 406);
     }
 
     if ((await this.balance(org.id)) <= 0) {
@@ -209,18 +209,18 @@ export class ClippingService {
           integration
         ))
       ) {
-        throw new HttpException(`Channel ${integration} not found`, 400);
+        throw new HttpException(`账号 ${integration} 不存在`, 400);
       }
     }
 
     const client = this._temporalService.client.getRawClient();
     if (!client) {
-      throw new HttpException('Clipping is not available', 503);
+      throw new HttpException('视频剪辑暂不可用', 503);
     }
 
     // two starts at the same moment would both see nothing running
     if (!(await ioRedis.set(`clippingStart:${org.id}`, '1', 'EX', 15, 'NX'))) {
-      throw new HttpException('Another clipping is being started', 429);
+      throw new HttpException('另一个剪辑任务正在启动，请稍后再试', 429);
     }
 
     try {
@@ -238,12 +238,12 @@ export class ClippingService {
   ) {
     const running = await this._clippingRepository.getRunningClippings(org);
     for (const clipping of running.filter((p) => this.isStale(p))) {
-      await this.failClipping(clipping.id, 'The clipping never finished', true);
+      await this.failClipping(clipping.id, '剪辑一直没有完成', true);
     }
 
     if (running.filter((p) => !this.isStale(p)).length >= MAX_RUNNING) {
       throw new HttpException(
-        'A clipping is already running, wait for it to finish',
+        '已经有一个剪辑任务在进行，请等它完成',
         429
       );
     }
@@ -255,7 +255,7 @@ export class ClippingService {
       )) >= MAX_STARTS_PER_DAY
     ) {
       throw new HttpException(
-        'Too many clippings were started today, try again tomorrow',
+        '今天发起的剪辑次数太多了，请明天再试',
         429
       );
     }
@@ -284,9 +284,9 @@ export class ClippingService {
       // no workflow means nothing will ever flip the status
       await this._clippingRepository.updateClipping(org, clipping.id, {
         status: 'failed',
-        error: 'Could not start clipping',
+        error: '剪辑任务没能启动',
       });
-      throw new HttpException('Clipping is not available', 503);
+      throw new HttpException('视频剪辑暂不可用', 503);
     }
 
     return { id: clipping.id };
@@ -295,11 +295,11 @@ export class ClippingService {
   async getClipping(org: string, id: string) {
     const clipping = await this._clippingRepository.getClipping(org, id);
     if (!clipping) {
-      throw new HttpException('Clipping not found', 404);
+      throw new HttpException('剪辑任务不存在', 404);
     }
 
     if (this.isStale(clipping)) {
-      await this.failClipping(id, 'The clipping never finished', true);
+      await this.failClipping(id, '剪辑一直没有完成', true);
       return (await this._clippingRepository.getClipping(org, id))!;
     }
 
@@ -356,7 +356,7 @@ export class ClippingService {
       id
     );
     if (!clipping) {
-      throw new HttpException('Clipping not found', 404);
+      throw new HttpException('剪辑任务不存在', 404);
     }
 
     const report =
@@ -390,7 +390,7 @@ export class ClippingService {
   async submitAnalyse(clippingId: string) {
     const clipping = await this._clippingRepository.getClippingById(clippingId);
     if (!clipping) {
-      throw new ClippingStop('Clipping not found');
+      throw new ClippingStop('剪辑任务不存在');
     }
 
     const minutes = Math.min(
@@ -399,7 +399,7 @@ export class ClippingService {
     );
     if (minutes <= 0) {
       throw new ClippingStop(
-        'No clipping minutes are left on this account for this month.'
+        '本月的剪辑时长已经用完了。'
       );
     }
 
@@ -441,7 +441,7 @@ export class ClippingService {
   ): Promise<{ state: ClippingJobState; transcribe?: boolean }> {
     const clipping = await this._clippingRepository.getClippingById(clippingId);
     if (!clipping) {
-      throw new ClippingStop('Clipping not found');
+      throw new ClippingStop('剪辑任务不存在');
     }
 
     const job = await this.ingest!.status(jobId);
@@ -461,9 +461,9 @@ export class ClippingService {
 
       if (result.failure?.code === 'DURATION_TOO_LONG') {
         throw new ClippingStop(
-          `This video is ${Math.ceil(
+          `这个视频时长 ${Math.ceil(
             (result.source?.duration_seconds || 0) / 60
-          )} minutes long. It has to fit the clipping minutes left on this account for this month, and ${MAX_SOURCE_MINUTES} minutes at most.`
+          )} 分钟。视频时长不能超过本月剩余的剪辑时长，最长 ${MAX_SOURCE_MINUTES} 分钟。`
         );
       }
 
@@ -477,7 +477,7 @@ export class ClippingService {
     }
 
     if (!result.transcript && !result.audio) {
-      throw new ClippingStop('This video has no captions and no audio.');
+      throw new ClippingStop('这个视频没有字幕，也没有音频。');
     }
 
     // Only YouTube's own captions are in the language that is spoken. An
@@ -508,7 +508,7 @@ export class ClippingService {
 
     if ((await this.balance(clipping.organizationId)) < 0) {
       throw new ClippingStop(
-        `This video is ${minutes} minutes long, more than the clipping minutes left on this account for this month.`
+        `这个视频时长 ${minutes} 分钟，超过了本月剩余的剪辑时长。`
       );
     }
 
@@ -534,7 +534,7 @@ export class ClippingService {
   async transcribe(clippingId: string) {
     const clipping = await this._clippingRepository.getClippingById(clippingId);
     if (!clipping) {
-      throw new ClippingStop('Clipping not found');
+      throw new ClippingStop('剪辑任务不存在');
     }
 
     await this._clippingRepository.updateClipping(
@@ -555,7 +555,7 @@ export class ClippingService {
   async pickClips(clippingId: string) {
     const clipping = await this._clippingRepository.getClippingById(clippingId);
     if (!clipping) {
-      throw new ClippingStop('Clipping not found');
+      throw new ClippingStop('剪辑任务不存在');
     }
 
     if (clipping.clips.length) {
@@ -572,7 +572,7 @@ export class ClippingService {
       this.keys(clippingId).transcript
     );
     if (!segments?.length) {
-      throw new ClippingStop('No speech was found in this video.');
+      throw new ClippingStop('这个视频里没有识别到语音。');
     }
 
     const picked = await this._openAi.pickClips(
@@ -624,7 +624,7 @@ export class ClippingService {
       .slice(0, clipping.maxClips);
 
     if (!clips.length) {
-      throw new ClippingStop('No part of this video works as a short clip.');
+      throw new ClippingStop('这个视频里没有适合剪成短视频的片段。');
     }
 
     const created = await this._clippingRepository.createClips(
@@ -644,7 +644,7 @@ export class ClippingService {
   async submitClipFetch(clipId: string) {
     const clip = await this._clippingRepository.getClipById(clipId);
     if (!clip) {
-      throw new ClippingStop('Clip not found');
+      throw new ClippingStop('片段不存在');
     }
 
     const end = Math.ceil(clip.end) + WINDOW_PADDING;
@@ -705,7 +705,7 @@ export class ClippingService {
         clipId,
         result?.failure
           ? this.failureMessage(result.failure)
-          : 'The clip could not be downloaded',
+          : '片段下载失败',
         true
       );
       return { state: 'failed' };
@@ -726,7 +726,7 @@ export class ClippingService {
   async captionClip(clipId: string) {
     const clip = await this._clippingRepository.getClipById(clipId);
     if (!clip) {
-      throw new ClippingStop('Clip not found');
+      throw new ClippingStop('片段不存在');
     }
 
     const keys = this.clipKeys(clipId);
@@ -755,7 +755,7 @@ export class ClippingService {
   async submitClipRender(clipId: string) {
     const clip = await this._clippingRepository.getClipById(clipId);
     if (!clip) {
-      throw new ClippingStop('Clip not found');
+      throw new ClippingStop('片段不存在');
     }
 
     const keys = this.clipKeys(clipId);
@@ -832,7 +832,7 @@ export class ClippingService {
         clipId,
         failure
           ? this.failureMessage(failure)
-          : 'The clip could not be rendered',
+          : '片段渲染失败',
         true
       );
       return { state: 'failed' };
@@ -897,7 +897,7 @@ export class ClippingService {
     await this.removeFiles(Object.values(this.clipKeys(clipId)));
     return this._clippingRepository.updateClip(clipId, {
       status: 'failed',
-      error: customer ? error.slice(0, 4000) : 'The clip could not be rendered',
+      error: customer ? error.slice(0, 4000) : '片段渲染失败',
     });
   }
 
@@ -1008,12 +1008,12 @@ export class ClippingService {
     }
 
     if (!clipping.clips.some((clip) => clip.status === 'completed')) {
-      return this.failClipping(clippingId, 'No clip could be rendered', true);
+      return this.failClipping(clippingId, '没有片段渲染成功', true);
     }
 
     await this._clippingRepository.failUnfinishedClips(
       clippingId,
-      'The clip could not be rendered'
+      '片段渲染失败'
     );
 
     const keys = this.keys(clippingId);
@@ -1043,7 +1043,7 @@ export class ClippingService {
 
     await this._clippingRepository.failUnfinishedClips(
       clippingId,
-      'The clip could not be rendered'
+      '片段渲染失败'
     );
 
     const rendered = clipping.clips.some((clip) => clip.status === 'completed');
@@ -1064,7 +1064,7 @@ export class ClippingService {
         error: customer
           ? error.slice(0, 4000)
           : rendered
-          ? 'Something went wrong after the clips were made.'
+          ? '片段已经生成，但后续处理出错了。'
           : SOMETHING_WENT_WRONG,
         ...(rendered ? {} : { creditsId: null }),
       }

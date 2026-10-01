@@ -158,7 +158,10 @@ export const Plugs = () => {
               onClick={() => {
                 if (integration.refreshNeeded) {
                   toaster.show(
-                    'Please refresh the integration from the calendar',
+                    t(
+                      'refresh_integration_from_calendar',
+                      '请先在日历中刷新该频道'
+                    ),
                     'warning'
                   );
                   return;

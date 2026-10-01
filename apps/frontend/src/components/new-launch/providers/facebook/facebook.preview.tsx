@@ -8,6 +8,7 @@ import { getPresetBackground } from '@gitroom/frontend/components/new-launch/pro
 import { FC } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { VideoOrImage } from '@gitroom/react/helpers/video.or.image';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const Icons = () => {
   return (
@@ -68,6 +69,7 @@ export const FacebookPreview: FC<{
   const { value: topValue, integration } = useIntegration();
   const current = useLaunchStore((state) => state.current);
   const mediaDir = useMediaDirectory();
+  const t = useT();
 
   // Facebook only renders the background on text-only posts up to 130 chars, so
   // reflect the real outcome here: the background shows when it will actually be
@@ -112,7 +114,10 @@ export const FacebookPreview: FC<{
         .replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
           return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
         }) +
-      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="This text will be cropped">` +
+      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="${t(
+        'text_will_be_cropped',
+        '超出字数限制，这部分将被截断'
+      )}">` +
       newContent.slice(end).replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
         return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
       }) +
@@ -126,14 +131,14 @@ export const FacebookPreview: FC<{
         <div className="w-[36px] h-[36px]">
           <img
             src={integration?.picture || '/no-picture.jpg'}
-            alt="social"
+            alt="头像"
             className="rounded-full relative z-[2] w-[36px] h-[36px]"
           />
         </div>
         <div className="flex flex-col leading-[18px]">
           <div className="text-[14px] font-[500]">{integration?.name}</div>
           <div className="text-[12px] font-[400] text-[#A3A3A3] flex gap-[4px] items-center">
-            <span>30m •</span>
+            <span>{t('preview_30m_ago', '30 分钟')} •</span>
             <span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -184,10 +189,12 @@ export const FacebookPreview: FC<{
       <div className="flex text-textLinkedin text-[12px] font-[400] items-center">
         <div className="flex flex-1 gap-[10px] items-center">
           <Icons />
-          <div className="">You & 12 other</div>
+          <div className="">
+            {t('preview_you_and_12_others', '你和其他 12 人')}
+          </div>
         </div>
         <div className="gap-[9px] items-center flex">
-          <div>20 Comments</div>
+          <div>{t('preview_20_comments', '20 条评论')}</div>
         </div>
       </div>
       <div className="pt-[8px] flex text-[14px] font-[700] px-[32px] justify-between border-t border-borderLinkedin text-textLinkedin">
@@ -204,7 +211,7 @@ export const FacebookPreview: FC<{
               fill="currentColor"
             />
           </svg>
-          <div>Like</div>
+          <div>{t('preview_like', '赞')}</div>
         </div>
         <div className="flex gap-[4px] items-center">
           <svg
@@ -238,7 +245,7 @@ export const FacebookPreview: FC<{
               />
             </g>
           </svg>
-          <div>Comments</div>
+          <div>{t('comments', '评论')}</div>
         </div>
         <div className="flex gap-[4px] items-center">
           <svg
@@ -253,13 +260,15 @@ export const FacebookPreview: FC<{
               fill="currentColor"
             />
           </svg>
-          <div>Share</div>
+          <div>{t('preview_share', '分享')}</div>
         </div>
       </div>
       {renderContent.length > 1 && (
         <>
           <div className="flex items-center">
-            <div className="text-[14px] font-[700]">Most relevant</div>
+            <div className="text-[14px] font-[700]">
+              {t('preview_most_relevant', '最相关')}
+            </div>
             <div>
               <svg
                 width="20"
@@ -281,7 +290,7 @@ export const FacebookPreview: FC<{
                 <div className="h-[34px]">
                   <img
                     src={integration?.picture || '/no-picture.jpg'}
-                    alt="social"
+                    alt="头像"
                     className="rounded-full relative z-[2] h-[34px] w-[34px]"
                   />
                 </div>
@@ -320,9 +329,13 @@ export const FacebookPreview: FC<{
                   </div>
                   <div className="flex font-[400] text-[12px] text-textLinkedin items-center">
                     <div className="flex gap-[16px] flex-1">
-                      <div className="font-[700]">9h</div>
-                      <div className="font-[700]">Like</div>
-                      <div className="font-[700]">Reply</div>
+                      <div className="font-[700]">
+                        {t('preview_9h_ago', '9 小时')}
+                      </div>
+                      <div className="font-[700]">
+                        {t('preview_like', '赞')}
+                      </div>
+                      <div className="font-[700]">{t('reply', '回复')}</div>
                     </div>
                     <div className="flex gap-[4px]">
                       <div>2</div>

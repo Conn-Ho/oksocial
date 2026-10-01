@@ -256,7 +256,7 @@ export const AddOrEditWebhook: FC<{
         body: JSON.stringify([
           {
             id: 'cm6tcts4f0005qcwit25cis26',
-            content: 'This is the first post to instagram',
+            content: '这是发布到 Instagram 的第一条测试帖子',
             publishDate: '2025-02-06T13:09:00.000Z',
             releaseURL: 'https://facebook.com/release/release',
             state: 'PUBLISHED',
@@ -270,7 +270,7 @@ export const AddOrEditWebhook: FC<{
           },
           {
             id: 'cm6tcts4f0005qcwit25cis26',
-            content: 'This is the second post to facebook',
+            content: '这是发布到 Facebook 的第二条测试帖子',
             publishDate: '2025-02-06T13:09:00.000Z',
             releaseURL: 'https://facebook.com/release2/release2',
             state: 'PUBLISHED',

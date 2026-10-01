@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { Agent } from '@gitroom/frontend/components/agents/agent';
 export const metadata: Metadata = {
-  title: 'oksocial - Agent',
+  title: 'oksocial AI 助手',
   description: 'agents',
 };
 export default async function Layout({

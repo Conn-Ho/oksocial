@@ -6,6 +6,7 @@ import { textSlicer } from '@gitroom/helpers/utils/count.length';
 import { FC, ReactNode } from 'react';
 import { SliderComponent } from '@gitroom/frontend/components/third-parties/slider.component';
 import { VideoOrImage } from '@gitroom/react/helpers/video.or.image';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const TikTokItem: FC<{ icon: ReactNode; num: string }> = ({ icon, num }) => {
   return (
@@ -23,6 +24,7 @@ export const TiktokPreview: FC<{
   const { value: topValue, integration } = useIntegration();
   const current = useLaunchStore((state) => state.current);
   const mediaDir = useMediaDirectory();
+  const t = useT();
 
   const renderContent = topValue.map((p) => {
     const newContent = stripHtmlValidation(
@@ -48,7 +50,7 @@ export const TiktokPreview: FC<{
         .replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
           return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
         }) +
-      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="This text will be cropped">` +
+      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="${t('text_will_be_cropped', '超出字数限制，这部分将被截断')}">` +
       newContent.slice(end).replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
         return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
       }) +
@@ -83,7 +85,7 @@ export const TiktokPreview: FC<{
         <div className="relative">
           <img
             src={integration?.picture || '/no-picture.jpg'}
-            alt="social"
+            alt="头像"
             className="rounded-full z-[2] w-[29px] h-[29px]"
           />
           <div className="absolute left-[50%] -translate-x-[50%] bottom-0 translate-y-[50%] z-[1]">
@@ -173,7 +175,7 @@ export const TiktokPreview: FC<{
         <div>
           <img
             src={integration?.picture || '/no-picture.jpg'}
-            alt="social"
+            alt="头像"
             className="rounded-full relative z-[2] w-[29px] h-[29px]"
           />
         </div>

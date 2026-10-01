@@ -41,7 +41,7 @@ export class AuthService {
   ) {
     if (provider === Provider.LOCAL) {
       if (process.env.DISALLOW_PLUS && body.email.includes('+')) {
-        throw new Error('Email with plus sign is not allowed');
+        throw new Error('邮箱地址不能包含加号（+）');
       }
       if (body instanceof CreateOrgUserDto) {
         body.email = body.email.toLowerCase();
@@ -49,11 +49,11 @@ export class AuthService {
       const user = await this._userService.getUserByEmail(body.email);
       if (body instanceof CreateOrgUserDto) {
         if (user) {
-          throw new Error('Email already exists');
+          throw new Error('这个邮箱已经注册过了');
         }
 
         if (!(await this.canRegister(provider))) {
-          throw new Error('Registration is disabled');
+          throw new Error('暂未开放注册');
         }
 
         const create = await this._organizationService.createOrgAndUser(
@@ -83,11 +83,11 @@ export class AuthService {
       }
 
       if (!user || !AuthChecker.comparePassword(body.password, user.password)) {
-        throw new Error('Invalid user name or password');
+        throw new Error('邮箱或密码不正确');
       }
 
       if (!user.activated) {
-        throw new Error('User is not activated');
+        throw new Error('账号还没有激活');
       }
 
       return { addedOrg: false, jwt: await this.jwt(user) };
@@ -144,7 +144,7 @@ export class AuthService {
     const providerUser = await providerInstance.getUser(body.providerToken);
 
     if (!providerUser) {
-      throw new Error('Invalid provider token');
+      throw new Error('第三方登录授权无效，请重新登录');
     }
 
     const user = await this._userService.getUserByProvider(
@@ -156,7 +156,7 @@ export class AuthService {
     }
 
     if (!(await this.canRegister(provider))) {
-      throw new Error('Registration is disabled');
+      throw new Error('暂未开放注册');
     }
 
     const create = await this._organizationService.createOrgAndUser(
@@ -279,11 +279,11 @@ export class AuthService {
     const user = await this._userService.getUserByEmail(email);
 
     if (!user) {
-      throw new Error('User not found');
+      throw new Error('这个邮箱还没有注册');
     }
 
     if (user.activated) {
-      throw new Error('Account is already activated');
+      throw new Error('账号已经激活过了');
     }
 
     const jwt = await this.jwt(user);

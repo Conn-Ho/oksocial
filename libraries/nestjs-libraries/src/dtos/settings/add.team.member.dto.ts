@@ -8,8 +8,8 @@ import {
 } from 'class-validator';
 
 export class AddTeamMemberDto {
-  @IsDefined()
-  @IsEmail()
+  @IsDefined({ message: '请输入邮箱' })
+  @IsEmail({}, { message: '请输入正确的邮箱地址' })
   @ValidateIf((o) => o.sendEmail)
   email: string;
 

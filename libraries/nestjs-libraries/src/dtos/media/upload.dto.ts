@@ -8,7 +8,7 @@ export class UploadDto {
   @Validate(ValidUrlExtension)
   @IsSafeWebhookUrl({
     message:
-      'URL must be a public HTTPS URL and cannot point to internal network addresses',
+      '链接必须是公网 HTTPS 地址，不能指向内网',
   })
   url: string;
 }

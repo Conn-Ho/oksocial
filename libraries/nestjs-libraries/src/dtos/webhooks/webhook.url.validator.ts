@@ -118,7 +118,7 @@ export class IsSafeWebhookUrlConstraint implements ValidatorConstraintInterface 
   }
 
   defaultMessage(_args: ValidationArguments): string {
-    return 'URL must be a public HTTPS URL and must not resolve to localhost, private, loopback, or link-local addresses';
+    return '链接必须是公网 HTTPS 地址，不能指向本机或内网地址';
   }
 }
 

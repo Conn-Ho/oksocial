@@ -28,7 +28,7 @@ export class MediaWidgetController {
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
-      throw new BadRequestException('No file provided');
+      throw new BadRequestException('请选择文件');
     }
     return this._mediaService.saveUploadSessionFile(
       org.id,

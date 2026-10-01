@@ -11,15 +11,17 @@ import { PinterestSettingsDto } from '@gitroom/nestjs-libraries/dtos/posts/provi
 import { Input } from '@gitroom/react/form/input';
 import { ColorPicker } from '@gitroom/react/form/color.picker';
 import { PinterestPreview } from '@gitroom/frontend/components/new-launch/providers/pinterest/pinterest.preview';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 const PinterestSettings: FC = () => {
   const { register, control } = useSettings();
+  const t = useT();
   return (
     <div className="flex flex-col">
       <Input label={'Title'} {...register('title')} />
-      <Input label={'Link'} {...register('link')} />
+      <Input label={t('link', '链接')} {...register('link')} />
       <PinterestBoard {...register('board')} />
       <ColorPicker
-        label="Select Pin Color"
+        label={t('select_pin_color', '选择 Pin 主色')}
         name="dominant_color"
         enabled={false}
         canBeCancelled={true}

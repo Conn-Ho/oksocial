@@ -34,7 +34,7 @@ export class CreateBrowserProxyDto {
   // http(s):// or socks5:// with optional user:pass@
   @IsString()
   @Matches(/^(https?|socks5h?):\/\/([^\s:@/]+(:[^\s@/]*)?@)?[^\s:@/]+:\d{2,5}\/?$/, {
-    message: 'proxy URL must look like http://user:pass@host:port or socks5://host:port',
+    message: '代理地址格式应为 http://user:pass@host:port 或 socks5://host:port',
   })
   url: string;
 

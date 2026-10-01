@@ -19,7 +19,7 @@ export class VideoActivity {
       organizationId
     );
     if (!org) {
-      throw new Error('Organization not found');
+      throw new Error('团队不存在');
     }
 
     try {
@@ -27,7 +27,7 @@ export class VideoActivity {
     } catch (err) {
       // only the message survives the workflow failure, and a SubscriptionException's is not readable
       if (err instanceof HttpException && err.getStatus() === 402) {
-        throw new Error('No AI video credits are available on this account.');
+        throw new Error('AI 视频生成次数已用完');
       }
       throw err;
     }

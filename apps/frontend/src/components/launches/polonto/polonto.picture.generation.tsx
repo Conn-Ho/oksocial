@@ -41,7 +41,7 @@ const GenerateTab = observer(({ store }: any) => {
       return;
     }
     if (!inputRef.current.value) {
-      toast.show('Please type your prompt', 'warning');
+      toast.show(t('please_type_your_prompt', '请输入你的提示词'), 'warning');
       return;
     }
     setLoading(true);
@@ -54,7 +54,7 @@ const GenerateTab = observer(({ store }: any) => {
     });
     setLoading(false);
     if (!req.ok) {
-      alert('Something went wrong, please try again later...');
+      alert(t('something_went_wrong_try_later', '出错了，请稍后再试…'));
       return;
     }
     mutate();
@@ -70,10 +70,14 @@ const GenerateTab = observer(({ store }: any) => {
         }}
       >
         {t('generate_image_with_ai', 'Generate image with AI')}
-        {data?.credits ? `(${data?.credits} left)` : ``}
+        {data?.credits
+          ? t('credits_left_short', '（剩余 {{total}}）', {
+              total: data?.credits,
+            })
+          : ``}
       </div>
       <InputGroup
-        placeholder="Type your image generation prompt here..."
+        placeholder={t('type_image_prompt_here', '在这里输入图片生成提示词…')}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             handleGenerate();
@@ -92,7 +96,9 @@ const GenerateTab = observer(({ store }: any) => {
           marginBottom: '40px',
         }}
       >
-        {data?.credits <= 0 ? 'Click to purchase more credits' : 'Generate'}
+        {data?.credits <= 0
+          ? t('click_to_purchase_credits', '点击购买更多额度')
+          : t('generate', '生成')}
       </Button>
       {image && (
         <ImagesGrid

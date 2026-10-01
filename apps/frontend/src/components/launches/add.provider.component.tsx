@@ -25,10 +25,11 @@ const resolver = classValidatorResolver(ApiKeyDto);
 export const useAddProvider = (update?: () => void, invite?: boolean) => {
   const modal = useModals();
   const fetch = useFetch();
+  const t = useT();
   return useCallback(async () => {
     const data = await (await fetch('/integrations')).json();
     modal.openModal({
-      title: 'Add Channel',
+      title: t('add_channel', '添加频道'),
       withCloseButton: true,
       children: (
         <AddProviderComponent invite={!!invite} update={update} {...data} />
@@ -176,6 +177,7 @@ export const CustomVariables: FC<{
   const { close, gotoUrl, identifier, variables, onboarding } = props;
   const fetch = useFetch();
   const modals = useModals();
+  const t = useT();
   const schema = useMemo(() => {
     return object({
       ...variables.reduce((aIcc, item) => {
@@ -187,7 +189,12 @@ export const CustomVariables: FC<{
         return {
           ...aIcc,
           [item.key]: string()
-            .matches(regex, `${item.label} is invalid`)
+            .matches(
+              regex,
+              t('field_is_invalid', '{{label}}格式不正确', {
+                label: item.label,
+              })
+            )
             .required(),
         };
       }, {}),
@@ -228,8 +235,6 @@ export const CustomVariables: FC<{
     },
     [variables, onboarding]
   );
-
-  const t = useT();
 
   return (
     <div className="rounded-[4px] relative">
@@ -346,11 +351,16 @@ const ChromeExtensionWarning: FC<{
           )}
         </li>
         <li>
-          We will store your cookies securely to facilitate the connection.
+          {t(
+            'chrome_extension_warning_cookies',
+            '我们会安全地保存你的 Cookie，用于维持连接。'
+          )}
         </li>
         <li>
-          oksocial does not take responsibility for any issues arising or account
-          termination due to the use of this method.
+          {t(
+            'chrome_extension_warning_liability',
+            '因使用此方式导致的任何问题或账号封禁，oksocial 不承担责任。'
+          )}
         </li>
       </ul>
       <div className="flex gap-[10px] mt-[8px]">
@@ -470,7 +480,9 @@ export const AddProviderComponent: FC<{
           }
           const { url } = await response.json();
           modal.openModal({
-            title: `Add ${capitalize(identifier)}`,
+            title: t('add_provider_name', '添加 {{name}}', {
+              name: capitalize(identifier),
+            }),
             withCloseButton: true,
             ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
             classNames: {
@@ -527,7 +539,10 @@ export const AddProviderComponent: FC<{
 
           if (invite) {
             toaster.show(
-              'Invite link copied to clipboard, link will be available for 1 hour',
+              t(
+                'invite_link_copied',
+                '邀请链接已复制到剪贴板，1 小时内有效'
+              ),
               'success'
             );
             modal.closeAll();

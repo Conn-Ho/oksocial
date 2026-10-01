@@ -42,7 +42,7 @@ export const SelectList: FC<{
   return (
     <Select
       name={name}
-      label="Select List"
+      label={t('select_list', '选择列表')}
       onChange={onChangeInner}
       value={currentMedia}
     >

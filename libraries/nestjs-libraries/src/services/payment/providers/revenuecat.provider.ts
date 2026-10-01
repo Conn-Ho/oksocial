@@ -120,7 +120,7 @@ export class RevenueCatProvider extends PaymentProviderAbstract {
 
   private async getActiveSubscription(organizationId: string) {
     if (!process.env.REVENUECAT_SECRET_KEY) {
-      throw new HttpException('RevenueCat is not configured', 400);
+      throw new HttpException('还没有配置 RevenueCat', 400);
     }
 
     const response = await fetch(
@@ -137,7 +137,7 @@ export class RevenueCatProvider extends PaymentProviderAbstract {
 
     if (!response.ok) {
       throw new HttpException(
-        `RevenueCat subscriber request failed (${response.status})`,
+        `查询 RevenueCat 订阅失败（${response.status}）`,
         500
       );
     }
@@ -173,7 +173,7 @@ export class RevenueCatProvider extends PaymentProviderAbstract {
       !['STANDARD', 'TEAM', 'PRO', 'ULTIMATE'].includes(billing)
     ) {
       throw new HttpException(
-        `Unknown RevenueCat product identifier: ${productId}`,
+        `无法识别的 RevenueCat 商品：${productId}`,
         400
       );
     }

@@ -29,9 +29,9 @@ export function generationError(err: any): HttpException {
 
   if (SAFETY_MESSAGE_REGEX.test(message)) {
     const categories = message.match(SAFETY_VIOLATIONS_REGEX)?.[1]?.trim();
-    const detail = categories ? ` Flagged categories: ${categories}.` : '';
+    const detail = categories ? `（触发类别：${categories}）` : '';
     return new HttpException(
-      `Your request was rejected by the AI safety system.${detail} Please adjust your prompt and try again.`,
+      `内容被 AI 安全审核拦下了${detail}，请调整描述后再试`,
       422
     );
   }
@@ -40,5 +40,5 @@ export function generationError(err: any): HttpException {
   // a generic message rather than mislabeling it as a content-safety issue.
   // The real reason (a quota, a bad key, ...) is only useful to the operator, so log it
   console.error('AI generation failed:', message);
-  return new HttpException('AI generation failed, please try again later.', 500);
+  return new HttpException('AI 生成失败，请稍后再试', 500);
 }

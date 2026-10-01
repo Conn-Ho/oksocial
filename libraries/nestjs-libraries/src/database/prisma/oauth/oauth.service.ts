@@ -49,7 +49,7 @@ export class OAuthService {
     const existing = await this._oauthRepository.getAppByOrgId(orgId);
     if (existing) {
       throw new HttpException(
-        'You can only have one OAuth application per organization',
+        '每个团队只能创建一个 OAuth 应用',
         HttpStatus.BAD_REQUEST
       );
     }
@@ -82,7 +82,7 @@ export class OAuthService {
   async deleteApp(orgId: string) {
     const app = await this._oauthRepository.getAppByOrgId(orgId);
     if (!app) {
-      throw new HttpException('No OAuth app found', HttpStatus.NOT_FOUND);
+      throw new HttpException('还没有创建 OAuth 应用', HttpStatus.NOT_FOUND);
     }
     await this._oauthRepository.revokeAllForApp(app.id);
     await this._oauthRepository.deleteApp(orgId);
@@ -92,7 +92,7 @@ export class OAuthService {
   async rotateSecret(orgId: string) {
     const app = await this._oauthRepository.getAppByOrgId(orgId);
     if (!app) {
-      throw new HttpException('No OAuth app found', HttpStatus.NOT_FOUND);
+      throw new HttpException('还没有创建 OAuth 应用', HttpStatus.NOT_FOUND);
     }
 
     const newSecret = 'pcs_' + makeSecureId(48);
@@ -269,7 +269,7 @@ export class OAuthService {
   ) {
     const app = await this._oauthRepository.getAppByClientId(clientId);
     if (!app) {
-      throw new HttpException('Invalid client_id', HttpStatus.BAD_REQUEST);
+      throw new HttpException('client_id 无效', HttpStatus.BAD_REQUEST);
     }
 
     // Dynamically registered clients must use their registered redirect_uris
@@ -277,11 +277,11 @@ export class OAuthService {
     if (app.dynamic) {
       const registered: string[] = JSON.parse(app.redirectUris || '[]');
       if (!options?.redirectUri || !registered.includes(options.redirectUri)) {
-        throw new HttpException('Invalid redirect_uri', HttpStatus.BAD_REQUEST);
+        throw new HttpException('redirect_uri 无效', HttpStatus.BAD_REQUEST);
       }
       if (app.tokenEndpointAuthMethod === 'none' && !options?.codeChallenge) {
         throw new HttpException(
-          'code_challenge is required for this client',
+          '这个客户端必须提供 code_challenge',
           HttpStatus.BAD_REQUEST
         );
       }
@@ -291,7 +291,7 @@ export class OAuthService {
         options.codeChallengeMethod !== 'S256'
       ) {
         throw new HttpException(
-          'Only the S256 code_challenge_method is supported',
+          'code_challenge_method 只支持 S256',
           HttpStatus.BAD_REQUEST
         );
       }

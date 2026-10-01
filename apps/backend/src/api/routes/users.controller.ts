@@ -55,7 +55,7 @@ export class UsersController {
     @GetOrgFromRequest() organization: Organization
   ) {
     if (!process.env.CHATBASE_TOKEN) {
-      throw new HttpException('Chatbase SSO is not configured', 400);
+      throw new HttpException('还没有配置 Chatbase 单点登录', 400);
     }
 
     const token = sign(
@@ -86,7 +86,7 @@ export class UsersController {
     @GetOrgFromRequest() organization: Organization
   ) {
     if (!process.env.AGENT_MEDIA_SSO_KEY) {
-      throw new HttpException('Agent Media SSO is not configured', 400);
+      throw new HttpException('还没有配置 Agent Media 单点登录', 400);
     }
 
     const token = sign(
@@ -152,7 +152,7 @@ export class UsersController {
     @Query('name') name: string
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return this._userService.getImpersonateUser(name);
@@ -165,7 +165,7 @@ export class UsersController {
     @Res({ passthrough: true }) response: Response
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     response.cookie('impersonate', id, {
@@ -193,7 +193,7 @@ export class UsersController {
     @Req() req: Request
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     // `user` is the impersonated account, so the admin id comes from the token.
@@ -207,7 +207,7 @@ export class UsersController {
       adminId === user.id ||
       adminId === id
     ) {
-      throw new HttpException('Invalid user to switch to', 400);
+      throw new HttpException('不能切换到这个用户', 400);
     }
 
     const { kept, switched } = await this._userService.switchUser(
@@ -344,7 +344,7 @@ export class UsersController {
     const impersonate = req.cookies.impersonate || req.headers.impersonate;
     if (impersonate) {
       throw new HttpException(
-        'Account cannot be deleted while impersonating',
+        '代登录期间不能删除账号',
         400
       );
     }
@@ -361,7 +361,7 @@ export class UsersController {
       } catch (err) {
         console.log(err);
         throw new HttpException(
-          'Could not cancel your subscription, please try again or contact support',
+          '没能取消你的订阅，请重试或联系客服',
           400
         );
       }

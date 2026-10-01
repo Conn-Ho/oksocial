@@ -133,7 +133,7 @@ export const ContinueIntegration: FC<{
         navigateOrShow(
           `/launches?precondition=true`,
           returnURL,
-          'Precondition failed'
+          t('precondition_failed', '前置条件未满足')
         );
         return;
       }
@@ -150,7 +150,9 @@ export const ContinueIntegration: FC<{
       ) {
         const errorData = await data.json().catch(() => ({}));
         setErrorMessage(
-          errorData.message || errorData.msg || 'Could not add provider'
+          errorData.message ||
+            errorData.msg ||
+            t('could_not_add_provider', '无法添加该账号')
         );
         setError(true);
         return;
@@ -206,11 +208,11 @@ export const ContinueIntegration: FC<{
       }
 
       navigateOrShow(
-        `/launches?added=${provider}&msg=Channel Updated${
-          onboarding ? '&onboarding=true' : ''
-        }`,
+        `/launches?added=${provider}&msg=${encodeURIComponent(
+          t('channel_updated', '频道已更新')
+        )}${onboarding ? '&onboarding=true' : ''}`,
         returnURL,
-        'Channel Updated'
+        t('channel_updated', '频道已更新')
       );
     })();
   }, []);
@@ -238,18 +240,19 @@ export const ContinueIntegration: FC<{
         ) {
           const errorData = await response.json().catch(() => ({}));
           setErrorMessage(
-            errorData.message || 'Failed to save channel configuration'
+            errorData.message ||
+              t('failed_to_save_channel_config', '频道配置保存失败')
           );
           setError(true);
           return;
         }
 
         navigateOrShow(
-          `/launches?added=${provider}&msg=Channel Added${
-            twoStepState.onboarding ? '&onboarding=true' : ''
-          }`,
+          `/launches?added=${provider}&msg=${encodeURIComponent(
+            t('channel_added', '频道已添加')
+          )}${twoStepState.onboarding ? '&onboarding=true' : ''}`,
           twoStepState.returnURL,
-          'Channel Added'
+          t('channel_added', '频道已添加')
         );
       } finally {
         setIsSaving(false);
@@ -309,7 +312,8 @@ export const ContinueIntegration: FC<{
             {successState.message ||
               t(
                 'channel_connected_description',
-                `Your ${providerDisplayName} channel has been successfully connected. You can close this window now.`
+                '{{name}} 账号已连接成功，现在可以关闭此窗口了。',
+                { name: providerDisplayName }
               )}
           </div>
         </div>
@@ -337,7 +341,8 @@ export const ContinueIntegration: FC<{
               <p className="text-[14px] text-gray-400">
                 {t(
                   'select_the_page_or_account',
-                  `Select the ${providerDisplayName} page or account you want to connect.`
+                  '请选择要连接的 {{name}} 主页或账号。',
+                  { name: providerDisplayName }
                 )}
               </p>
             </div>

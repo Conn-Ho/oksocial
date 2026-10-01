@@ -132,10 +132,13 @@ export const PostSelector: FC<{
                 <div className="flex">
                   <div className="flex-1">
                     <TopTitle
-                      title={
-                        'Select Post Before ' +
-                        date.format('YYYY-MM-DD HH:mm:ss')
-                      }
+                      title={t(
+                        'select_post_before',
+                        '选择 {{date}} 之前的帖子',
+                        {
+                          date: date.format('YYYY-MM-DD HH:mm:ss'),
+                        }
+                      )}
                     />
                   </div>
                   <button

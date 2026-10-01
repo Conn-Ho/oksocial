@@ -40,7 +40,7 @@ export class IsYoutubeTagsLengthConstraint
   }
 
   defaultMessage(_args: ValidationArguments): string {
-    return `The maximum allowed is ${YOUTUBE_TAGS_MAX_LENGTH} characters in total for all tags.`;
+    return `所有标签加起来最多 ${YOUTUBE_TAGS_MAX_LENGTH} 个字符`;
   }
 }
 

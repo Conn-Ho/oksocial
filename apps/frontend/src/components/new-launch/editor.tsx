@@ -14,7 +14,7 @@ import React, {
 import clsx from 'clsx';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import EmojiPicker from 'emoji-picker-react';
-import { Theme } from 'emoji-picker-react';
+import { Categories, Theme } from 'emoji-picker-react';
 import { BoldText } from '@gitroom/frontend/components/new-launch/bold.text';
 import { UText } from '@gitroom/frontend/components/new-launch/u.text';
 import { SignatureBox } from '@gitroom/frontend/components/signature';
@@ -560,7 +560,21 @@ export const Editor: FC<{
   } = props;
   const [id] = useState(makeId(10));
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  // Chinese emoji names and search keywords, loaded the first time the picker opens
+  const [emojiData, setEmojiData] =
+    useState<React.ComponentProps<typeof EmojiPicker>['emojiData']>(undefined);
   const t = useT();
+
+  useEffect(() => {
+    if (!emojiPickerOpen || emojiData) {
+      return;
+    }
+    import('emoji-picker-react/dist/data/emojis-zh')
+      .then((data) => setEmojiData(data.default))
+      .catch(() => {
+        // the picker keeps its built-in names
+      });
+  }, [emojiPickerOpen, emojiData]);
   const toaster = useToaster();
   const editorRef = useRef<undefined | { editor: any }>(undefined);
   const [loading, setLoading] = useState(false);
@@ -648,7 +662,7 @@ export const Editor: FC<{
     onDrop: (files) => {
       if (loading) {
         toaster.show(
-          'Upload current in progress, please wait and then try again.',
+          t('upload_in_progress_try_later', '正在上传，请等上传完成后再试。'),
           'warning'
         );
         return;
@@ -825,6 +839,50 @@ export const Editor: FC<{
                         >
                           <EmojiPicker
                             height={400}
+                            emojiData={emojiData}
+                            searchPlaceholder={t('emoji_search', '搜索表情')}
+                            searchClearButtonLabel={t('clear', '清除')}
+                            previewConfig={{
+                              defaultCaption: t('emoji_mood', '今天心情如何？'),
+                            }}
+                            categories={[
+                              {
+                                category: Categories.SUGGESTED,
+                                name: t('emoji_recent', '常用'),
+                              },
+                              {
+                                category: Categories.SMILEYS_PEOPLE,
+                                name: t('emoji_smileys', '笑脸与人物'),
+                              },
+                              {
+                                category: Categories.ANIMALS_NATURE,
+                                name: t('emoji_animals', '动物与自然'),
+                              },
+                              {
+                                category: Categories.FOOD_DRINK,
+                                name: t('emoji_food', '食物与饮料'),
+                              },
+                              {
+                                category: Categories.TRAVEL_PLACES,
+                                name: t('emoji_travel', '旅行与地点'),
+                              },
+                              {
+                                category: Categories.ACTIVITIES,
+                                name: t('emoji_activities', '活动'),
+                              },
+                              {
+                                category: Categories.OBJECTS,
+                                name: t('emoji_objects', '物品'),
+                              },
+                              {
+                                category: Categories.SYMBOLS,
+                                name: t('emoji_symbols', '符号'),
+                              },
+                              {
+                                category: Categories.FLAGS,
+                                name: t('emoji_flags', '旗帜'),
+                              },
+                            ]}
                             theme={
                               (localStorage.getItem('mode') as Theme) ||
                               Theme.DARK

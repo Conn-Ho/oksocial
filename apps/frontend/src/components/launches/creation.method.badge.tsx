@@ -11,7 +11,14 @@ interface Props {
 }
 
 const tooltipFor = (m: string) =>
-  m === 'AUTOPOST' ? 'Auto-posted by system' : m === 'AUTOMATION' ? '由自动化生成' : `Created via ${m}`;
+  m === 'AUTOPOST' ? '由系统自动发布' : m === 'AUTOMATION' ? '由自动化生成' : `通过 ${m} 创建`;
+
+// API / MCP / CLI stay as they are; the rest read better in Chinese.
+const LABELS: Record<string, string> = {
+  WEB: '网页',
+  AUTOPOST: '自动发布',
+  AUTOMATION: '自动化',
+};
 
 export const CreationMethodBadge: FC<Props> = ({
   creationMethod,
@@ -45,7 +52,7 @@ export const CreationMethodBadge: FC<Props> = ({
       data-tooltip-id="tooltip"
       data-tooltip-content={tooltipFor(creationMethod)}
     >
-      {creationMethod}
+      {LABELS[creationMethod] || creationMethod}
     </div>
   );
 };

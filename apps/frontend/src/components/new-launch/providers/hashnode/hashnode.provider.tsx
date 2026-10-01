@@ -15,10 +15,12 @@ import { useMediaDirectory } from '@gitroom/react/helpers/use.media.directory';
 import clsx from 'clsx';
 import { MediaComponent } from '@gitroom/frontend/components/media/media.component';
 import { Canonical } from '@gitroom/react/form/canonical';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const HashnodeSettings: FC = () => {
   const form = useSettings();
   const { date } = useIntegration();
+  const t = useT();
   return (
     <>
       <Input label="Title" {...form.register('title')} />
@@ -29,15 +31,18 @@ const HashnodeSettings: FC = () => {
         {...form.register('canonical')}
       />
       <MediaComponent
-        label="Cover picture"
-        description="Add a cover picture"
+        label={t('label_cover_picture', '封面图片')}
+        description={t('add_a_cover_picture', '添加封面图片')}
         {...form.register('main_image')}
       />
       <div className="mt-[20px]">
         <HashnodePublications {...form.register('publication')} />
       </div>
       <div>
-        <HashnodeTags label="Tags" {...form.register('tags')} />
+        <HashnodeTags
+          label={t('label_tags', '标签')}
+          {...form.register('tags')}
+        />
       </div>
     </>
   );

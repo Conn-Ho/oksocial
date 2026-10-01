@@ -29,7 +29,9 @@ export const ThirdPartyMenuComponent: FC<{
   const deleteChannel = (id: string) => async () => {
     setShow(false);
     if (
-      !(await deleteDialog('Are you sure you want to delete this integration?'))
+      !(await deleteDialog(
+        t('confirm_delete_integration', '确定要删除这个集成吗？')
+      ))
     ) {
       return;
     }
@@ -39,7 +41,7 @@ export const ThirdPartyMenuComponent: FC<{
     });
 
     if (res.ok) {
-      toaster.show('Integration deleted successfully', 'success');
+      toaster.show(t('integration_deleted', '集成已删除'), 'success');
       reload();
     } else {
       const error = await res.json();

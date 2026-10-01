@@ -8,10 +8,10 @@ import {
 import { Provider } from '@prisma/client';
 
 export class LoginUserDto {
-  @IsString()
-  @IsDefined()
+  @IsString({ message: '请输入密码' })
+  @IsDefined({ message: '请输入密码' })
   @ValidateIf((o) => !o.providerToken)
-  @MinLength(3)
+  @MinLength(1, { message: '请输入密码' })
   password: string;
 
   @IsString()
@@ -23,8 +23,8 @@ export class LoginUserDto {
   @ValidateIf((o) => !o.password)
   providerToken: string;
 
-  @IsEmail()
-  @IsDefined()
+  @IsEmail({}, { message: '请输入正确的邮箱地址' })
+  @IsDefined({ message: '请输入邮箱' })
   email: string;
 
   datafast_visitor_id: string;

@@ -80,7 +80,7 @@ export class PublicIntegrationsController {
   ) {
     Sentry.metrics.count('public_api-request', 1);
     if (!file) {
-      throw new HttpException({ msg: 'No file provided' }, 400);
+      throw new HttpException({ msg: '没有收到文件' }, 400);
     }
 
     return this._mediaService.saveFile(org.id, file.filename, file.path);
@@ -151,7 +151,7 @@ export class PublicIntegrationsController {
     ) {
       throw new HttpException(
         {
-          msg: `All media must be uploaded through our upload API route and contain the domain: ${process.env.RESTRICT_UPLOAD_DOMAINS}`,
+          msg: `所有媒体都要先通过上传接口上传，地址里必须包含域名：${process.env.RESTRICT_UPLOAD_DOMAINS}`,
         },
         400
       );
@@ -176,7 +176,7 @@ export class PublicIntegrationsController {
       if (item.emptyContent) {
         fail(
           item,
-          'Your post should have at least one character or one image.'
+          '帖子至少要有一个字或一张图片'
         );
       }
     }
@@ -184,13 +184,13 @@ export class PublicIntegrationsController {
     if (body.type !== 'draft') {
       for (const item of validation) {
         if (!item.valid) {
-          fail(item, item.settingsError || 'Please fix your settings');
+          fail(item, item.settingsError || '发布设置有误，请检查后再试');
         }
         if (item.errors !== true) {
           fail(item, item.errors as string);
         }
         if (item.tooLong) {
-          fail(item, 'post is too long, please fix it');
+          fail(item, '帖子超出字数上限，请删减后再发');
         }
       }
     }
@@ -278,7 +278,7 @@ export class PublicIntegrationsController {
         .getAllowedSocialsIntegrations()
         .includes(integration)
     ) {
-      throw new HttpException({ msg: 'Integration not allowed' }, 400);
+      throw new HttpException({ msg: '不支持这个平台' }, 400);
     }
 
     // A provider migrated via MIGRATE_PROVIDERS reconnects through its target
@@ -295,7 +295,7 @@ export class PublicIntegrationsController {
     if (integrationProvider.externalUrl) {
       throw new HttpException(
         {
-          msg: 'This integration requires an external URL and is not supported via the public API',
+          msg: '这个平台需要填写实例地址，暂不支持通过 API 连接',
         },
         400
       );
@@ -314,7 +314,7 @@ export class PublicIntegrationsController {
 
       return { url };
     } catch (err) {
-      throw new HttpException({ msg: 'Failed to generate auth URL' }, 500);
+      throw new HttpException({ msg: '生成授权链接失败' }, 500);
     }
   }
 
@@ -328,7 +328,7 @@ export class PublicIntegrationsController {
     const term = name?.trim();
 
     if (!term) {
-      throw new HttpException({ msg: 'A search term is required' }, 400);
+      throw new HttpException({ msg: '请输入搜索关键词' }, 400);
     }
 
     return this._usersService.getImpersonateUser(term);
@@ -344,7 +344,7 @@ export class PublicIntegrationsController {
     const timeline = await this._postsService.getPostTimeline(id, org.id);
 
     if (!timeline) {
-      throw new HttpException({ msg: 'Post not found' }, 404);
+      throw new HttpException({ msg: '帖子不存在' }, 404);
     }
 
     return timeline;
@@ -357,7 +357,7 @@ export class PublicIntegrationsController {
     const account = await this._organizationService.getAccountOverview(org.id);
 
     if (!account) {
-      throw new HttpException({ msg: 'Organization not found' }, 404);
+      throw new HttpException({ msg: '团队不存在' }, 404);
     }
 
     return account;
@@ -479,7 +479,7 @@ export class PublicIntegrationsController {
     );
 
     if (!loadIntegration) {
-      throw new HttpException({ msg: 'Integration not found' }, 404);
+      throw new HttpException({ msg: '账号不存在' }, 404);
     }
 
     const verified =
@@ -591,7 +591,7 @@ export class PublicIntegrationsController {
     );
 
     if (!getIntegration) {
-      throw new HttpException({ msg: 'Integration not found' }, 404);
+      throw new HttpException({ msg: '账号不存在' }, 404);
     }
 
     const integrationProvider = socialIntegrationList.find(
@@ -599,7 +599,7 @@ export class PublicIntegrationsController {
     )!;
 
     if (!integrationProvider) {
-      throw new HttpException({ msg: 'Integration provider not found' }, 404);
+      throw new HttpException({ msg: '不支持这个账号所在的平台' }, 404);
     }
 
     const tools = this._integrationManager.getAllTools();
@@ -611,7 +611,7 @@ export class PublicIntegrationsController {
       // @ts-ignore
       !integrationProvider[body.methodName]
     ) {
-      throw new HttpException({ msg: 'Tool not found' }, 404);
+      throw new HttpException({ msg: '这个平台没有这个工具' }, 404);
     }
 
     while (true) {
@@ -637,7 +637,7 @@ export class PublicIntegrationsController {
               getIntegration
             );
             throw new HttpException(
-              { msg: 'Channel disconnected due to expired token' },
+              { msg: '账号授权已过期，已断开连接，请重新连接' },
               401
             );
           }
@@ -654,7 +654,7 @@ export class PublicIntegrationsController {
             continue;
           }
         }
-        throw new HttpException({ msg: 'Unexpected error' }, 500);
+        throw new HttpException({ msg: '出了点问题，请稍后再试' }, 500);
       }
     }
   }

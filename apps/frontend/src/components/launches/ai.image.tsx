@@ -24,6 +24,24 @@ const list = [
   'Fantasy Realism',
 ];
 
+// The English value goes into the prompt; users see the Chinese name.
+const STYLE_LABELS: Record<string, string> = {
+  Realistic: '写实',
+  Cartoon: '卡通',
+  Anime: '动漫',
+  Fantasy: '奇幻',
+  Abstract: '抽象',
+  'Pixel Art': '像素风',
+  Sketch: '素描',
+  Watercolor: '水彩',
+  Minimalist: '极简',
+  Cyberpunk: '赛博朋克',
+  Monochromatic: '单色',
+  Surreal: '超现实',
+  'Pop Art': '波普艺术',
+  'Fantasy Realism': '奇幻写实',
+};
+
 const AiImageModal: FC<{
   close: () => void;
   setLoading: (loading: boolean) => void;
@@ -103,7 +121,7 @@ ${style}
                   : 'bg-newColColor border-newBgLineColor'
               )}
             >
-              {p}
+              {STYLE_LABELS[p] || p}
             </div>
           ))}
         </div>

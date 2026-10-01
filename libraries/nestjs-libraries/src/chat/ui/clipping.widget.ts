@@ -8,7 +8,7 @@ export const CLIPPING_WIDGET_URI = 'ui://postiz/clipping';
 // model once they are done. Only plain GETs, so the browser never sends a CORS
 // preflight
 export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -53,7 +53,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
 <script>
 (function () {
   var BACKEND = ${JSON.stringify(backendUrl).replace(/</g, '\\u003c')};
-  var STEPS = [['analysing', 'Analysing'], ['transcribing', 'Transcribing'], ['picking', 'Picking clips'], ['rendering', 'Rendering'], ['completed', 'Done']];
+  var STEPS = [['analysing', '分析'], ['transcribing', '转写'], ['picking', '挑选片段'], ['rendering', '渲染'], ['completed', '完成']];
   var nextId = 1;
   var pending = {};
   var clippingId = null;
@@ -89,7 +89,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       var waiting = pending[data.id];
       if (!waiting) return;
       delete pending[data.id];
-      if (data.error) waiting.reject(new Error(data.error.message || 'The host rejected the request'));
+      if (data.error) waiting.reject(new Error(data.error.message || '宿主应用拒绝了这个请求'));
       else waiting.resolve(data.result);
       return;
     }
@@ -101,7 +101,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
   function getTicket() {
     return request('tools/call', { name: 'clippingWidgetTicketTool', arguments: { clippingId: clippingId } }).then(function (result) {
       var content = (result && result.structuredContent) || {};
-      if (!content.ticket) throw new Error(content.error || 'Could not get a clipping ticket');
+      if (!content.ticket) throw new Error(content.error || '没能获取剪辑查看凭证');
       return content.ticket;
     });
   }
@@ -132,7 +132,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       var step = document.createElement('div');
       step.className = 'step' + (failed ? ' bad' : index < at || status === 'completed' ? ' done' : index === at ? ' now' : '');
       step.appendChild(document.createElement('i'));
-      step.appendChild(document.createTextNode(failed && index === 0 ? 'Failed' : p[1]));
+      step.appendChild(document.createTextNode(failed && index === 0 ? '失败' : p[1]));
       steps.appendChild(step);
     });
   }
@@ -148,7 +148,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       box.className = 'box';
       name.className = 'name';
       note.className = 'note';
-      box.appendChild(document.createTextNode(clip.status === 'completed' ? 'Ready' : clip.status === 'failed' ? 'Failed' : 'Rendering…'));
+      box.appendChild(document.createTextNode(clip.status === 'completed' ? '已完成' : clip.status === 'failed' ? '失败' : '渲染中…'));
       if (web(clip.thumbnail)) {
         // the sandbox only loads images from the domains the resource asked for;
         // where the host refuses, the label underneath stays
@@ -164,14 +164,14 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
         var copy = document.createElement('button');
         actions.className = 'actions';
         open.type = copy.type = 'button';
-        open.textContent = 'Open';
-        copy.textContent = 'Copy link';
+        open.textContent = '打开';
+        copy.textContent = '复制链接';
         open.addEventListener('click', function () { request('ui/open-link', { url: clip.path }).catch(function () {}); });
         copy.addEventListener('click', function () {
           copyText(clip.path).then(
-            function () { copy.textContent = 'Copied'; },
-            function () { copy.textContent = 'Copy failed'; }
-          ).then(function () { setTimeout(function () { copy.textContent = 'Copy link'; }, 1500); });
+            function () { copy.textContent = '已复制'; },
+            function () { copy.textContent = '复制失败'; }
+          ).then(function () { setTimeout(function () { copy.textContent = '复制链接'; }, 1500); });
         });
         actions.appendChild(open);
         actions.appendChild(copy);
@@ -179,7 +179,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
       }
       name.textContent = clip.title;
       name.title = clip.title;
-      note.textContent = clip.status === 'failed' ? clip.error || 'Failed' : '';
+      note.textContent = clip.status === 'failed' ? clip.error || '失败' : '';
       tile.appendChild(box);
       tile.appendChild(name);
       tile.appendChild(note);
@@ -191,7 +191,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
     title.textContent = clipping.title || clipping.url || '';
     renderSteps(clipping.status);
     renderClips(clipping.clips || []);
-    fail(clipping.status === 'failed' ? clipping.error || 'The clipping failed.' : '');
+    fail(clipping.status === 'failed' ? clipping.error || '剪辑失败了。' : '');
   }
 
   // Silent context first, so the model has the clips even if the host defers the
@@ -202,8 +202,8 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
     // the model from here: it gets ids and urls, and a fixed sentence in the
     // user's name. clippingStatusTool has the texts, marked as untrusted
     var text = clipping.status === 'failed'
-      ? 'The clipping ' + clippingId + ' failed and the clipping minutes were given back.'
-      : 'The clipping ' + clippingId + ' is done, ' + ready.length + ' clips are ready.';
+      ? '剪辑任务 ' + clippingId + ' 失败了，剪辑时长已退回。'
+      : '剪辑任务 ' + clippingId + ' 已完成，' + ready.length + ' 个片段可用。';
     return Promise.race([
       request('ui/update-model-context', {
         structuredContent: { clippingId: clippingId, status: clipping.status, clips: ready.map(function (p) { return { id: p.id, mediaId: p.mediaId, path: p.path, thumbnail: p.thumbnail }; }) },
@@ -217,7 +217,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
   }
 
   function poll(ticket, deadline) {
-    if (Date.now() > deadline) { fail('This is taking longer than expected, ask for the clipping status later.'); return; }
+    if (Date.now() > deadline) { fail('比预计的时间长，请稍后再查询剪辑进度。'); return; }
     var again = function (next) { return wait(5000).then(function () { poll(next || ticket, deadline); }); };
     fetch(BACKEND + '/clipping-widget/status?ticket=' + encodeURIComponent(ticket) + (sawRunning ? '&seen=1' : ''))
       .catch(function () { return null; })
@@ -227,10 +227,10 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
         // the ticket is short lived and a clipping outlives it; a ticket that is
         // refused again and again is not going to work
         if (res.status === 401) {
-          if (++refused > 3) throw new Error('Could not read the clipping, ask for its status instead.');
+          if (++refused > 3) throw new Error('读取不到剪辑进度，请直接查询剪辑状态。');
           return getTicket().then(again, function () { return again(); });
         }
-        if (!res.ok) throw new Error('Could not read the clipping (' + res.status + ')');
+        if (!res.ok) throw new Error('读取剪辑进度失败（' + res.status + '）');
         refused = 0;
         return res.json().then(function (clipping) {
           render(clipping);
@@ -244,13 +244,13 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
           return wait(5000).then(function () { poll(ticket, deadline); });
         });
       })
-      .catch(function (err) { fail(err.message || 'Could not read the clipping'); });
+      .catch(function (err) { fail(err.message || '读取剪辑进度失败'); });
   }
 
   function start(result) {
     var content = (result && result.structuredContent) || {};
     if (!content.clippingId) {
-      fail(content.error || 'The clipping could not be started.');
+      fail(content.error || '剪辑任务没能启动。');
       return;
     }
     if (started) return;
@@ -260,7 +260,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
     resize();
     getTicket().then(
       function (ticket) { poll(ticket, Date.now() + 90 * 60 * 1000); },
-      function (err) { fail(err.message || 'Could not read the clipping'); }
+      function (err) { fail(err.message || '读取剪辑进度失败'); }
     );
   }
 
@@ -270,7 +270,7 @@ export const clippingWidgetHtml = (backendUrl: string) => `<!DOCTYPE html>
     protocolVersion: '2026-01-26',
   }).then(
     function () { notify('ui/notifications/initialized', {}); resize(); },
-    function () { fail('This app cannot display the clipping widget.'); }
+    function () { fail('当前应用无法显示剪辑窗口。'); }
   );
 })();
 </script>

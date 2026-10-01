@@ -56,7 +56,7 @@ export function Login() {
     });
     if (login.status === 400) {
       const errorMessage = await login.text();
-      if (errorMessage === 'User is not activated') {
+      if (errorMessage === '账号还没有激活') {
         setNotActivated(true);
       } else {
         form.setError('email', {

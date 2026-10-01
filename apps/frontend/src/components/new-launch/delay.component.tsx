@@ -9,14 +9,14 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useClickOutside } from '@mantine/hooks';
 
 const delayOptions = [
-  { value: 1, label: '1m' },
-  { value: 2, label: '2m' },
-  { value: 5, label: '5m' },
-  { value: 10, label: '10m' },
-  { value: 15, label: '15m' },
-  { value: 30, label: '30m' },
-  { value: 60, label: '1h' },
-  { value: 120, label: '2h' },
+  { value: 1, label: '1分' },
+  { value: 2, label: '2分' },
+  { value: 5, label: '5分' },
+  { value: 10, label: '10分' },
+  { value: 15, label: '15分' },
+  { value: 30, label: '30分' },
+  { value: 60, label: '1小时' },
+  { value: 120, label: '2小时' },
 ];
 
 export const DelayComponent: FC<{
@@ -74,7 +74,10 @@ export const DelayComponent: FC<{
   const getCurrentDelayLabel = () => {
     if (!currentDelay) return null;
     const option = delayOptions.find((opt) => opt.value === currentDelay);
-    return option?.label || `${currentDelay} min`;
+    return (
+      option?.label ||
+      t('n_minutes', '{{total}} 分钟', { total: currentDelay })
+    );
   };
 
   return (
@@ -135,7 +138,7 @@ export const DelayComponent: FC<{
                 }}
                 className="h-[32px] px-[10px] rounded-[4px] bg-[#612BD3] text-white text-[12px] font-[600] hover:bg-[#612BD3]/80"
               >
-                Set
+                {t('set', '设置')}
               </button>
             </div>
           </div>
@@ -144,7 +147,7 @@ export const DelayComponent: FC<{
               onClick={() => handleSelectDelay(0)}
               className="mt-[8px] h-[32px] w-full rounded-[4px] text-[13px] text-red-400 hover:bg-red-400/10"
             >
-              Remove delay
+              {t('remove_delay', '取消延迟')}
             </button>
           )}
         </div>

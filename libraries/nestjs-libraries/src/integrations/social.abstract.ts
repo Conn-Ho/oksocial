@@ -102,7 +102,7 @@ export class BadBody extends ApplicationFailure {
 
 export class NotEnoughScopes {
   constructor(
-    public message = 'Not enough scopes, when choosing a provider, please add all the scopes'
+    public message = '授权的权限不够，连接账号时请勾选全部权限'
   ) {}
 }
 
@@ -258,7 +258,7 @@ export abstract class SocialAbstract {
           identifier,
           '{}',
           Buffer.from('{}'),
-          'Could not determine the media size for upload'
+          '读不到媒体文件的大小，无法上传'
         );
       }
       return length;
@@ -295,7 +295,7 @@ export abstract class SocialAbstract {
           identifier,
           '{}',
           Buffer.from('{}'),
-          `Media server did not honor the range request (status ${response.status})`
+          `媒体文件服务器不支持分段读取（状态码 ${response.status}），无法上传`
         );
       }
       return Buffer.from(await response.arrayBuffer());
@@ -333,7 +333,7 @@ export abstract class SocialAbstract {
         identifier,
         '{}',
         Buffer.from('{}'),
-        'Could not read the media for upload'
+        '读取媒体文件失败，无法上传'
       );
     }
 

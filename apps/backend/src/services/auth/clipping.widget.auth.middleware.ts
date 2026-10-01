@@ -21,7 +21,7 @@ export class ClippingWidgetAuthMiddleware implements NestMiddleware {
     if (!ticket) {
       res
         .status(HttpStatus.UNAUTHORIZED)
-        .json({ msg: 'Clipping ticket not found or expired' });
+        .json({ msg: '剪辑查看凭证不存在或已过期' });
       return;
     }
 

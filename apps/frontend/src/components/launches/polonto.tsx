@@ -16,6 +16,7 @@ import { PolotnoContainer, SidePanelWrap, WorkspaceWrap } from 'polotno';
 import { SidePanel, DEFAULT_SECTIONS } from 'polotno/side-panel';
 import Toolbar from 'polotno/toolbar/toolbar';
 import ZoomButtons from 'polotno/toolbar/zoom-buttons';
+import { getTranslations, setTranslations } from 'polotno/config';
 import { Button } from '@gitroom/react/form/button';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { PictureGeneratorSection } from '@gitroom/frontend/components/launches/polonto/polonto.picture.generation';
@@ -23,12 +24,26 @@ import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { loadVars } from '@gitroom/react/helpers/variable.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
+import { polotnoZh } from '@gitroom/frontend/components/launches/polonto/polonto.translations';
+import i18next from '@gitroom/react/translation/i18next';
+import { fallbackLng } from '@gitroom/react/translation/i18n.config';
 const store = createStore({
   get key() {
     return loadVars().plontoKey;
   },
   showCredit: false,
 });
+// Polotno's own labels (toolbar, side panel, menus) follow the UI language
+const polotnoEn = getTranslations();
+const setPolotnoLanguage = () => {
+  setTranslations(
+    (i18next.resolvedLanguage || fallbackLng).startsWith('zh')
+      ? polotnoZh
+      : polotnoEn
+  );
+};
+i18next.on('languageChanged', setPolotnoLanguage);
+setPolotnoLanguage();
 
 // @ts-ignore
 const CloseContext = createContext({

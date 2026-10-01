@@ -123,7 +123,7 @@ export const Pagination: FC<{
       <li className={clsx(current === 0 && 'opacity-20 pointer-events-none')}>
         <div
           className="cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 h-10 px-4 py-2 gap-1 ps-2.5 text-gray-400 hover:text-white border-[#1F1F1F] hover:bg-forth"
-          aria-label="Go to previous page"
+          aria-label={t('go_to_previous_page', '上一页')}
           onClick={() => setPage(current - 1)}
         >
           <ChevronLeftIcon className="lucide lucide-chevron-left h-4 w-4" />
@@ -159,7 +159,7 @@ export const Pagination: FC<{
       >
         <a
           className="text-textColor hover:text-white group cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 h-10 px-4 py-2 gap-1 pe-2.5 text-gray-400 border-[#1F1F1F] hover:bg-forth"
-          aria-label="Go to next page"
+          aria-label={t('go_to_next_page', '下一页')}
           onClick={() => setPage(current + 1)}
         >
           <span>{t('next', 'Next')}</span>
@@ -365,7 +365,7 @@ export const MediaBox: FC<{
                 height="100%"
                 className="w-full h-full max-h-[100%] max-w-[100%] object-cover"
                 src={mediaDirectory.set(media.path)}
-                alt="media"
+                alt="媒体"
               />
             )}
           </div>
@@ -590,7 +590,7 @@ export const MediaBox: FC<{
                           height="100%"
                           className="w-full h-full object-cover"
                           src={mediaDirectory.set(media.path)}
-                          alt="media"
+                          alt="媒体"
                         />
                       )}
                     </div>

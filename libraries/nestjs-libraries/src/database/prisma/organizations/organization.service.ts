@@ -137,7 +137,7 @@ export class OrganizationService {
 
     if (!pricing[tier].team_members) {
       throw new HttpException(
-        'The organization plan does not include team members',
+        '当前团队的套餐不含团队成员',
         400
       );
     }
@@ -146,12 +146,12 @@ export class OrganizationService {
       body.email
     );
     if (!users.length) {
-      throw new HttpException('No oksocial account found for this email', 400);
+      throw new HttpException('这个邮箱还没有注册 oksocial', 400);
     }
 
     if (users.length > 1) {
       throw new HttpException(
-        'Multiple accounts exist for this email (different login providers)',
+        '这个邮箱对应多个账号（登录方式不同）',
         400
       );
     }
@@ -163,7 +163,7 @@ export class OrganizationService {
     );
     if (userOrgs.some((current) => current.id === org.id)) {
       throw new HttpException(
-        'User is already a member of this organization',
+        '这个用户已经是团队成员了',
         400
       );
     }
@@ -179,7 +179,7 @@ export class OrganizationService {
 
     if (!added) {
       throw new HttpException(
-        'Could not add the user to the organization',
+        '没能把这个用户加入团队',
         400
       );
     }

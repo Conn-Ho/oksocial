@@ -29,7 +29,7 @@ export abstract class PaymentProviderAbstract {
 
   protected notSupported(): never {
     throw new HttpException(
-      `This action is not supported on ${this.platform}`,
+      `${this.platform} 上不支持这个操作`,
       400
     );
   }

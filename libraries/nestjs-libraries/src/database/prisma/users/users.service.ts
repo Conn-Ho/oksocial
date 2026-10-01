@@ -91,7 +91,7 @@ export class UsersService {
       const team = await this._organizationRepository.getTeam(org.id);
       if (team?.users?.some((member) => member.user.id !== userId)) {
         throw new HttpException(
-          'Please remove your team members before deleting your account',
+          '请先移除团队里的其他成员，再删除账号',
           400
         );
       }

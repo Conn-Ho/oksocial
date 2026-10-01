@@ -45,7 +45,7 @@ export const DribbbleTeams: FC<{
   return (
     <Select
       name={name}
-      label="Select a team"
+      label={t('select_a_team', '选择团队')}
       onChange={onChangeInner}
       value={currentMedia}
     >

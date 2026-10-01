@@ -221,7 +221,7 @@ export class IntegrationService {
       ) !== newProvider
     ) {
       throw new NotEnoughScopes(
-        'Please refresh the channel that needs to be refreshed'
+        '请在需要重新连接的账号上点「重新连接」'
       );
     }
 
@@ -231,7 +231,7 @@ export class IntegrationService {
 
     if (!oldProvider.migrationMatch(auth, existing)) {
       throw new NotEnoughScopes(
-        `Please connect the same account (@${existing.profile}) that needs to be refreshed`
+        `请登录原来的账号（@${existing.profile}）重新连接`
       );
     }
 
@@ -239,7 +239,7 @@ export class IntegrationService {
       await this._integrationRepository.getIntegrationByInternalId(org, auth.id)
     ) {
       throw new NotEnoughScopes(
-        'This account is already connected as another channel, please delete one of them first'
+        '这个账号已经连接过了，请先删除重复的那个'
       );
     }
 
@@ -407,10 +407,10 @@ export class IntegrationService {
       id
     );
     if (!getIntegration) {
-      throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
+      throw new HttpException('账号不存在', HttpStatus.NOT_FOUND);
     }
     if (!getIntegration.inBetweenSteps) {
-      throw new HttpException('Invalid request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('这个账号不需要选择主页', HttpStatus.BAD_REQUEST);
     }
 
     const provider = this._integrationManager.getSocialIntegration(
@@ -419,7 +419,7 @@ export class IntegrationService {
 
     if (!provider.fetchPageInformation) {
       throw new HttpException(
-        'Provider does not support page selection',
+        '这个平台不支持选择主页',
         HttpStatus.BAD_REQUEST
       );
     }

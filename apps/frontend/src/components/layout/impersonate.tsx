@@ -359,7 +359,8 @@ const ChargesModal: FC<{ close: () => void }> = ({ close }) => {
       !(await deleteDialog(
         t(
           'refund_selected_confirm',
-          `Are you sure you want to refund ${selected.size} charge(s)? This cannot be undone.`
+          '确定要为选中的 {{total}} 笔扣款退款吗？此操作无法撤销。',
+          { total: selected.size }
         ),
         t('yes_refund', 'Yes, refund'),
         t('confirm_refund', 'Confirm Refund'),
@@ -569,8 +570,8 @@ export const Subscription = () => {
       const value = e.target.value;
       if (
         await deleteDialog(
-          'Are you sure you want to add a user subscription?',
-          'Add'
+          t('confirm_add_user_subscription', '确定要为该用户添加订阅吗？'),
+          t('add', '添加')
         )
       ) {
         await fetch('/billing/add-subscription', {
@@ -607,9 +608,9 @@ export const Subscription = () => {
   );
 };
 const colorOptions = [
-  { value: 'INFO', label: 'Info (Blue)', className: 'bg-blue-600' },
-  { value: 'WARNING', label: 'Warning (Amber)', className: 'bg-amber-600' },
-  { value: 'ERROR', label: 'Error (Red)', className: 'bg-red-600' },
+  { value: 'INFO', label: '提示（蓝）', className: 'bg-blue-600' },
+  { value: 'WARNING', label: '警告（琥珀）', className: 'bg-amber-600' },
+  { value: 'ERROR', label: '错误（红）', className: 'bg-red-600' },
 ];
 
 const AddAnnouncementModal: FC<{ close: () => void }> = ({ close }) => {
@@ -925,7 +926,8 @@ const SwitchUser = () => {
       !(await deleteDialog(
         t(
           'switch_user_confirm',
-          `This will replace the current account's login with ${selected.email}. All data and the subscription stay with the account — only the login changes, and the new login gains its full access. Switch back to revert.`
+          '当前账号的登录身份将替换为 {{email}}。所有数据和订阅仍留在该账号下，只有登录身份变更，新登录身份将获得完整权限。切换回来即可还原。',
+          { email: selected.email }
         ),
         t('yes_switch', 'Yes, switch'),
         t('switch_user_title', 'Switch User?'),

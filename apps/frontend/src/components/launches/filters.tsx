@@ -59,7 +59,9 @@ export const Filters = () => {
       case 'week':
         return `${startDate.format('L')} - ${endDate.format('L')}`;
       case 'month':
-        return startDate.format('MMMM YYYY');
+        return currentLanguage.startsWith('zh')
+          ? startDate.format('YYYY年M月')
+          : startDate.format('MMMM YYYY');
       default:
         return '';
     }

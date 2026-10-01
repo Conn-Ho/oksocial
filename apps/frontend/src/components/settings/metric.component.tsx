@@ -42,7 +42,9 @@ const MetricComponent = () => {
             key={metric.value}
             value={metric.value}
           >
-            {metric.value === 'GLOBAL' ? t('hours_24', metric.label) : metric.label}
+            {metric.value === 'GLOBAL'
+              ? t('hours_24', metric.label)
+              : t('hours_12', '12 小时制（上午/下午）')}
           </option>
         ))}
       </Select>

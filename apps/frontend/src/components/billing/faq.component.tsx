@@ -2,12 +2,10 @@
 
 import { FC, ReactNode, useCallback, useState } from 'react';
 import clsx from 'clsx';
-import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import DeleteAccountComponent from '@gitroom/frontend/components/settings/delete-account.component';
 const useFaqList = () => {
-  const { isGeneral } = useVariables();
   const user = useUser();
   const t = useT();
   return [
@@ -16,59 +14,44 @@ const useFaqList = () => {
           {
             title: t(
               'faq_am_i_going_to_be_charged_by_postiz',
-              'Am I going to be charged by oksocial?'
+              '我会被 oksocial 收费吗？'
             ),
             description: t(
               'faq_to_confirm_credit_card_information_postiz_will_hold',
-              'To confirm credit card information oksocial will hold $2 and release it immediately, you can cancel your subscription anytime from settings without talking to a person'
+              '为确认信用卡信息，oksocial 将暂时预授权 2 美元并立即释放。你可以随时在设置中取消订阅，无需联系任何人。'
             ),
           },
         ]
       : []),
     {
-      title: t(
-        'faq_can_i_trust_postiz_gitroom',
-        `Can I trust ${isGeneral ? 'oksocial' : 'Gitroom'}?`
-      ),
+      title: t('faq_can_i_trust_postiz_gitroom', '我可以信任 oksocial 吗？'),
       description: t(
         'faq_postiz_gitroom_is_proudly_open_source',
-        `${
-          isGeneral ? 'oksocial' : 'Gitroom'
-        } is proudly open-source! We believe in an ethical and transparent culture, meaning that ${
-          isGeneral ? 'oksocial' : 'Gitroom'
-        } will live forever. You can check out the entire code or use it for personal projects. To view the open-source repository, <a href="https://github.com/gitroomhq/postiz-app" target="_blank" style="text-decoration: underline;">click here</a>.`
+        'oksocial 的源代码是公开的（AGPL-3.0），你可以查看全部代码。要查看源代码，<a href="https://github.com/Conn-Ho/oksocial" target="_blank" style="text-decoration: underline;">请点击这里</a>。'
       ),
     },
     {
-      title: t('faq_what_are_channels', 'What are channels?'),
+      title: t('faq_what_are_channels', '什么是频道？'),
       description: t(
         'faq_postiz_gitroom_allows_you_to_schedule_posts',
-        `${
-          isGeneral ? 'oksocial' : 'Gitroom'
-        } allows you to schedule your posts between different channels.
-A channel is a publishing platform where you can schedule your posts.
-For example, you can schedule your posts on X, Facebook, Instagram, TikTok, YouTube, Reddit, Linkedin, Dribbble, Threads and Pinterest.`
+        `oksocial 让你在多个账号之间统一发布和排期。
+频道就是你的一个社交账号，比如小红书、抖音、微博、X，也可以通过官方授权接入 Facebook、Instagram、TikTok、YouTube、LinkedIn、Threads、Pinterest 等。`
       ),
     },
     {
-      title: t('faq_what_are_team_members', 'What are team members?'),
+      title: t('faq_what_are_team_members', '什么是团队成员？'),
       description: t(
         'faq_if_you_have_a_team_with_multiple_members',
-        'If you have a team with multiple members, you can invite them to your workspace to collaborate on your posts and add their personal channels'
+        '如果你有一个包含多名成员的团队，你可以邀请他们加入你的工作区，共同协作发布内容，并添加他们的个人频道。'
       ),
     },
     ...(user?.tier?.current === 'FREE'
       ? [
           {
-            title: t(
-              'faq_how_can_i_delete_my_account',
-              'How can I delete my account?'
-            ),
+            title: t('faq_how_can_i_delete_my_account', '如何注销我的账户？'),
             description: t(
               'faq_delete_account_description',
-              `If you don't want to continue using ${
-                isGeneral ? 'oksocial' : 'Gitroom'
-              }, you can delete your account, including all your organizations, channels and posts. This action cannot be undone.`
+              '如果不想继续使用 oksocial，你可以注销账户，你的所有团队、频道和帖子都会一并删除，且无法恢复。'
             ),
             content: <DeleteAccountComponent isLink={true} />,
           },

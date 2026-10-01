@@ -54,7 +54,7 @@ export const TelegramProvider: FC<Web3ProviderInterface> = (props) => {
   };
   const copyText = useCallback(() => {
     copy(`/connect ${word.current}`);
-    toaster.show('Copied to clipboard', 'success');
+    toaster.show(t('copied_to_clipboard', '已复制到剪贴板'), 'success');
   }, []);
   useEffect(() => {
     return () => {

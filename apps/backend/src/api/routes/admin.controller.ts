@@ -21,7 +21,7 @@ export class AdminController {
 
   private assertSuperAdmin(user: User) {
     if (!user?.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
   }
 

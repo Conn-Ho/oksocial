@@ -542,7 +542,7 @@ export const ListView = () => {
         {groupedPosts.map(([dateKey, datePosts]) => (
           <Fragment key={dateKey}>
             <div className="text-center text-[14px] min-h-[21px] text-textColor font-[500] mt-[10px]">
-              {newDayjs(dateKey).format(isUSCitizen() ? 'dddd, MMMM D, YYYY' : 'dddd, D MMMM YYYY')}
+              {newDayjs(dateKey).format(isUSCitizen() ? 'dddd, MMMM D, YYYY' : 'YYYY-MM-DD dddd')}
             </div>
             <div className="flex flex-col gap-[10px] mb-[20px] px-[10px]">
               {datePosts.map((post) => (

@@ -74,6 +74,7 @@ const RenderRedditComponent: FC<{
 };
 const RedditPreview: FC = (props) => {
   const { value: topValue, integration } = useIntegration();
+  const t = useT();
   const settings = useWatch({
     name: 'subreddit',
   }) as Array<RedditSettingsValueDto>;
@@ -85,7 +86,11 @@ const RedditPreview: FC = (props) => {
     },
   });
   if (!settings || !settings.length) {
-    return <>Please add at least one Subreddit from the settings</>;
+    return (
+      <>
+        {t('please_add_at_least_one_subreddit', '请在设置中至少添加一个子版块')}
+      </>
+    );
   }
   return (
     <div className="flex flex-col gap-[40px] w-full">

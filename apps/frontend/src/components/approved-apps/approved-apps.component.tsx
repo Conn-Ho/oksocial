@@ -32,7 +32,7 @@ export const ApprovedAppsComponent: FC = () => {
         await deleteDialog(
           t(
             'are_you_sure_revoke_access',
-            `Are you sure you want to revoke access for ${app.oauthApp?.name}?`,
+            '确定要撤销 {{name}} 的访问权限吗？',
             { name: app.oauthApp?.name }
           )
         )

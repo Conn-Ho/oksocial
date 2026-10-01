@@ -24,7 +24,7 @@ export function getMaxSize(mimeType: string): number {
   } else if (mimeType.startsWith('video/')) {
     return 1024 * 1024 * 1024; // 1 GB
   } else {
-    throw new BadRequestException('Unsupported file type.');
+    throw new BadRequestException('不支持这种文件格式');
   }
 }
 
@@ -36,7 +36,7 @@ export function maxSizeStream(maxSize: number) {
     transform(chunk: Buffer, _encoding, callback) {
       total += chunk.length;
       if (total > maxSize) {
-        return callback(new BadRequestException('File is too large.'));
+        return callback(new BadRequestException('文件太大了'));
       }
       callback(null, chunk);
     },
@@ -71,18 +71,18 @@ export async function uploadStreamToStorage(
   try {
     sniffed = await fileTypeStream(webStream);
   } catch (err) {
-    throw new BadRequestException('Failed to read file', { cause: err });
+    throw new BadRequestException('读取文件失败', { cause: err });
   }
   const detected = sniffed.fileType;
   if (!detected || !UPLOAD_ALLOWED_MIME.has(detected.mime)) {
     await sniffed.cancel();
-    throw new BadRequestException('Unsupported file type.');
+    throw new BadRequestException('不支持这种文件格式');
   }
 
   const maxSize = getMaxSize(detected.mime);
   if (declaredSize > maxSize) {
     await sniffed.cancel();
-    throw new BadRequestException('File is too large.');
+    throw new BadRequestException('文件太大了');
   }
 
   // pipeline (not pipe) so failing the cap also tears down the source

@@ -10,6 +10,7 @@ import {
   type IntegrationContextType,
 } from '@gitroom/frontend/components/launches/helpers/use.integration';
 import { newDayjs } from '@gitroom/frontend/components/layout/set.timezone';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 type MockIntegration = IntegrationContextType['integration'];
 
@@ -66,7 +67,7 @@ export type ProviderPreviewProps = {
 
 const DEFAULT_INTEGRATION: MockIntegration = {
   id: 'preview',
-  name: 'Preview',
+  name: '预览账号',
   identifier: '',
   picture: '',
   display: '',
@@ -120,6 +121,7 @@ export const ProviderPreviewComponent: FC<ProviderPreviewProps> = ({
   posts,
   controlRef,
 }) => {
+  const t = useT();
   const meta = useMemo(() => {
     const entry = Providers.find((p) => p.identifier === provider);
     if (!entry) return null;
@@ -205,14 +207,18 @@ export const ProviderPreviewComponent: FC<ProviderPreviewProps> = ({
   );
 
   if (!meta) {
-    return <div>Provider &quot;{provider}&quot; not found</div>;
+    return (
+      <div>
+        {t('provider_not_found', '找不到“{{provider}}”这个平台', { provider })}
+      </div>
+    );
   }
 
   const { SettingsComponent } = meta;
   if (!SettingsComponent) {
     return (
       <div className="p-4 text-sm">
-        This provider has no configurable settings.
+        {t('provider_no_settings', '这个平台没有可配置的设置。')}
       </div>
     );
   }

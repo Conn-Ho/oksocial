@@ -19,7 +19,7 @@ export class PaymentProviderManager {
     const found = this.metadata().find((m) => m.provider === provider);
 
     if (!found) {
-      throw new HttpException(`Payment provider ${provider} not found`, 400);
+      throw new HttpException(`不支持支付渠道 ${provider}`, 400);
     }
 
     return this._moduleRef.get(found.target, { strict: false });

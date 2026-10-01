@@ -34,12 +34,13 @@ const CopyButton = ({
   label: string;
 }) => {
   const toaster = useToaster();
+  const t = useT();
   return (
     <button
       type="button"
       onClick={() => {
         copy(text);
-        toaster.show(`${label} copied to clipboard`, 'success');
+        toaster.show(t('copied_to_clipboard', '已复制到剪贴板'), 'success');
       }}
       className="cursor-pointer px-[16px] h-[36px] bg-btnSimple hover:bg-boxHover transition-colors rounded-[8px] text-[13px] font-[600] flex items-center gap-[6px]"
     >
@@ -115,7 +116,10 @@ export const DeveloperComponent: FC = () => {
 
   const createApp = useCallback(async () => {
     if (!name || !redirectUrl) {
-      toaster.show('Name and Redirect URL are required', 'warning');
+      toaster.show(
+        t('name_and_redirect_url_required', '请填写名称和重定向 URL'),
+        'warning'
+      );
       return;
     }
     try {
@@ -134,14 +138,17 @@ export const DeveloperComponent: FC = () => {
       if (result.clientSecret) {
         setPlaintextSecret(result.clientSecret);
         toaster.show(
-          'App created! Copy your client secret now - it will only be shown once.',
+          t(
+            'oauth_app_created_copy_secret',
+            '应用已创建！请立即复制 Client Secret，它只会显示这一次。'
+          ),
           'success'
         );
       }
       setCreating(false);
       mutate();
     } catch {
-      toaster.show('Failed to create app', 'warning');
+      toaster.show(t('failed_to_create_app', '应用创建失败'), 'warning');
     }
   }, [name, description, redirectUrl, pictureId]);
 
@@ -156,21 +163,23 @@ export const DeveloperComponent: FC = () => {
           pictureId,
         }),
       });
-      toaster.show('App updated', 'success');
+      toaster.show(t('app_updated', '应用已更新'), 'success');
       setEditing(false);
       mutate();
     } catch {
-      toaster.show('Failed to update app', 'warning');
+      toaster.show(t('failed_to_update_app', '应用更新失败'), 'warning');
     }
   }, [name, description, redirectUrl, pictureId]);
 
   const rotateSecret = useCallback(async () => {
     const approved = await decision.open({
-      title: 'Rotate Client Secret?',
-      description:
-        'This will generate a new client secret and invalidate the current one. Any integrations using the old secret will stop working.',
-      approveLabel: 'Rotate',
-      cancelLabel: 'Cancel',
+      title: t('rotate_client_secret_title', '重置 Client Secret？'),
+      description: t(
+        'rotate_client_secret_description',
+        '将生成新的 Client Secret，当前密钥会立即失效，所有使用旧密钥的集成都将无法使用。'
+      ),
+      approveLabel: t('rotate', '重置'),
+      cancelLabel: t('cancel', '取消'),
     });
     if (!approved) return;
     try {
@@ -180,32 +189,37 @@ export const DeveloperComponent: FC = () => {
       if (result.clientSecret) {
         setPlaintextSecret(result.clientSecret);
         toaster.show(
-          'Secret rotated! Copy your new client secret now.',
+          t(
+            'secret_rotated_copy_now',
+            '密钥已重置！请立即复制新的 Client Secret。'
+          ),
           'success'
         );
         mutate();
       }
     } catch {
-      toaster.show('Failed to rotate secret', 'warning');
+      toaster.show(t('failed_to_rotate_secret', '密钥重置失败'), 'warning');
     }
   }, [decision]);
 
   const deleteApp = useCallback(async () => {
     const approved = await decision.open({
-      title: 'Delete OAuth App?',
-      description:
-        'This will delete the OAuth application and revoke all user authorizations. This action cannot be undone.',
-      approveLabel: 'Delete',
-      cancelLabel: 'Cancel',
+      title: t('delete_oauth_app_title', '删除 OAuth 应用？'),
+      description: t(
+        'delete_oauth_app_description',
+        '将删除该 OAuth 应用，并撤销所有用户的授权。此操作无法撤销。'
+      ),
+      approveLabel: t('delete', '删除'),
+      cancelLabel: t('cancel', '取消'),
     });
     if (!approved) return;
     try {
       await fetch('/user/oauth-app', { method: 'DELETE' });
-      toaster.show('OAuth app deleted', 'success');
+      toaster.show(t('oauth_app_deleted', 'OAuth 应用已删除'), 'success');
       setPlaintextSecret(null);
       mutate();
     } catch {
-      toaster.show('Failed to delete app', 'warning');
+      toaster.show(t('failed_to_delete_app', '应用删除失败'), 'warning');
     }
   }, [decision]);
 
@@ -302,7 +316,7 @@ export const DeveloperComponent: FC = () => {
                 className="bg-newBgColorInner border border-newBorder rounded-[8px] px-[16px] h-[44px] text-textColor outline-none"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Application"
+                placeholder={t('my_application_placeholder', '我的应用')}
                 maxLength={100}
               />
             </div>
@@ -314,7 +328,7 @@ export const DeveloperComponent: FC = () => {
                 className="bg-newBgColorInner border border-newBorder rounded-[8px] p-[16px] text-textColor outline-none min-h-[80px]"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what your app does"
+                placeholder={t('describe_your_app', '简单介绍一下你的应用')}
                 maxLength={500}
               />
             </div>
@@ -326,7 +340,7 @@ export const DeveloperComponent: FC = () => {
                 {picturePath ? (
                   <img
                     src={picturePath}
-                    alt="App picture"
+                    alt={t('app_picture', '应用图标')}
                     className="w-[48px] h-[48px] rounded-full object-cover"
                   />
                 ) : (
@@ -426,7 +440,7 @@ export const DeveloperComponent: FC = () => {
                 className="bg-newBgColorInner border border-newBorder rounded-[8px] px-[16px] h-[44px] text-textColor outline-none"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Application"
+                placeholder={t('my_application_placeholder', '我的应用')}
                 maxLength={100}
               />
             </div>
@@ -438,7 +452,7 @@ export const DeveloperComponent: FC = () => {
                 className="bg-newBgColorInner border border-newBorder rounded-[8px] p-[16px] text-textColor outline-none min-h-[80px]"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what your app does"
+                placeholder={t('describe_your_app', '简单介绍一下你的应用')}
                 maxLength={500}
               />
             </div>
@@ -450,7 +464,7 @@ export const DeveloperComponent: FC = () => {
                 {picturePath ? (
                   <img
                     src={picturePath}
-                    alt="App picture"
+                    alt={t('app_picture', '应用图标')}
                     className="w-[48px] h-[48px] rounded-full object-cover"
                   />
                 ) : (
@@ -574,7 +588,10 @@ export const DeveloperComponent: FC = () => {
             </div>
           </div>
           <div className="flex gap-[8px]">
-            <CopyButton text={app.clientId} label={t('copy_id', 'Copy ID')} />
+            <CopyButton
+              text={app.clientId}
+              label={t('copy_client_id', '复制 Client ID')}
+            />
             {plaintextSecret && (
               <CopyButton
                 text={plaintextSecret}

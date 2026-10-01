@@ -50,7 +50,7 @@ export const SkoolLabelSelect: FC<{
   return (
     <Select
       name={name}
-      label="Select Label"
+      label={t('select_label', '选择标签')}
       onChange={onChangeInner}
       value={currentLabel}
     >

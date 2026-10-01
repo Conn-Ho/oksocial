@@ -207,7 +207,7 @@ export class PostsController {
     @Param('group') group: string
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Forbidden', 403);
+      throw new HttpException('没有权限', 403);
     }
     return this._postsService.getPostGroupDebugExport(org.id, group);
   }
@@ -258,7 +258,7 @@ export class PostsController {
       if (item.emptyContent) {
         fail(
           item,
-          'Your post should have at least one character or one image.'
+          '帖子至少要有一个字或一张图片'
         );
       }
     }
@@ -266,13 +266,13 @@ export class PostsController {
     if (rawBody?.type !== 'draft') {
       for (const item of validation) {
         if (!item.valid) {
-          fail(item, item.settingsError || 'Please fix your settings');
+          fail(item, item.settingsError || '发布设置有误，请检查后再试');
         }
         if (item.errors !== true) {
           fail(item, item.errors as string);
         }
         if (item.tooLong) {
-          fail(item, 'post is too long, please fix it');
+          fail(item, '帖子超出字数上限，请删减后再发');
         }
       }
     }
@@ -327,7 +327,7 @@ export class PostsController {
       const message =
         err instanceof HttpException
           ? err.message
-          : 'Something went wrong while generating your posts, please try again.';
+          : '生成帖子时出错了，请重试';
       res.write(JSON.stringify({ name: 'error', error: true, message }) + '\n');
     }
 

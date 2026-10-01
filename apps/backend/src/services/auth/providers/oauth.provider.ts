@@ -86,7 +86,7 @@ export class OauthProvider extends AuthProviderAbstract {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`User info request failed: ${error}`);
+      throw new Error(`获取第三方账号信息失败：${error}`);
     }
 
     const { email, sub: id } = await response.json();

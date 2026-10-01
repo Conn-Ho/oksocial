@@ -51,7 +51,7 @@ export const Autopost: FC = () => {
           method: 'DELETE',
         });
         mutate();
-        toaster.show(t('webhook_deleted_successfully', 'Webhook deleted successfully'), 'success');
+        toaster.show(t('autopost_deleted_successfully', '自动发布已删除'), 'success');
       }
     },
     []

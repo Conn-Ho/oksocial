@@ -10,9 +10,11 @@ import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.v
 import { WhopCompanySelect } from '@gitroom/frontend/components/new-launch/providers/whop/whop.company.select';
 import { WhopExperienceSelect } from '@gitroom/frontend/components/new-launch/providers/whop/whop.experience.select';
 import { FC, useState } from 'react';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const WhopSettings: FC = () => {
   const form = useSettings();
+  const t = useT();
   const [selectedCompany, setSelectedCompany] = useState<string | undefined>(
     form.getValues().company
   );
@@ -31,7 +33,10 @@ const WhopSettings: FC = () => {
         {...form.register('experience')}
         companyId={selectedCompany}
       />
-      <Input label="Title (optional)" {...form.register('title')} />
+      <Input
+        label={t('title_optional', '标题（可选）')}
+        {...form.register('title')}
+      />
     </div>
   );
 };

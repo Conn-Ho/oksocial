@@ -7,8 +7,8 @@ import {
 } from 'class-validator';
 
 export class UserDetailDto {
-  @IsString()
-  @MinLength(3)
+  @IsString({ message: '请输入名字' })
+  @MinLength(2, { message: '名字至少 2 个字' })
   fullname: string;
 
   @IsString()

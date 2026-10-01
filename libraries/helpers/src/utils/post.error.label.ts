@@ -4,6 +4,8 @@ const KNOWN: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
   [/^Could not confirm the post status$/, () => '已经提交给平台，但没能确认发布成功。请先到账号里看一眼，避免重复发布'],
   [/^Not logged in to (\S+)$/, (m) => `账号掉线了（${m[1]} 没有登录），请重新扫码登录后再发布`],
   [/^Already posted$/, () => '这条已经发布过了'],
+  [/^Refresh channel needed$/, () => '账号已掉线，请重新连接后再发布'],
+  [/^Channel disabled$/, () => '账号已停用，启用后再发布'],
 ];
 
 /** What the calendar shows for a failed post's stored error. */

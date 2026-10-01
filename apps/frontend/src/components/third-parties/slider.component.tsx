@@ -4,12 +4,14 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from '@gitroom/frontend/components/ui/icons';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export const SliderComponent: FC<{
   className: string;
   list: ReactNode[];
 }> = ({ className, list }) => {
   const [show, setShow] = useState(0);
+  const t = useT();
 
   const goToPrevious = useCallback(() => {
     setShow((prev) => (prev > 0 ? prev - 1 : prev));
@@ -31,7 +33,7 @@ export const SliderComponent: FC<{
         <button
           onClick={goToPrevious}
           className="absolute top-[50%] start-[10px] -translate-y-[50%] flex items-center justify-center w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors backdrop-blur-sm cursor-pointer"
-          aria-label="Previous slide"
+          aria-label={t('previous_slide', '上一张')}
         >
           <ChevronLeftIcon size={18} />
         </button>
@@ -42,7 +44,7 @@ export const SliderComponent: FC<{
         <button
           onClick={goToNext}
           className="absolute top-[50%] end-[10px] -translate-y-[50%] flex items-center justify-center w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors backdrop-blur-sm cursor-pointer"
-          aria-label="Next slide"
+          aria-label={t('next_slide', '下一张')}
         >
           <ChevronRightIcon size={18} />
         </button>
@@ -61,7 +63,9 @@ export const SliderComponent: FC<{
                   ? 'bg-white'
                   : 'bg-transparent border border-white'
               )}
-              aria-label={`Go to slide ${index + 1}`}
+              aria-label={t('go_to_slide', '查看第 {{index}} 张', {
+                index: index + 1,
+              })}
             />
           ))}
         </div>

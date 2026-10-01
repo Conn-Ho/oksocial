@@ -34,10 +34,13 @@ export const LifetimeDeal = () => {
     ).json();
     if (success) {
       mutate('/user/self');
-      toast.show('Successfully claimed the code');
+      toast.show(t('code_claimed_successfully', '兑换码领取成功'));
       fireEvents('lifetime_claimed');
     } else {
-      toast.show('Code already claimed or invalid code', 'warning');
+      toast.show(
+        t('code_claimed_or_invalid', '兑换码已被使用或无效'),
+        'warning'
+      );
     }
     setCode('');
   }, [code]);
@@ -55,22 +58,20 @@ export const LifetimeDeal = () => {
     const channelsOr = currentPricing.channel;
     const list = [];
     list.push(
-      `${user.totalChannels} ${
-        user.totalChannels === 1 ? 'channel' : 'channels'
-      }`
+      t('channels_count', '{{total}} 个频道', { total: user.totalChannels })
     );
     list.push(
-      `${
-        currentPricing.posts_per_month > 10000
-          ? 'Unlimited'
-          : currentPricing.posts_per_month
-      } posts per month`
+      currentPricing.posts_per_month > 10000
+        ? t('unlimited_posts_per_month', '每月帖子数不限')
+        : t('posts_per_month_count', '每月 {{total}} 篇帖子', {
+            total: currentPricing.posts_per_month,
+          })
     );
     if (currentPricing.team_members) {
-      list.push(`Unlimited team members`);
+      list.push(t('billing_unlimited_team_members', '无限团队成员'));
     }
     if (currentPricing?.ai) {
-      list.push(`AI auto-complete`);
+      list.push(t('billing_ai_auto_complete', 'AI自动补全'));
     }
     return list;
   }, [user]);
@@ -81,19 +82,19 @@ export const LifetimeDeal = () => {
     const currentPricing = pricing[nextPackage];
     const channelsOr = currentPricing.channel;
     const list = [];
-    list.push(`${channelsOr} ${channelsOr === 1 ? 'channel' : 'channels'}`);
+    list.push(t('channels_count', '{{total}} 个频道', { total: channelsOr }));
     list.push(
-      `${
-        currentPricing.posts_per_month > 10000
-          ? 'Unlimited'
-          : currentPricing.posts_per_month
-      } posts per month`
+      currentPricing.posts_per_month > 10000
+        ? t('unlimited_posts_per_month', '每月帖子数不限')
+        : t('posts_per_month_count', '每月 {{total}} 篇帖子', {
+            total: currentPricing.posts_per_month,
+          })
     );
     if (currentPricing.team_members) {
-      list.push(`Unlimited team members`);
+      list.push(t('billing_unlimited_team_members', '无限团队成员'));
     }
     if (currentPricing?.ai) {
-      list.push(`AI auto-complete`);
+      list.push(t('billing_ai_auto_complete', 'AI自动补全'));
     }
     return list;
   }, [user, nextPackage]);
@@ -149,7 +150,11 @@ export const LifetimeDeal = () => {
 
         <div className="flex flex-col gap-[10px] justify-center text-[16px] text-customColor18">
           {(user?.tier?.current === 'PRO'
-            ? [`${(user?.totalChannels || 0) + 5} channels`]
+            ? [
+                t('channels_count', '{{total}} 个频道', {
+                  total: (user?.totalChannels || 0) + 5,
+                }),
+              ]
             : nextFeature
           ).map((feature) => (
             <div key={feature} className="flex gap-[20px]">
@@ -174,9 +179,8 @@ export const LifetimeDeal = () => {
           <div className="mt-[20px] flex items-center gap-[10px]">
             <div className="flex-1">
               <Input
-                label="Code"
-                translationKey="label_code"
-                placeholder="Enter your code"
+                label={t('redeem_code', '兑换码')}
+                placeholder={t('enter_your_code', '请输入兑换码')}
                 disableForm={true}
                 name="code"
                 value={code}

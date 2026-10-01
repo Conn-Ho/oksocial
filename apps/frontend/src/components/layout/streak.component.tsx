@@ -2,9 +2,11 @@
 
 import { FC, useMemo } from 'react';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export const StreakComponent: FC = () => {
   const user = useUser();
+  const t = useT();
 
   const streakDays = useMemo(() => {
     if (!user?.streakSince) return 0;
@@ -21,10 +23,15 @@ export const StreakComponent: FC = () => {
 
   const tooltipContent = useMemo(() => {
     if (streakDays === 1) {
-      return 'You started your streak today! Keep posting daily to maintain it.';
+      return t(
+        'streak_started_today',
+        '今天开始连续发帖了！每天坚持发帖就能保持下去。'
+      );
     }
-    return `You're on a ${streakDays} day posting streak! Keep it going!`;
-  }, [streakDays]);
+    return t('streak_days', '已连续发帖 {{days}} 天，继续保持！', {
+      days: streakDays,
+    });
+  }, [streakDays, t]);
 
   if (!user?.streakSince || streakDays <= 0) {
     return null;

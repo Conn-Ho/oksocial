@@ -22,7 +22,7 @@ export const DeveloperIconComponent: FC = () => {
         });
       }}
     >
-      Developers
+      {t('developers', '开发者')}
     </div>
   );
 };

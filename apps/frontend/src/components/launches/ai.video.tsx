@@ -26,6 +26,7 @@ export const Modal: FC<{
   const form = useForm();
   const [position, setPosition] = useState('vertical');
   const toaster = useToaster();
+  const t = useT();
 
   const loadCredits = useCallback(async () => {
     return (
@@ -45,7 +46,10 @@ export const Modal: FC<{
 
     const customParams = form.getValues();
     if (!(await form.trigger())) {
-      toaster.show('Please fill all required fields', 'warning');
+      toaster.show(
+        t('please_fill_all_required_fields', '请填写所有必填项'),
+        'warning'
+      );
       return;
     }
     try {
@@ -61,11 +65,14 @@ export const Modal: FC<{
       if (image.status == 200 || image.status == 201) {
         onChange(await image.json());
       } else {
-        toaster.show('Video generation failed', 'warning');
+        toaster.show(t('video_generation_failed', '视频生成失败'), 'warning');
       }
     } catch (e) {
       toaster.show(
-        'Video generation failed or timed out — if it completes, it will appear in your media library',
+        t(
+          'video_generation_failed_or_timeout',
+          '视频生成失败或超时；如果之后生成完成，会出现在你的媒体库中'
+        ),
         'warning'
       );
     }
@@ -82,7 +89,11 @@ export const Modal: FC<{
         className="flex flex-col gap-[10px]"
       >
         {createPortal(
-          <>{data?.credits || 0} credits left</>,
+          <>
+            {t('credits_left', '剩余额度：{{total}}', {
+              total: data?.credits || 0,
+            })}
+          </>,
           document.querySelector('.top-title-content') ||
             document.createElement('div')
         )}
@@ -97,7 +108,7 @@ export const Modal: FC<{
                       onClick={() => setPosition('vertical')}
                       secondary={position === 'horizontal'}
                     >
-                      Vertical (Stories, Reels)
+                      {t('video_vertical', '竖屏（Stories、Reels）')}
                     </Button>
                   </div>
                   <div className="flex-1 flex mt-[10px]">
@@ -106,7 +117,7 @@ export const Modal: FC<{
                       onClick={() => setPosition('horizontal')}
                       secondary={position === 'vertical'}
                     >
-                      Horizontal (Normal Post)
+                      {t('video_horizontal', '横屏（普通帖子）')}
                     </Button>
                   </div>
                 </div>
@@ -115,7 +126,7 @@ export const Modal: FC<{
             </div>
             <div className="flex">
               <Button type="submit" className="flex-1">
-                Generate
+                {t('generate', '生成')}
               </Button>
             </div>
           </div>
@@ -249,7 +260,7 @@ export const AiVideo: FC<{
             </svg>
           </div>
           <div className="text-[10px] font-[600] iconBreak:hidden block">
-            {t('ai', 'AI')} Video
+            {t('ai_video', 'AI 视频')}
           </div>
         </div>
       </div>

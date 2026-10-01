@@ -15,23 +15,23 @@ import { MediaComponent } from '@gitroom/frontend/components/media/media.compone
 
 const whoCanReply = [
   {
-    label: 'Everyone',
+    label: '所有人',
     value: 'everyone',
   },
   {
-    label: 'Accounts you follow',
+    label: '你关注的账号',
     value: 'following',
   },
   {
-    label: 'Mentioned accounts',
+    label: '你提及的账号',
     value: 'mentionedUsers',
   },
   {
-    label: 'Subscribers',
+    label: '订阅者',
     value: 'subscribers',
   },
   {
-    label: 'Verified accounts',
+    label: '已认证的账号',
     value: 'verified',
   },
 ];
@@ -109,9 +109,10 @@ const SettingsComponent = () => {
           </Select>
 
           <Input
-            label={
-              'Post to a community, URL (Ex: https://x.com/i/communities/1493446837214187523)'
-            }
+            label={t(
+              'x_post_to_community',
+              '发布到社群，填写社群 URL（例如：https://x.com/i/communities/1493446837214187523）'
+            )}
             {...register('community')}
           />
 

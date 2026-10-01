@@ -21,7 +21,7 @@ export class TumblrDto {
   @IsString()
   @ValidateIf((o) => o.link)
   @Matches(optionalUrlRegex, {
-    message: 'Invalid URL',
+    message: '链接格式不正确',
   })
   link?: string;
 
@@ -29,7 +29,7 @@ export class TumblrDto {
   @IsString()
   @ValidateIf((o) => o.sourceUrl)
   @Matches(optionalUrlRegex, {
-    message: 'Invalid URL',
+    message: '链接格式不正确',
   })
   sourceUrl?: string;
 

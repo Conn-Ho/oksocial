@@ -64,12 +64,17 @@ export const ImportDebugPostModal: FC<{ close: () => void }> = ({ close }) => {
     try {
       const data = JSON.parse(value);
       if (!data.posts || !data._debug?.providerIdentifier) {
-        setParseError('Invalid debug JSON format. Missing posts or _debug data.');
+        setParseError(
+          t(
+            'invalid_debug_json_format',
+            '调试 JSON 格式不正确：缺少 posts 或 _debug 数据。'
+          )
+        );
         return;
       }
       setParsed(data);
     } catch {
-      setParseError('Invalid JSON');
+      setParseError(t('invalid_json', 'JSON 格式不正确'));
     }
   }, []);
 
@@ -205,7 +210,8 @@ export const ImportDebugPostModal: FC<{ close: () => void }> = ({ close }) => {
               <div className="text-[13px] text-red-400">
                 {t(
                   'no_matching_integrations',
-                  `No ${parsed._debug.providerIdentifier} integrations found. Add one first.`
+                  '没有找到 {{name}} 账号，请先添加一个。',
+                  { name: parsed._debug.providerIdentifier }
                 )}
               </div>
             ) : (

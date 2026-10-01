@@ -96,7 +96,7 @@ export class AppleProvider extends AuthProviderAbstract {
 
     const { id_token } = await response.json();
     if (!id_token) {
-      throw new Error('Invalid provider token');
+      throw new Error('第三方登录授权无效，请重新登录');
     }
 
     return id_token;
@@ -113,7 +113,7 @@ export class AppleProvider extends AuthProviderAbstract {
       (k: { kid: string }) => k.kid === decoded?.header?.kid
     );
     if (!key) {
-      throw new Error('Invalid provider token');
+      throw new Error('第三方登录授权无效，请重新登录');
     }
 
     // native tokens carry the app bundle id as audience instead of the

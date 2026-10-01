@@ -24,19 +24,19 @@ export const GmbContinue = withContinueProvider<GmbItem, GmbSelection>({
   endpoint: 'pages',
   swrKey: 'load-gmb-locations',
   titleKey: 'select_location',
-  titleDefault: 'Select Business Location:',
+  titleDefault: '选择商家地点：',
   emptyStateMessages: [
     {
       key: 'gmb_no_locations_found',
-      text: "We couldn't find any business locations connected to your account.",
+      text: '没有找到与你的账号关联的商家地点。',
     },
     {
       key: 'gmb_ensure_business_verified',
-      text: 'Please ensure your business is verified on Google My Business.',
+      text: '请确认你的商家已在 Google 商家资料中完成验证。',
     },
     {
       key: 'gmb_try_again',
-      text: 'Please close this dialog, delete the integration and try again.',
+      text: '请关闭此对话框，删除该频道后重试。',
     },
   ],
   getItemId: (item) => item.id,

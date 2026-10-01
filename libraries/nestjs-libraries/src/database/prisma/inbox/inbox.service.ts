@@ -51,7 +51,7 @@ export class InboxService {
   async sync(orgId: string, integrationId: string) {
     const integration = await this._integrationService.getIntegrationById(orgId, integrationId);
     if (!integration) {
-      throw new HttpException('Channel not found', 404);
+      throw new HttpException('账号不存在', 404);
     }
     const provider = this._integrationManager.getSocialIntegration(integration.providerIdentifier);
     if (!provider?.inbox) {
@@ -162,7 +162,7 @@ export class InboxService {
   async getItem(orgId: string, id: string) {
     const item = await this._repository.getItem(orgId, id);
     if (!item) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('这条消息不存在', 404);
     }
     return item;
   }
@@ -211,7 +211,7 @@ export class InboxService {
 
   async suggestReply(orgId: string, id: string) {
     if (!this._ai.enabled) {
-      throw new HttpException('AI is not configured', 503);
+      throw new HttpException('还没有配置 AI 服务', 503);
     }
     const item = await this.getItem(orgId, id);
     const templates = await this._repository.listTemplates(
@@ -235,7 +235,7 @@ export class InboxService {
 
   async translate(orgId: string, id: string, target: 'zh' | 'en') {
     if (!this._ai.enabled) {
-      throw new HttpException('AI is not configured', 503);
+      throw new HttpException('还没有配置 AI 服务', 503);
     }
     const item = await this.getItem(orgId, id);
     const translated = await this._credits.withCredits(orgId, 'ai_translate', item.id, () =>

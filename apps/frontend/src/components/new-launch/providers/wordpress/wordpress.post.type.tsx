@@ -42,7 +42,7 @@ export const WordpressPostType: FC<{
   return (
     <Select
       name={name}
-      label="Select type"
+      label={t('select_type', '选择类型')}
       onChange={onChangeInner}
       value={currentMedia}
     >

@@ -29,7 +29,7 @@ export const ShowNotification: FC<{
   );
   const createdAt = dayjs(notification.createdAt);
   const isWithin24h = dayjs().diff(createdAt, 'hour') < 24;
-  const fullDate = createdAt.format('MMM D, YYYY h:mm A');
+  const fullDate = createdAt.format('YYYY-MM-DD HH:mm');
   return (
     <div
       className={clsx(

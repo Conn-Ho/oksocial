@@ -112,7 +112,9 @@ const MentionList: FC = (props: any) => {
           ))
         )
       ) : (
-        <div className="p-2 text-gray-500 text-center">Loading...</div>
+        <div className="p-2 text-gray-500 text-center">
+          {t('loading_ellipsis', '加载中…')}
+        </div>
       )}
     </div>
   );

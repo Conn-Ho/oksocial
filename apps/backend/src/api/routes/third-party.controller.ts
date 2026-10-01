@@ -72,7 +72,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdParty) {
-      throw new HttpException('Integration not found', 404);
+      throw new HttpException('第三方服务不存在', 404);
     }
 
     const thirdPartyInstance = this._thirdPartyManager.getThirdPartyByName(
@@ -80,7 +80,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdPartyInstance) {
-      throw new HttpException('Invalid identifier', 400);
+      throw new HttpException('不支持这个第三方服务', 400);
     }
 
     const loadedData = await thirdPartyInstance?.instance?.sendData(
@@ -105,7 +105,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdParty) {
-      throw new HttpException('Integration not found', 404);
+      throw new HttpException('第三方服务不存在', 404);
     }
 
     const thirdPartyInstance = this._thirdPartyManager.getThirdPartyByName(
@@ -113,7 +113,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdPartyInstance) {
-      throw new HttpException('Invalid identifier', 400);
+      throw new HttpException('不支持这个第三方服务', 400);
     }
 
     return thirdPartyInstance?.instance?.[functionName](
@@ -134,7 +134,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdParty) {
-      throw new HttpException('Integration not found', 404);
+      throw new HttpException('第三方服务不存在', 404);
     }
 
     const thirdPartyInstance = this._thirdPartyManager.getThirdPartyByName(
@@ -142,7 +142,7 @@ export class ThirdPartyController {
     );
 
     if (!thirdPartyInstance) {
-      throw new HttpException('Invalid identifier', 400);
+      throw new HttpException('不支持这个第三方服务', 400);
     }
 
     const downloadUrls = await thirdPartyInstance?.instance?.['importMedia']?.(
@@ -151,7 +151,7 @@ export class ThirdPartyController {
     );
 
     if (!downloadUrls || !Array.isArray(downloadUrls)) {
-      throw new HttpException('Import not supported', 400);
+      throw new HttpException('这个服务不支持导入', 400);
     }
 
     const results = [];
@@ -176,12 +176,12 @@ export class ThirdPartyController {
   ) {
     const thirdParty = this._thirdPartyManager.getThirdPartyByName(identifier);
     if (!thirdParty) {
-      throw new HttpException('Invalid identifier', 400);
+      throw new HttpException('不支持这个第三方服务', 400);
     }
 
     const connect = await thirdParty.instance.checkConnection(api);
     if (!connect) {
-      throw new HttpException('Invalid API key', 400);
+      throw new HttpException('API Key 无效', 400);
     }
 
     try {
@@ -201,7 +201,7 @@ export class ThirdPartyController {
       };
     } catch (e) {
       console.log(e);
-      throw new HttpException('Integration Already Exists', 400);
+      throw new HttpException('这个服务已经连接过了', 400);
     }
   }
 }

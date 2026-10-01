@@ -5,6 +5,7 @@ import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validatio
 import { textSlicer } from '@gitroom/helpers/utils/count.length';
 import { FC } from 'react';
 import { VideoOrImage } from '@gitroom/react/helpers/video.or.image';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const Icons = () => {
   return (
@@ -250,6 +251,7 @@ export const LinkedinPreview: FC<{
   const { value: topValue, integration } = useIntegration();
   const current = useLaunchStore((state) => state.current);
   const mediaDir = useMediaDirectory();
+  const t = useT();
 
   const renderContent = topValue.map((p) => {
     const newContent = stripHtmlValidation(
@@ -275,7 +277,10 @@ export const LinkedinPreview: FC<{
         .replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
           return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
         }) +
-      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="This text will be cropped">` +
+      `<mark class="bg-red-500" data-tooltip-id="tooltip" data-tooltip-content="${t(
+        'text_will_be_cropped',
+        '超出字数限制，这部分将被截断'
+      )}">` +
       newContent.slice(end).replace(/\[\[\[([.\s\S]*?)]]]/, (match, match1) => {
         return `<span class="font-bold font-[arial]" style="color: #ae8afc">${match1}</span>`;
       }) +
@@ -289,17 +294,17 @@ export const LinkedinPreview: FC<{
         <div className="w-[48px] h-[48px]">
           <img
             src={integration?.picture || '/no-picture.jpg'}
-            alt="social"
+            alt="头像"
             className="rounded-full relative z-[2] w-[48px] h-[48px]"
           />
         </div>
         <div className="flex flex-col leading-[16px]">
           <div className="text-[14px] font-[500]">{integration?.name}</div>
           <div className="text-[12px] font-[400] text-[#A3A3A3]">
-            2,871 followers
+            {t('preview_2871_followers', '2,871 位关注者')}
           </div>
           <div className="text-[12px] font-[400] text-[#A3A3A3] flex gap-[4px] items-center">
-            <span>30m •</span>
+            <span>{t('preview_30m_ago', '30 分钟')} •</span>
             <span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -343,11 +348,11 @@ export const LinkedinPreview: FC<{
           <div className="">88</div>
         </div>
         <div className="gap-[9px] items-center flex">
-          <div>4 Comments</div>
+          <div>{t('preview_4_comments', '4 条评论')}</div>
           <div>
             <div className="w-[3px] h-[3px] bg-[#565C65] rounded-full" />
           </div>
-          <div>8 Reposts</div>
+          <div>{t('preview_8_reposts', '8 次转发')}</div>
         </div>
       </div>
       <div className="pt-[8px] flex text-[14px] font-[700] px-[32px] justify-between border-t border-borderLinkedin text-textLinkedin">
@@ -364,7 +369,7 @@ export const LinkedinPreview: FC<{
               fill="currentColor"
             />
           </svg>
-          <div>Like</div>
+          <div>{t('preview_like', '赞')}</div>
         </div>
         <div className="flex gap-[4px] items-center">
           <svg
@@ -380,7 +385,7 @@ export const LinkedinPreview: FC<{
               strokeWidth="2"
             />
           </svg>
-          <div>Comments</div>
+          <div>{t('comments', '评论')}</div>
         </div>
         <div className="flex gap-[4px] items-center">
           <svg
@@ -406,7 +411,7 @@ export const LinkedinPreview: FC<{
               </clipPath>
             </defs>
           </svg>
-          <div>Repost</div>
+          <div>{t('preview_repost', '转发')}</div>
         </div>
         <div className="flex gap-[4px] items-center">
           <svg
@@ -421,7 +426,7 @@ export const LinkedinPreview: FC<{
               fill="currentColor"
             />
           </svg>
-          <div>Send</div>
+          <div>{t('preview_send', '发送')}</div>
         </div>
       </div>
       {renderContent.length > 1 && (
@@ -432,7 +437,7 @@ export const LinkedinPreview: FC<{
                 <div className="h-[34px]">
                   <img
                     src={integration?.picture || '/no-picture.jpg'}
-                    alt="social"
+                    alt="头像"
                     className="rounded-full relative z-[2] h-[34px] w-[34px]"
                   />
                 </div>
@@ -445,10 +450,12 @@ export const LinkedinPreview: FC<{
                       <div>
                         <LinkedinIconSmall />
                       </div>
-                      <div className="text-[12px] font-[400]">• 1st</div>
+                      <div className="text-[12px] font-[400]">
+                        • {t('preview_1st_degree', '一度人脉')}
+                      </div>
                     </div>
                     <div className="text-[12px] font-[400] text-textLinkedin">
-                      Founder
+                      {t('preview_founder', '创始人')}
                     </div>
                   </div>
                   <div
@@ -458,7 +465,7 @@ export const LinkedinPreview: FC<{
                     }}
                   />
                   <div className="flex gap-[6px] font-[400] text-[12px] text-textLinkedin items-center">
-                    <div className="font-[700]">Like</div>
+                    <div className="font-[700]">{t('preview_like', '赞')}</div>
                     <div>•</div>
                     <div>
                       <svg
@@ -498,9 +505,9 @@ export const LinkedinPreview: FC<{
                     </div>
                     <div>19</div>
                     <div>|</div>
-                    <div className="font-[700]">Reply</div>
+                    <div className="font-[700]">{t('reply', '回复')}</div>
                     <div>•</div>
-                    <div>1 reply</div>
+                    <div>{t('preview_1_reply', '1 条回复')}</div>
                   </div>
                 </div>
               </div>

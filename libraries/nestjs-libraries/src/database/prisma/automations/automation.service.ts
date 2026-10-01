@@ -92,7 +92,7 @@ export class AutomationService {
   async update(orgId: string, id: string, input: Partial<AutomationInput>) {
     const current = await this._repository.get(orgId, id);
     if (!current) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('自动化不存在', 404);
     }
     const config = input.config !== undefined ? this.validate(current.type as AutomationType, input.config) : undefined;
     await this._repository.update(orgId, id, {
@@ -139,7 +139,7 @@ export class AutomationService {
   async runNow(orgId: string, id: string) {
     const automation = await this._repository.get(orgId, id);
     if (!automation) {
-      throw new HttpException('Not found', 404);
+      throw new HttpException('自动化不存在', 404);
     }
     if (this._running.has(automation.id)) {
       return { started: false, running: true };

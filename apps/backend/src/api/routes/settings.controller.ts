@@ -62,7 +62,7 @@ export class SettingsController {
     @Body() body: AdminAddTeamMemberDto
   ) {
     if (!user.isSuperAdmin) {
-      throw new HttpException('Unauthorized', 400);
+      throw new HttpException('没有权限', 400);
     }
 
     return this._organizationService.addTeamMemberByEmail(org, body);

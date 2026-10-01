@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic';
 import { AdminErrorsComponent } from '@gitroom/frontend/components/admin/admin-errors.component';
 import { Metadata } from 'next';
-import { isGeneralServerSide } from '@gitroom/helpers/utils/is.general.server.side';
 
 export const metadata: Metadata = {
-  title: `${isGeneralServerSide() ? 'oksocial' : 'Gitroom'} Admin Errors`,
+  title: 'oksocial 错误日志',
   description: '',
 };
 

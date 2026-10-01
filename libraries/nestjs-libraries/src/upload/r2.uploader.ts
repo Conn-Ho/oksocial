@@ -96,7 +96,7 @@ export async function simpleUpload(
 ) {
   const detected = await fileTypeFromBuffer(data);
   if (!detected || !Object.values(ALLOWED_EXT_TO_MIME).includes(detected.mime)) {
-    throw new Error('Unsupported file type.');
+    throw new Error('不支持这种文件格式');
   }
   const fileExtension = `.${detected.ext}`;
   const safeContentType = detected.mime;
@@ -119,7 +119,7 @@ export async function createMultipartUpload(req: Request, res: Response) {
   const { file, fileHash } = req.body;
   const safeExt = normalizeExtension(file?.name || '');
   if (!safeExt) {
-    return res.status(400).json({ message: 'Unsupported file type.' });
+    return res.status(400).json({ message: '不支持这种文件格式' });
   }
   const safeContentType = multipartExtToMime()[safeExt];
   const randomFilename = generateRandomString() + safeExt;
@@ -213,7 +213,7 @@ export async function completeMultipartUpload(req: Request, res: Response) {
       await R2.send(
         new DeleteObjectCommand({ Bucket: CLOUDFLARE_BUCKETNAME, Key: key })
       );
-      return res.status(400).json({ message: 'Unsupported file type.' });
+      return res.status(400).json({ message: '不支持这种文件格式' });
     }
     const expectedMime = multipartExtToMime()[safeExt];
 
@@ -247,7 +247,7 @@ export async function completeMultipartUpload(req: Request, res: Response) {
       );
       return res
         .status(400)
-        .json({ message: 'File contents do not match declared type.' });
+        .json({ message: '文件内容和声明的格式不一致' });
     }
 
     response.Location =

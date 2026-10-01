@@ -150,10 +150,11 @@ export function RegisterAfter({
       })
       .catch((e) => {
         form.setError('email', {
-          message:
-            'General error: ' +
-            e.toString() +
-            '. Please check your browser console.',
+          message: t(
+            'register_general_error',
+            '注册出错：{{error}}。请查看浏览器控制台了解详情。',
+            { error: e.toString() }
+          ),
         });
       });
   };

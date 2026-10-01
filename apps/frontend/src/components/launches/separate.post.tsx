@@ -16,8 +16,11 @@ export const SeparatePost: FC<{
   const notReversible = useCallback(async () => {
     if (
       await deleteDialog(
-        'Are you sure you want to separate all posts? This action is not reversible.',
-        'Yes'
+        t(
+          'confirm_separate_posts',
+          '确定要把内容拆分成多条帖子吗？此操作不可撤销。'
+        ),
+        t('yes_separate', '确认拆分')
       )
     ) {
       props.changeLoading(true);

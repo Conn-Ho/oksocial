@@ -165,7 +165,7 @@ export class NoAuthIntegrationsController {
         }
 
         return res({
-          error: 'Authentication failed',
+          error: '授权失败，请重试',
           accessToken: '',
           id: '',
           name: '',
@@ -181,7 +181,7 @@ export class NoAuthIntegrationsController {
     }
 
     if (!id) {
-      throw new NotEnoughScopes('Invalid API key');
+      throw new NotEnoughScopes('API Key 无效');
     }
 
     let validName = name;

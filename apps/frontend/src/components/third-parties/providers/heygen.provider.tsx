@@ -15,15 +15,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { object, string } from 'zod';
 import { Select } from '@gitroom/react/form/select';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 const aspectRatio = [
-  { key: 'portrait', value: 'Portrait' },
-  { key: 'story', value: 'Story' },
+  { key: 'portrait', value: '竖版' },
+  { key: 'story', value: '快拍（Story）' },
 ];
 
 const generateCaptions = [
-  { key: 'yes', value: 'Yes' },
-  { key: 'no', value: 'No' },
+  { key: 'yes', value: '是' },
+  { key: 'no', value: '否' },
 ];
 
 const SelectAvatarComponent: FC<{
@@ -103,6 +104,7 @@ const HeygenProviderComponent = () => {
   const send = useThirdPartySubmit();
   const [hideVoiceGenerator, setHideVoiceGenerator] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
+  const t = useT();
 
   const form = useForm({
     values: {
@@ -116,18 +118,29 @@ const HeygenProviderComponent = () => {
     mode: 'all',
     resolver: zodResolver(
       object({
-        voice: string().min(20, 'Voice must be at least 20 characters long'),
-        avatar: string().min(1, 'Avatar is required'),
-        selectedVoice: string().min(1, 'Voice is required'),
-        aspect_ratio: string().min(1, 'Aspect ratio is required'),
-        captions: string().min(1, 'Captions is required'),
+        voice: string().min(
+          20,
+          t('heygen_voice_min_length', '配音文案至少需要 20 个字符')
+        ),
+        avatar: string().min(1, t('heygen_avatar_required', '请选择数字人形象')),
+        selectedVoice: string().min(1, t('heygen_voice_required', '请选择声音')),
+        aspect_ratio: string().min(
+          1,
+          t('heygen_aspect_ratio_required', '请选择画面比例')
+        ),
+        captions: string().min(
+          1,
+          t('heygen_captions_required', '请选择是否生成字幕')
+        ),
       })
     ),
   });
 
   const generateVoice = useCallback(async () => {
     if (
-      !(await deleteDialog('Are you sure? it will delete the current text'))
+      !(await deleteDialog(
+        t('confirm_replace_voice_text', '确定吗？当前文本将被替换。')
+      ))
     ) {
       return;
     }
@@ -159,11 +172,11 @@ const HeygenProviderComponent = () => {
     <div>
       {form.formState.isSubmitting && (
         <div className="fixed left-0 top-0 w-full leading-[50px] pt-[200px] h-screen bg-black/90 z-50 flex flex-col justify-center items-center text-center text-3xl">
-          Grab a coffee and relax, this may take a while...
+          {t('heygen_take_a_while', '喝杯咖啡休息一下，这可能需要一些时间…')}
           <br />
-          You can also track the progress directly in HeyGen Dashboard.
+          {t('heygen_track_progress', '你也可以直接在 HeyGen 控制台查看进度。')}
           <br />
-          DO NOT CLOSE THIS WINDOW!
+          {t('do_not_close_window', '请勿关闭此窗口！')}
           <br />
           <LoadingComponent width={200} height={200} />
         </div>
@@ -174,8 +187,11 @@ const HeygenProviderComponent = () => {
           onSubmit={form.handleSubmit(submit)}
           className="w-full flex flex-col"
         >
-          <Select label="Aspect Ratio" {...form.register('aspect_ratio')}>
-            <option value="">--SELECT--</option>
+          <Select
+            label={t('aspect_ratio', '画面比例')}
+            {...form.register('aspect_ratio')}
+          >
+            <option value="">{t('select_1', '--请选择--')}</option>
             {aspectRatio.map((p) => (
               <option key={p.key} value={p.key}>
                 {p.value}
@@ -183,8 +199,11 @@ const HeygenProviderComponent = () => {
             ))}
           </Select>
 
-          <Select label="Generate Captions" {...form.register('captions')}>
-            <option value="">--SELECT--</option>
+          <Select
+            label={t('generate_captions', '生成字幕')}
+            {...form.register('captions')}
+          >
+            <option value="">{t('select_1', '--请选择--')}</option>
             {generateCaptions.map((p) => (
               <option key={p.key} value={p.key}>
                 {p.value}
@@ -192,16 +211,20 @@ const HeygenProviderComponent = () => {
             ))}
           </Select>
 
-          <div className="text-lg mb-3">Voice to generate</div>
+          <div className="text-lg mb-3">
+            {t('voice_to_generate', '配音文案')}
+          </div>
           {!hideVoiceGenerator && (
             <Button onClick={generateVoice} loading={voiceLoading}>
-              Generate Voice From My Post Text
+              {t('generate_voice_from_post', '根据帖子内容生成配音文案')}
             </Button>
           )}
           <Textarea label="" {...form.register('voice')} />
           {!!data?.length && (
             <>
-              <div className="text-lg my-3">Select Avatar</div>
+              <div className="text-lg my-3">
+                {t('select_avatar', '选择数字人形象')}
+              </div>
               <SelectAvatarComponent
                 avatarList={data.map((p: any) => ({
                   avatar_id: p.avatar_id || p.id,
@@ -226,7 +249,9 @@ const HeygenProviderComponent = () => {
 
           {!!voices?.length && (
             <>
-              <div className="text-lg my-3">Select Voice</div>
+              <div className="text-lg my-3">
+                {t('select_voice', '选择声音')}
+              </div>
               <SelectVoiceComponent
                 voiceList={voices}
                 onChange={(id: string) => form.setValue('selectedVoice', id)}
@@ -237,7 +262,7 @@ const HeygenProviderComponent = () => {
             </>
           )}
 
-          <Button type="submit">Generate Video</Button>
+          <Button type="submit">{t('generate_video', '生成视频')}</Button>
         </form>
       </FormProvider>
     </div>

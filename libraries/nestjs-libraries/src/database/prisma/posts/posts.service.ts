@@ -257,7 +257,7 @@ export class PostsService {
     replaceDraft: boolean = false
   ): Promise<CreatePostDto> {
     if (!body?.posts?.every((p) => p?.integration?.id)) {
-      throw new BadRequestException('All posts must have an integration id');
+      throw new BadRequestException('每条帖子都要选择发布账号');
     }
 
     const mappedValues = {
@@ -272,7 +272,7 @@ export class PostsService {
 
           if (!integration) {
             throw new BadRequestException(
-              `Integration with id ${post.integration.id} not found`
+              `账号 ${post.integration.id} 不存在`
             );
           }
 
@@ -511,7 +511,7 @@ export class PostsService {
     const loadAll = await this._postRepository.getPostsByGroup(orgId, group);
     const posts = this.arrangePostsByGroup(loadAll, undefined);
     if (!posts.length) {
-      throw new NotFoundException('Post not found');
+      throw new NotFoundException('帖子不存在');
     }
 
     return {
@@ -807,7 +807,7 @@ export class PostsService {
 
         if (!integration) {
           throw new BadRequestException(
-            `Integration with id ${post?.integration?.id} not found`
+            `账号 ${post?.integration?.id} 不存在`
           );
         }
 
@@ -917,16 +917,16 @@ export class PostsService {
     }
 
     const howToUpdate =
-      source === 'createPost' ? `use type 'update'` : `use action 'update'`;
+      source === 'createPost' ? `用 type 'update'` : `用 action 'update'`;
 
     throw new BadRequestException(
-      `This post was already published on ${dayjs
+      `这条帖子已于 ${dayjs
         .utc(post.publishDate)
         .format(
           'YYYY-MM-DD HH:mm'
-        )} UTC. Saving it this way would publish it again to ${
-        post.integration?.providerIdentifier || 'the channel'
-      }. To edit without republishing, ${howToUpdate}. To intentionally publish again, pass republish: true.`
+        )}（UTC）发布。这样保存会再发一次到 ${
+        post.integration?.providerIdentifier || '这个账号'
+      }。只想修改、不重新发布，请${howToUpdate}；确实要再发一次，请传 republish: true。`
     );
   }
 
@@ -1036,18 +1036,18 @@ export class PostsService {
 
     const [root] = ordered;
     if (!root) {
-      throw new NotFoundException('Post not found');
+      throw new NotFoundException('帖子不存在');
     }
 
     if (root.parentPostId) {
       throw new BadRequestException(
-        'This id belongs to a comment, pass the id of the main post'
+        '这个 ID 是一条评论，请传主帖的 ID'
       );
     }
 
     if (root.state !== 'QUEUE' && root.state !== 'DRAFT') {
       throw new BadRequestException(
-        'Only scheduled posts that were not published yet (or drafts) can be updated'
+        '只能修改还没发布的定时帖子或草稿'
       );
     }
 
@@ -1056,7 +1056,7 @@ export class PostsService {
       dayjs.utc(root.publishDate).isBefore(dayjs.utc())
     ) {
       throw new BadRequestException(
-        'The publish time of this post already passed, it cannot be updated'
+        '这条帖子的发布时间已经过了，不能再修改'
       );
     }
 
@@ -1102,28 +1102,28 @@ export class PostsService {
 
     if (validation.emptyContent) {
       throw new BadRequestException(
-        `${validation.name}: Your post should have at least one character or one image.`
+        `${validation.name}：帖子至少要有一个字或一张图片`
       );
     }
 
     if (root.state !== 'DRAFT') {
       if (!validation.valid) {
         throw new BadRequestException(
-          `${validation.name}: ${
-            validation.settingsError || 'Please fix your settings'
+          `${validation.name}：${
+            validation.settingsError || '发布设置有误，请检查后再试'
           }`
         );
       }
 
       if (validation.errors !== true) {
         throw new BadRequestException(
-          `${validation.name}: ${validation.errors}`
+          `${validation.name}：${validation.errors}`
         );
       }
 
       if (validation.tooLong) {
         throw new BadRequestException(
-          `${validation.name}: The maximum characters is ${validation.maximumCharacters}`
+          `${validation.name}：最多 ${validation.maximumCharacters} 个字`
         );
       }
     }
@@ -1158,7 +1158,7 @@ export class PostsService {
     );
 
     if (!output) {
-      throw new BadRequestException('Failed to update the post');
+      throw new BadRequestException('帖子更新失败');
     }
 
     return {
@@ -1187,7 +1187,7 @@ export class PostsService {
       (p) => p.approval === 'PENDING'
     );
     if (!pending.length) {
-      throw new BadRequestException('Nothing waiting for approval in this group');
+      throw new BadRequestException('这组帖子没有待审核的内容');
     }
     const ids = pending.map((p) => p.id);
     if (decision === 'reject') {
@@ -1233,7 +1233,7 @@ export class PostsService {
   ) {
     const getPostById = await this._postRepository.getPostById(id, orgId);
     if (!getPostById) {
-      throw new BadRequestException('Post not found');
+      throw new BadRequestException('帖子不存在');
     }
 
     const state: State = status === 'draft' ? 'DRAFT' : 'QUEUE';
@@ -1360,7 +1360,7 @@ export class PostsService {
                   {
                     id: '',
                     delay: 0,
-                    content: `Check out the full story here:\n${
+                    content: `完整内容请看：\n${
                       body.postId || body.url
                     }`,
                     image: [],
@@ -1466,17 +1466,17 @@ export class PostsService {
   ) {
     const posts = await this.getPostsRecursively(previewId, false);
     if (!posts.length) {
-      throw new NotFoundException('Post not found');
+      throw new NotFoundException('帖子不存在');
     }
 
     let post = body.postId ? posts.find((p) => p.id === body.postId) : posts[0];
     if (!post) {
-      throw new BadRequestException('Post does not belong to this preview');
+      throw new BadRequestException('这条帖子不在当前预览里');
     }
 
     if (!userId) {
       if (!body.displayName?.trim()) {
-        throw new BadRequestException('Name is required');
+        throw new BadRequestException('请填写你的名字');
       }
       await this.verifyRecaptcha(body.recaptchaToken, ip);
     }
@@ -1484,21 +1484,21 @@ export class PostsService {
     const hasStart = typeof body.anchorStart === 'number';
     const hasEnd = typeof body.anchorEnd === 'number';
     if (hasStart !== hasEnd) {
-      throw new BadRequestException('Both anchor offsets are required');
+      throw new BadRequestException('划选位置不完整，请重新划选');
     }
 
     if (body.parentId) {
       const parent = await this._postRepository.getCommentById(body.parentId);
       if (!parent || !posts.some((p) => p.id === parent.postId)) {
-        throw new BadRequestException('Parent comment not found');
+        throw new BadRequestException('要回复的评论不存在');
       }
       if (parent.parentId) {
         throw new BadRequestException(
-          'Replies can only be added to a root comment'
+          '只能回复顶层评论'
         );
       }
       if (hasStart || body.anchorQuote) {
-        throw new BadRequestException('Replies cannot be anchored');
+        throw new BadRequestException('回复不能划选正文');
       }
       post = posts.find((p) => p.id === parent.postId)!;
     }
@@ -1510,12 +1510,12 @@ export class PostsService {
         body.anchorStart! >= body.anchorEnd! ||
         body.anchorEnd! > plainText.length
       ) {
-        throw new BadRequestException('Anchor is out of range');
+        throw new BadRequestException('划选的位置超出了正文范围');
       }
       if (
         body.anchorQuote !== plainText.slice(body.anchorStart!, body.anchorEnd!)
       ) {
-        throw new BadRequestException('Anchor does not match the post text');
+        throw new BadRequestException('划选的文字和正文对不上，请刷新后重试');
       }
     }
 
@@ -1540,7 +1540,7 @@ export class PostsService {
     }
 
     if (!token) {
-      throw new BadRequestException('Captcha verification failed');
+      throw new BadRequestException('人机验证没有通过，请重试');
     }
 
     const result = await (
@@ -1556,17 +1556,17 @@ export class PostsService {
     ).json();
 
     if (!result?.success) {
-      throw new BadRequestException('Captcha verification failed');
+      throw new BadRequestException('人机验证没有通过，请重试');
     }
   }
 
   async resolveComment(orgId: string, commentId: string, resolved: boolean) {
     const comment = await this._postRepository.getCommentById(commentId);
     if (!comment || comment.post.organizationId !== orgId) {
-      throw new NotFoundException('Comment not found');
+      throw new NotFoundException('评论不存在');
     }
     if (comment.parentId) {
-      throw new BadRequestException('Only root comments can be resolved');
+      throw new BadRequestException('只有顶层评论可以标记为已解决');
     }
 
     return this._postRepository.setCommentResolved(

@@ -42,7 +42,7 @@ export class HashnodeSettingsDto {
   @Matches(
     /^(|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})$/,
     {
-      message: 'Invalid URL',
+      message: '链接格式不正确',
     }
   )
   canonical?: string;

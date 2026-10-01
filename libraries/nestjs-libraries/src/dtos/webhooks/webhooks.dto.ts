@@ -21,7 +21,7 @@ export class WebhooksDto {
   @IsDefined()
   @IsSafeWebhookUrl({
     message:
-      'Webhook URL must be a public HTTPS URL and cannot point to internal network addresses',
+      'Webhook 地址必须是公网 HTTPS 地址，不能指向内网',
   })
   url: string;
 
@@ -54,7 +54,7 @@ export class OnlyURL {
   @IsDefined()
   @IsSafeWebhookUrl({
     message:
-      'URL must be a public HTTPS URL and cannot point to internal network addresses',
+      '链接必须是公网 HTTPS 地址，不能指向内网',
   })
   url: string;
 }
@@ -73,7 +73,7 @@ export class UpdateDto {
   @IsDefined()
   @IsSafeWebhookUrl({
     message:
-      'Webhook URL must be a public HTTPS URL and cannot point to internal network addresses',
+      'Webhook 地址必须是公网 HTTPS 地址，不能指向内网',
   })
   url: string;
 
@@ -114,7 +114,7 @@ export class TestWebhookDto {
   @IsDefined()
   @IsSafeWebhookUrl({
     message:
-      'Webhook URL must be a public HTTPS URL and cannot point to internal network addresses',
+      'Webhook 地址必须是公网 HTTPS 地址，不能指向内网',
   })
   url: string;
 

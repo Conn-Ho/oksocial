@@ -4,6 +4,8 @@ import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { useCustomProviderFunction } from '@gitroom/frontend/components/launches/helpers/use.custom.provider.function';
 import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
 import { ReactTags } from 'react-tag-autocomplete';
+import { reactTagsLabels } from '@gitroom/frontend/components/launches/helpers/react.tags.labels';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
 export const HashnodeTags: FC<{
   name: string;
@@ -16,6 +18,7 @@ export const HashnodeTags: FC<{
   }) => void;
 }> = (props) => {
   const { onChange, name, label } = props;
+  const t = useT();
   const customFunc = useCustomProviderFunction();
   const [tags, setTags] = useState<any[]>([]);
   const { getValues, formState: form } = useSettings();
@@ -68,6 +71,7 @@ export const HashnodeTags: FC<{
     <div>
       <div className={`text-[14px] mb-[6px]`}>{label}</div>
       <ReactTags
+        {...reactTagsLabels(t)}
         suggestions={tags || []}
         selected={tagValue || []}
         onAdd={onAddition}
