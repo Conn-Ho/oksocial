@@ -102,8 +102,12 @@ test('AI 评论助手 in review mode drafts replies to new X comments; 线索收
   assert.ok(held.length > 0 && held[0].content.length > 2, 'AI reply drafts');
   const l = await automation('LEAD_COLLECTOR', { prompt: '想购买或询问价格的人', minScore: 60, lookbackDays: 30, sources: ['COMMENT', 'DM', 'MENTION'] }, { integrationIds: [ch.xweb.id, ch.xiaohongshu.id, ch.weibo.id], dailyCap: 50 });
   await runAndWait(l);
-  const leads = await ok('/automations/leads');
-  assert.ok((leads.items || leads).length > 0, 'leads collected');
+  // this run scored the comments (a lead is kept once per comment, so on reruns the rows already exist)
+  const scored = (await actionsOf(l.id)).filter((x) => x.status === 'DONE');
+  assert.ok(scored.length > 0 && /^\d+ 分/.test(scored[0].content), 'AI scored the comments');
+  const leads = await ok('/automations/leads?minScore=60');
+  assert.ok(leads.total > 0 && leads.leads.length > 0, 'leads collected');
+  assert.ok(leads.leads.every((x) => x.score >= 60), 'the score filter holds');
   const csv = await api('/automations/leads/export', { raw: true });
   assert.equal(csv.status, 200);
 });
