@@ -59,13 +59,16 @@ const publishedWithin = (from?: Date, to?: Date) => {
 };
 
 /** The where of 竞品帖文 for one organization's live targets. Pure. */
-export const monitorPostsWhere = (orgId: string, f: Omit<MonitorPostsFilter, 'sort' | 'order' | 'page'>) => ({
-  kind: { in: (f.withHits ? ['POST', 'HIT'] : ['POST']) as MonitorItemKind[] },
+export const monitorPostsWhere = (
+  orgId: string,
+  f: Omit<MonitorPostsFilter, 'sort' | 'order' | 'page'>
+): Prisma.MonitorItemWhereInput => ({
+  kind: { in: f.withHits ? ['POST', 'HIT'] : ['POST'] },
   ...(f.targetId ? { targetId: f.targetId } : {}),
   target: {
     organizationId: orgId,
     deletedAt: null,
-    kind: { in: (f.withHits ? ['ACCOUNT', 'KEYWORD'] : ['ACCOUNT']) as MonitorKind[] },
+    kind: { in: f.withHits ? ['ACCOUNT', 'KEYWORD'] : ['ACCOUNT'] },
     ...(f.platform ? { platform: f.platform } : {}),
   },
   ...publishedWithin(f.from, f.to),
