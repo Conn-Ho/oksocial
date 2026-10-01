@@ -575,7 +575,6 @@
   "total_forks": "Total Forks",
   "continue_with": "Continue With",
   "email_address": "Email Address",
-  "label_company": "Company",
   "email_already_exists": "Email already exists",
   "google": "Google",
   "apple": "Apple",
@@ -616,7 +615,6 @@
   "add_provider_title": "Add Provider",
   "profile_updated": "Profile updated",
   "sets": "Sets",
-  "email_address": "Email Address",
   "invitation_link_sent": "Invitation link sent",
   "send_invitation_link": "Send Invitation Link",
   "copy_link": "Copy Link",
@@ -3347,5 +3345,10 @@
   "oauth_scope_team_accounts": "The team's accounts (to set up DM channels)",
   "oauth_first_party_once": "You only confirm once; next time this team signs in directly.",
   "oauth_okchat_no_account": "\"{{team}}\" has no account that can go to okchat yet. DMs reach okchat through the team's accounts: add one by scanning, and you will come back here to continue.",
-  "oauth_okchat_add_account": "Add an account"
+  "oauth_okchat_add_account": "Add an account",
+  "okchat_verify_hint": "okchat signs you in with your oksocial account, so first confirm that {{email}} is yours: we'll send a verification email, just click its link.",
+  "okchat_verify_sent": "Verification email sent to {{email}}. Click its link, then come back here to open okchat.",
+  "okchat_verify_cta": "Send verification email",
+  "okchat_verify_resend": "Send again",
+  "okchat_verify_mail_failed": "The verification email couldn't be sent. Please try again later."
 }

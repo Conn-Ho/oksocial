@@ -26,6 +26,9 @@ export type OkchatStatus = {
   linked: boolean;
   platforms: Array<{ identifier: string; name: string }>;
   accounts: OkchatAccount[];
+  // okchat signs people in by their oksocial email only once it is verified
+  emailVerified: boolean;
+  email: string;
 };
 
 // after 「在 okchat 处理私信」: okchat's /link may arrive minutes later

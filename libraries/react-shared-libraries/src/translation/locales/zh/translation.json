@@ -1091,5 +1091,10 @@
   "oauth_first_party_once": "只需确认一次，之后同一团队会直接登录。",
   "oauth_okchat_no_account": "「{{team}}」还没有可以接到 okchat 的账号。私信要经团队里的账号进入 okchat，先扫码添加一个，加好后会回到这里继续。",
   "oauth_okchat_add_account": "去添加账号",
-  "inbox_empty": "没有消息。点“立即更新”拉取最新评论和 @提及。"
+  "inbox_empty": "没有消息。点“立即更新”拉取最新评论和 @提及。",
+  "okchat_verify_hint": "okchat 用你的 oksocial 账号登录，需要先确认邮箱 {{email}} 是你的：发一封验证邮件，点里面的链接就好。",
+  "okchat_verify_sent": "验证邮件已发到 {{email}}，点邮件里的链接后回到这里，就可以进入 okchat 了。",
+  "okchat_verify_cta": "发送验证邮件",
+  "okchat_verify_resend": "重新发送",
+  "okchat_verify_mail_failed": "验证邮件没有发出去，请稍后再试"
 }
