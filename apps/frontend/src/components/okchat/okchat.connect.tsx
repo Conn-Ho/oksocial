@@ -9,10 +9,11 @@ import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { BrowserLoginModal } from '@gitroom/frontend/components/launches/browser.login.modal';
 import { useSwitchTeam, useTeams } from '@gitroom/frontend/components/teams/teams.hooks';
 import { useOkchatStatus } from '@gitroom/frontend/components/okchat/okchat.hooks';
+import { sameSitePath } from '@gitroom/helpers/utils/okchat';
 
-/** Where to go afterwards: a path of this site only (the OAuth page okchat sent the member to). Pure. */
+/** Where to go afterwards: a path of this site only (the OAuth page okchat sent the member to). */
 export const safeReturnPath = (value: string | null) =>
-  value && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : '/inbox';
+  (typeof window !== 'undefined' && sameSitePath(value, window.location.origin)) || '/inbox';
 
 /**
  * /okchat/connect?team=&return=: okchat needs an account whose DMs it handles. The member's team
