@@ -16,3 +16,12 @@ export function safeMessage(text: string, max = 2000): string {
   const clean = redactSecrets(text).trim();
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
+
+/**
+ * Requests whose body holds what a user typed into a platform's login page (passwords, codes): their
+ * body never reaches a log line and their errors never echo a third-party message. Pure.
+ */
+export const carriesTypedSecrets = (url: string): boolean => /^\/slots\/[^/?#]+\/login-form(?:[?#]|$)/.test(url);
+
+/** pino redaction for anything shaped like a login form body, should one ever be logged. */
+export const SECRET_LOG_PATHS = ['req.body', 'body', 'value', '*.value', 'input.value', 'params.text'];

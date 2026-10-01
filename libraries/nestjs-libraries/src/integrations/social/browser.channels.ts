@@ -110,6 +110,8 @@ export type BrowserChannelSpec = {
   loginUrl: string;
   // only exist after a real login: polled while someone scans, instead of running whoami
   loginCookies?: { domain: string; names: string[] };
+  // a password login: oksocial's own login form, with per-platform hints (BrowserSession.form)
+  form?: BrowserSession['form'];
   // whoami columns, the first one with a value wins
   idFrom: string[];
   nameFrom: string[];
@@ -177,6 +179,7 @@ export class ConfiguredBrowserProvider extends BrowserSocialAbstract implements 
       loginUrl: spec.loginUrl,
       whoami: spec.whoami ?? [spec.site, 'whoami'],
       ...(spec.loginCookies ? { loginCookies: spec.loginCookies } : {}),
+      ...(spec.form ? { form: spec.form } : {}),
       identity:
         spec.identity ??
         ((rows: unknown) => {
@@ -519,6 +522,15 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 Instagram；发布图片/视频帖子（最多 10 个）、竞品监控、点赞、收藏、评论和关注（含回关）。建议绑定独立出口 IP',
     loginUrl: 'https://www.instagram.com/accounts/login/',
     loginCookies: { domain: 'instagram.com', names: ['sessionid'] },
+    form: {
+      hints: {
+        loginUrls: ['www.instagram.com/accounts/login', 'www.instagram.com/challenge', 'www.instagram.com/two_factor', 'www.instagram.com/auth_platform'],
+        identifier: 'input[name="username"], input[name="email"]',
+        password: 'input[name="password"], input[name="pass"]',
+        code: 'input[name="verificationCode"], input[name="security_code"], input[name="approvals_code"]',
+        submit: 'button[type="submit"]',
+      },
+    },
     idFrom: ['user_id'], nameFrom: ['full_name', 'username'], usernameFrom: ['username'], maxLength: 2200,
     stats: async (run, account) => {
       const me = firstRow<Record<string, unknown>>(await run(['instagram', 'profile', account.profile || account.internalId]));
@@ -531,6 +543,15 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 Facebook；关键词监控，发帖还在开发中。建议绑定独立出口 IP',
     loginUrl: 'https://www.facebook.com/login.php',
     loginCookies: { domain: 'facebook.com', names: ['c_user'] },
+    form: {
+      hints: {
+        loginUrls: ['www.facebook.com/login', 'www.facebook.com/checkpoint', 'www.facebook.com/two_step_verification', 'www.facebook.com/two_factor', 'www.facebook.com/auth_platform'],
+        identifier: '#email, input[name="email"]',
+        password: '#pass, input[name="pass"]',
+        code: 'input[name="approvals_code"]',
+        submit: 'button[name="login"], #loginbutton',
+      },
+    },
     idFrom: ['user_id'], nameFrom: ['vanity', 'user_id'], maxLength: 5000,
     stats: async (run) => {
       const me = firstRow<Record<string, unknown>>(await run(['facebook', 'profile']));
@@ -543,6 +564,16 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 TikTok；监控、点赞、收藏、关注和评论，上传视频还在开发中。建议绑定独立出口 IP',
     loginUrl: 'https://www.tiktok.com/login',
     loginCookies: { domain: 'tiktok.com', names: ['sessionid', 'sid_tt'] },
+    // /login opens on the QR code and other methods: the form uses the email / username + password page
+    form: {
+      url: 'https://www.tiktok.com/login/phone-or-email/email',
+      hints: {
+        loginUrls: ['www.tiktok.com/login'],
+        identifier: 'input[name="username"]',
+        password: 'input[type="password"]',
+        submit: 'button[data-e2e="login-button"], button[type="submit"]',
+      },
+    },
     idFrom: ['sec_uid'], nameFrom: ['nickname', 'username'], usernameFrom: ['username'], maxLength: 2200,
     ...TIKTOK,
   })),
@@ -551,6 +582,18 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 Google 账号；监控、点赞和订阅，上传视频还在开发中。建议绑定独立出口 IP',
     loginUrl: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F',
     loginCookies: { domain: 'youtube.com', names: ['SAPISID', '__Secure-1PSID'] },
+    // Google's sign-in: account, password, then a code (authenticator or SMS) when 2-step verification is on
+    form: {
+      hints: {
+        loginUrls: ['accounts.google.com/'],
+        identifier: '#identifierId',
+        password: 'input[name="Passwd"]',
+        code: '#totpPin, #idvPin, input[name="totpPin"], input[name="Pin"]',
+        submit: '#identifierNext button, #passwordNext button, #totpNext button, #idvPreregisteredPhoneNext button',
+        prompt: '#headingText',
+        captcha: '#captchaimg',
+      },
+    },
     idFrom: ['name'], nameFrom: ['name'], maxLength: 5000,
     ...YOUTUBE,
   })),
@@ -559,6 +602,15 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 LinkedIn；数据和竞品监控，发帖还在开发中。建议绑定独立出口 IP',
     loginUrl: 'https://www.linkedin.com/login',
     loginCookies: { domain: 'linkedin.com', names: ['li_at'] },
+    form: {
+      hints: {
+        loginUrls: ['www.linkedin.com/login', 'www.linkedin.com/checkpoint', 'www.linkedin.com/uas/'],
+        identifier: '#username',
+        password: '#password',
+        code: 'input[name="pin"]',
+        error: '#error-for-username, #error-for-password',
+      },
+    },
     idFrom: ['plain_id', 'public_id'], nameFrom: ['name'], usernameFrom: ['public_id'], maxLength: 3000,
     stats: async (run) => {
       const me = firstRow<Record<string, unknown>>(await run(['linkedin', 'profile-analytics'], 180_000));
@@ -571,6 +623,14 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     toolTip: '在账号浏览器里登录 Reddit；监控、点赞（upvote）、收藏和评论，发帖还在开发中。建议绑定独立出口 IP',
     loginUrl: 'https://www.reddit.com/login',
     loginCookies: { domain: 'reddit.com', names: ['reddit_session'] },
+    // the fields live in shadow roots (faceplate web components); the worker searches those too
+    form: {
+      hints: {
+        loginUrls: ['www.reddit.com/login', 'www.reddit.com/account/login'],
+        identifier: 'input[name="username"]',
+        password: 'input[name="password"]',
+      },
+    },
     idFrom: [], nameFrom: [], maxLength: 10000,
     // whoami answers field/value rows: Username "u/<name>", ID "t2_<id>"
     identity: (rows) => {
@@ -585,6 +645,14 @@ export const BROWSER_CHANNELS: ConfiguredBrowserProvider[] = [
     whoami: ['pinterest-auth', 'whoami'],
     toolTip: '在账号浏览器里登录 Pinterest；发布单图 Pin（选图板、标题、链接）、监控和收藏（Save）。建议绑定独立出口 IP',
     loginUrl: 'https://www.pinterest.com/login/',
+    form: {
+      hints: {
+        loginUrls: ['www.pinterest.com/login'],
+        identifier: '#email',
+        password: '#password',
+        submit: 'button[type="submit"]',
+      },
+    },
     idFrom: ['user_id', 'username'], nameFrom: ['full_name', 'username'], usernameFrom: ['username'], maxLength: 500,
     ...PINTEREST,
   })),

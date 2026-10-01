@@ -1,8 +1,10 @@
 'use client';
 
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useState } from 'react';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { BrowserLoginForm } from '@gitroom/frontend/components/launches/browser.login.form';
+import { BrowserLoginScreen } from '@gitroom/frontend/components/launches/browser.login.screen';
 
 const QR_POLL_MS = 2500;
 // A page that shows no QR code after this many reads (a password login such as X) gets the full view.
@@ -25,20 +27,48 @@ export const SCAN_APP: Record<string, string> = {
   tiktokweb: 'TikTok',
 };
 
+type View = 'form' | 'qr' | 'screen';
+
 /**
- * What the user logs in on: the page's QR code read out and shown large (a whole 1440px page shrunk
- * into a dialog is too small to scan), or the live browser screen for SMS, passwords and captchas.
+ * What the user logs in on: oksocial's own form for password platforms (the worker types it into the
+ * account's browser), the page's QR code read out and shown large (a whole 1440px page shrunk into a
+ * dialog is too small to scan), or the live browser screen for SMS, captchas and anything else.
  */
 export const BrowserLoginView: FC<{
   sessionId: string;
   screenPath: string;
   app?: string;
   active: boolean;
-}> = ({ sessionId, screenPath, app, active }) => {
+  // the platform logs in with a password through oksocial's form
+  form?: boolean;
+  identifier: string;
+  name: string;
+}> = ({ sessionId, screenPath, app, active, form, identifier, name }) => {
   const fetch = useFetch();
   const t = useT();
-  const [view, setView] = useState<'qr' | 'screen'>(app ? 'qr' : 'screen');
+  const [view, setView] = useState<View>(form ? 'form' : app ? 'qr' : 'screen');
   const [image, setImage] = useState<string | null>(null);
+
+  // A platform whose password form is a page of its own (TikTok opens on its QR code): the account's
+  // browser shows the page that goes with the view. For every other platform this does nothing.
+  const show = useCallback(
+    (next: View) => {
+      if (form && (next === 'form' || next === 'qr')) {
+        fetch(`/browser-sessions/${sessionId}/page`, {
+          method: 'POST',
+          body: JSON.stringify({ page: next === 'form' ? 'form' : 'login' }),
+        }).catch(() => undefined);
+      }
+      setView(next);
+    },
+    [form, sessionId]
+  );
+
+  useEffect(() => {
+    if (form) {
+      show('form');
+    }
+  }, []);
 
   useEffect(() => {
     if (view !== 'qr' || !active) {
@@ -59,7 +89,12 @@ export const BrowserLoginView: FC<{
         misses = 0;
         setImage(next);
       } else if (!seen && ++misses >= QR_MISSES_BEFORE_SCREEN) {
-        setView('screen');
+        // no code on the page: the platform's own form when it has one, else the live screen
+        if (form) {
+          show('form');
+        } else {
+          setView('screen');
+        }
         return;
       } else if (seen && ++misses >= QR_MISSES_BEFORE_CLEAR) {
         setImage(null);
@@ -73,26 +108,42 @@ export const BrowserLoginView: FC<{
     };
   }, [view, active, sessionId]);
 
+  const link = 'self-start text-[13px] text-customColor4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-btnPrimary rounded-[4px]';
+
+  if (view === 'form') {
+    return (
+      <div className="flex flex-col gap-[10px]">
+        <BrowserLoginForm sessionId={sessionId} screenPath={screenPath} identifier={identifier} name={name} active={active} />
+        <div className="flex flex-wrap gap-x-[16px] gap-y-[6px]">
+          <button type="button" className={link} onClick={() => show('screen')}>
+            {t('browser_form_use_screen', '切换到完整画面')}
+          </button>
+          {!!app && (
+            <button type="button" className={link} onClick={() => show('qr')}>
+              {t('browser_form_use_qr', '改用{{app}} App 扫码', { app })}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'screen') {
     return (
       <div className="flex flex-col gap-[8px]">
-        <div className="relative w-full aspect-[16/10] min-h-[320px] rounded-[8px] overflow-hidden bg-newTableHeader border border-newTableBorder">
-          <iframe
-            title={t('browser_login_screen', '登录画面')}
-            src={screenPath}
-            className="absolute inset-0 w-full h-full"
-            allow="clipboard-read; clipboard-write"
-          />
+        <BrowserLoginScreen screenPath={screenPath} />
+        <div className="flex flex-wrap gap-x-[16px] gap-y-[6px]">
+          {!!form && (
+            <button type="button" className={link} onClick={() => show('form')}>
+              {t('browser_form_back_to_form', '回到填写登录信息')}
+            </button>
+          )}
+          {!!app && (
+            <button type="button" className={link} onClick={() => show('qr')}>
+              {t('browser_login_show_qr', '显示大二维码')}
+            </button>
+          )}
         </div>
-        {!!app && (
-          <button
-            type="button"
-            className="self-start text-[13px] text-customColor4 hover:underline"
-            onClick={() => setView('qr')}
-          >
-            {t('browser_login_show_qr', '显示大二维码')}
-          </button>
-        )}
       </div>
     );
   }
@@ -131,13 +182,14 @@ export const BrowserLoginView: FC<{
             '二维码会自动刷新。显示“已过期”、要输入验证码或拖动滑块时，请切换到完整画面操作。'
           )}
         </p>
-        <button
-          type="button"
-          className="self-start text-[13px] text-customColor4 hover:underline"
-          onClick={() => setView('screen')}
-        >
+        <button type="button" className={link} onClick={() => show('screen')}>
           {t('browser_login_show_screen', '切换到完整画面（短信 / 密码登录）')}
         </button>
+        {!!form && (
+          <button type="button" className={link} onClick={() => show('form')}>
+            {t('browser_form_use_password', '用账号密码登录')}
+          </button>
+        )}
       </div>
     </div>
   );

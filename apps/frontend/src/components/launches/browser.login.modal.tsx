@@ -58,6 +58,8 @@ export const BrowserLoginModal: FC<{
   const app = SCAN_APP[identifier] && t(`scan_app_${identifier}`, SCAN_APP[identifier]);
   // the exit IP a new overseas account's browser started behind (the server picks the team's)
   const [exit, setExit] = useState<string | null>(null);
+  // a password platform: oksocial's own login form types the account and password into its browser
+  const [form, setForm] = useState(false);
 
   const show = useCallback((next: Step) => {
     current.current = next;
@@ -158,8 +160,9 @@ export const BrowserLoginModal: FC<{
     if (!res.ok) {
       return fail(res);
     }
-    const { id, screenPath, proxy } = await res.json();
+    const { id, screenPath, proxy, form: withForm } = await res.json();
     setExit(proxy ?? null);
+    setForm(!!withForm);
     show({ kind: 'login', id, screenPath });
   }, [fail, show]);
 
@@ -206,6 +209,7 @@ export const BrowserLoginModal: FC<{
   }, [check]);
 
   const web = step?.kind === 'web';
+  const typed = form && !web;
 
   return (
     <div className="flex flex-col gap-[16px] w-full">
@@ -246,6 +250,9 @@ export const BrowserLoginModal: FC<{
           screenPath={step.screenPath}
           app={app}
           active={phase === 'waiting' || phase === 'mismatch'}
+          form={typed}
+          identifier={identifier}
+          name={name}
         />
       ) : (
         <div className="w-full min-h-[240px] rounded-[8px] bg-newTableHeader border border-newTableBorder flex items-center justify-center text-[14px] text-textColor/60">
@@ -255,7 +262,9 @@ export const BrowserLoginModal: FC<{
       <div className="flex flex-wrap items-center gap-[12px] min-h-[40px]">
         <div className="flex-1 min-w-[200px] text-[13px] text-textColor/70" aria-live="polite">
           {phase === 'waiting' &&
-            t('browser_login_waiting', '等待登录中，登录成功后会自动连接；扫码后没反应可以点「我已登录」')}
+            (typed
+              ? t('browser_login_waiting_form', '登录成功后会自动连接；没反应可以点「我已登录」')
+              : t('browser_login_waiting', '等待登录中，登录成功后会自动连接；扫码后没反应可以点「我已登录」'))}
           {phase === 'checking' && t('browser_login_checking', '正在检测登录状态…')}
           {phase === 'mismatch' && <span className="text-red-400">{message}</span>}
           {phase === 'error' && step && <span className="text-red-400">{message}</span>}
@@ -272,10 +281,15 @@ export const BrowserLoginModal: FC<{
         </Button>
       </div>
       <p className="text-[12px] text-textColor/50">
-        {t(
-          'browser_login_note',
-          '登录信息只保存在这个账号自己的浏览器里，oksocial 不接触你的密码。建议在“代理”里为要发帖、评论的账号绑定独立出口 IP。'
-        )}
+        {typed
+          ? t(
+              'browser_login_note_form',
+              '密码只用于这一次登录，直接填进这个账号自己的浏览器，oksocial 不保存。建议在“代理”里为要发帖、评论的账号绑定独立出口 IP。'
+            )
+          : t(
+              'browser_login_note',
+              '登录信息只保存在这个账号自己的浏览器里，oksocial 不接触你的密码。建议在“代理”里为要发帖、评论的账号绑定独立出口 IP。'
+            )}
       </p>
     </div>
   );

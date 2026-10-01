@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { HttpError } from '../src/errors.ts';
+import { LOG_REDACT_PATHS } from '../src/app.ts';
+import type { LoginFormState } from '../src/login-form.ts';
 import type { RunOutcome } from '../src/opencli.ts';
 import { auth, buildTestApp, makeSlot } from './helpers.ts';
+import type { TestApp } from './helpers.ts';
 
 describe('auth', () => {
   it('rejects every route without the right token, including health and unknown paths', async () => {
@@ -255,5 +258,96 @@ describe('POST /media/fetch', () => {
     const res = await app.inject({ method: 'POST', url: '/media/fetch', headers: auth, payload: { urls: ['https://oksocial.online/a.jpg', 'https://oksocial.online/b.jpg'] } });
     assert.deepEqual(res.json(), { paths: ['/tmp/oksocial-media/0.jpg', '/tmp/oksocial-media/1.jpg'] });
     assert.equal((await app.inject({ method: 'POST', url: '/media/fetch', headers: auth, payload: { urls: [] } })).statusCode, 400);
+  });
+});
+
+describe('login form routes', () => {
+  const SECRET = 'correct horse battery staple 🐴';
+  const shown: LoginFormState = { step: 'password', prompt: 'Enter your password', detail: null, error: null, field: { kind: 'password', label: 'Password', inputType: 'password', inputMode: null, autocomplete: 'current-password', maxLength: null } };
+  const submit = (app: TestApp['app'], payload: unknown, slot = 'xhs-2') => app.inject({ method: 'POST', url: `/slots/${slot}/login-form`, headers: auth, payload: payload as object });
+
+  it("reads the screen tab's login step with the hints given", async () => {
+    const probes: unknown[] = [];
+    const { app } = await buildTestApp({ deps: { probeLoginForm: async (cdp, target, hints) => (probes.push([cdp, target, hints]), shown) } });
+    await app.inject({ method: 'POST', url: '/slots/xhs-2/open', headers: auth, payload: { url: 'https://x.com/i/flow/login' } });
+    const hints = { loginUrls: ['x.com/i/flow/login'], submit: '[data-testid="LoginForm_Login_Button"]' };
+    const res = await app.inject({ method: 'GET', url: `/slots/xhs-2/login-form?hints=${encodeURIComponent(JSON.stringify(hints))}`, headers: auth });
+    assert.deepEqual([res.statusCode, res.json()], [200, shown]);
+    assert.deepEqual(probes, [[9302, 'TARGET1', hints]]);
+    assert.equal((await app.inject({ method: 'GET', url: '/slots/xhs-2/login-form', headers: auth })).statusCode, 200);
+  });
+
+  it('400s hints that are not JSON or too long, 409s a stopped Chrome, and has no form for a simulated account', async () => {
+    const { app } = await buildTestApp();
+    for (const hints of ['{nope', '[1]', JSON.stringify({ submit: 'b'.repeat(301) }), JSON.stringify({ loginUrls: Array(11).fill('x.com/') })]) {
+      assert.equal((await app.inject({ method: 'GET', url: `/slots/xhs-2/login-form?hints=${encodeURIComponent(hints)}`, headers: auth })).statusCode, 400, hints);
+    }
+    const stopped = await buildTestApp({ slots: [makeSlot({ chrome: 'inactive' })] });
+    assert.equal((await stopped.app.inject({ method: 'GET', url: '/slots/xhs-2/login-form', headers: auth })).json().code, 'CHROME_NOT_RUNNING');
+    const sim = await buildTestApp({ sim: true });
+    assert.equal((await sim.app.inject({ method: 'GET', url: '/slots/sim-xweb-a1b2/login-form', headers: auth })).json().code, 'SIMULATED_SLOT');
+    assert.equal((await submit(sim.app, { step: 'password', value: SECRET }, 'sim-xweb-a1b2')).json().code, 'SIMULATED_SLOT');
+  });
+
+  it('passes the value through unchanged and answers the next state', async () => {
+    const fills: unknown[] = [];
+    const { app } = await buildTestApp({ deps: { fillLoginForm: async (cdp, target, input) => (fills.push([cdp, target, input]), { ...shown, step: 'done', field: null }) } });
+    const res = await submit(app, { step: 'password', value: SECRET, hints: { loginUrls: ['x.com/i/flow/login'] } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().step, 'done');
+    assert.deepEqual(fills, [[9302, undefined, { step: 'password', value: SECRET, hints: { loginUrls: ['x.com/i/flow/login'] } }]]);
+    assert.ok(!res.body.includes('horse'));
+  });
+
+  it('validates step and value, and never echoes the value in a refusal', async () => {
+    const { app } = await buildTestApp({ deps: { fillLoginForm: async () => assert.fail('nothing may be typed') } });
+    const refusals = [
+      { step: 'captcha', value: SECRET },
+      { step: 'password', value: '' },
+      { step: 'password', value: `${SECRET} `.repeat(30) },
+      { step: 'password', value: `horse\nEnter` },
+      { step: 'password', value: 'horse', extra: 1, hints: { submit: 7 } },
+      { step: 'password' },
+    ];
+    for (const payload of refusals) {
+      const res = await submit(app, payload);
+      assert.equal(res.statusCode, 400, JSON.stringify(payload).slice(0, 40));
+      assert.ok(!res.body.includes('horse'), res.body);
+    }
+    const notJson = await app.inject({ method: 'POST', url: '/slots/xhs-2/login-form', headers: { ...auth, 'content-type': 'application/json' }, payload: '{"step":"password","value":"horse' });
+    assert.deepEqual([notJson.statusCode, notJson.json().error], [400, 'bad request']);
+  });
+
+  it('refuses a second submit while one is still typing into that slot', async () => {
+    let release = (): void => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app } = await buildTestApp({ deps: { fillLoginForm: async () => (await blocked, shown) } });
+    const first = submit(app, { step: 'password', value: SECRET });
+    await new Promise((r) => setImmediate(r));
+    const second = await submit(app, { step: 'password', value: SECRET });
+    assert.deepEqual([second.statusCode, second.json().code], [409, 'BUSY']);
+    release();
+    assert.equal((await first).statusCode, 200);
+    assert.equal((await submit(app, { step: 'password', value: SECRET })).statusCode, 200);
+  });
+
+  it('keeps the value out of every log line, even when typing fails with it in the message', async () => {
+    const lines: string[] = [];
+    const logger = { level: 'trace', stream: { write: (line: string) => void lines.push(line) }, redact: { paths: LOG_REDACT_PATHS, censor: '[redacted]' } };
+    const { app } = await buildTestApp({
+      deps: {
+        logger,
+        fillLoginForm: async (_cdp, _target, input) => {
+          throw new Error(`could not type ${input.value}`);
+        },
+      },
+    });
+    const res = await submit(app, { step: 'password', value: SECRET });
+    assert.deepEqual([res.statusCode, res.json()], [500, { ok: false, code: 'INTERNAL', error: 'internal error' }]);
+    await app.inject({ method: 'POST', url: '/slots/xhs-2/login-form', headers: { ...auth, 'content-type': 'application/json' }, payload: `{"step":"password","value":"${SECRET}` });
+    assert.ok(lines.length >= 4, 'requests were logged');
+    for (const line of lines) assert.ok(!line.includes('horse'), line);
   });
 });

@@ -1,8 +1,10 @@
 import {
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Length,
   Matches,
   MaxLength,
   ValidateIf,
@@ -53,4 +55,22 @@ export class SetChannelProxyDto {
   @ValidateIf((o) => o.proxyId !== null)
   @IsString()
   proxyId: string | null;
+}
+
+// oksocial's login form: one step the user typed (an account, a password or a code). The value goes
+// straight into the account's own browser; validation messages never repeat it.
+export class LoginFormSubmitDto {
+  @IsIn(['identifier', 'password', 'code'], { message: '不支持的登录步骤' })
+  step: 'identifier' | 'password' | 'code';
+
+  @IsString({ message: '请输入内容' })
+  @Length(1, 512, { message: '请输入 1-512 个字符' })
+  @Matches(/^[^\u0000-\u001f\u007f]*$/, { message: '不能包含换行或控制字符' })
+  value: string;
+}
+
+// which page of the login to show in the account's browser: the login page, or its password form
+export class BrowserLoginPageDto {
+  @IsIn(['login', 'form'])
+  page: 'login' | 'form';
 }

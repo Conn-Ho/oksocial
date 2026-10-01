@@ -4,6 +4,7 @@ import { buildApp, LOG_REDACT_PATHS } from './app.ts';
 import { captureQr, showTab } from './cdp.ts';
 import { realClock } from './clock.ts';
 import { loadConfig } from './config.ts';
+import { fillLoginForm, probeLoginForm } from './login-form.ts';
 import { createMediaFetcher } from './media.ts';
 import { tcpProbe } from './net.ts';
 import { createOpencli } from './opencli.ts';
@@ -38,6 +39,8 @@ async function main(): Promise<void> {
     daemonUp: () => tcpProbe(OPENCLI_DAEMON_PORT),
     openTab: (cdpPort, url, reuseId) => showTab(cdpPort, url, reuseId),
     captureQr: (cdpPort, targetId, reveal) => captureQr(cdpPort, targetId, reveal),
+    probeLoginForm: (cdpPort, targetId, hints) => probeLoginForm(cdpPort, targetId, hints),
+    fillLoginForm: (cdpPort, targetId, input) => fillLoginForm(cdpPort, targetId, input),
     media,
     runAllowedSites: config.runAllowedSites,
     logger: { level: config.logLevel, redact: { paths: LOG_REDACT_PATHS, censor: '[redacted]' } },

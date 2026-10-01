@@ -1,22 +1,31 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app.ts';
 import { HttpError } from '../errors.ts';
-import { CreateSlotBody, OpenBody, parseOrThrow, ProxyBody, slotParam } from '../schemas.ts';
+import { CreateSlotBody, LoginFormBody, OpenBody, parseHintsQuery, parseOrThrow, ProxyBody, slotParam } from '../schemas.ts';
 import { presentCookieNames, readCookies } from '../cdp.ts';
+import { simulatedSlotError } from '../sim.ts';
 
 const DOMAIN_RE = /^[a-z0-9.-]{3,100}$/i;
 const COOKIE_NAME_RE = /^[A-Za-z0-9._-]{1,80}$/;
 const REVEAL_MAX = 200;
-import { simulatedSlotError } from '../sim.ts';
 
 type SlotParams = { Params: { slot: string } };
 
-export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captureQr }: AppDeps): void {
+export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captureQr, probeLoginForm, fillLoginForm }: AppDeps): void {
   // The tab each slot's login screen shows (this process): the next open reuses it.
   const screenTabs = new Map<string, string>();
   // Slots whose login page got its `reveal` click since it was opened: some are toggles (SMS ⇄ QR),
   // so a second click while the code is still rendering would switch it away again.
   const revealed = new Set<string>();
+  // Slots whose login form is being typed into: one submit at a time, or two would interleave keys.
+  const filling = new Set<string>();
+
+  const activeSlot = async (name: string) => {
+    if (slots.isSimulated(name)) throw simulatedSlotError(name);
+    const slot = await slots.require(name);
+    if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
+    return slot;
+  };
 
   app.get('/slots', async () => slots.list());
 
@@ -86,5 +95,28 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captu
     const qr = await captureQr(slot.cdp, screenTabs.get(name), revealed.has(name) ? undefined : reveal);
     if (qr.revealed) revealed.add(name);
     return { image: qr.image };
+  });
+
+  // oksocial's own login form for password platforms: the step the screen tab's login page is on, with
+  // the page's prompt and errors (GET), and one step typed in and submitted (POST). The typed value is
+  // only in the POST body: it is never logged (see redact.ts), stored or answered back.
+  app.get<SlotParams & { Querystring: { hints?: string } }>('/slots/:slot/login-form', async (req) => {
+    const name = slotParam(req.params.slot);
+    const hints = parseHintsQuery(req.query.hints);
+    const slot = await activeSlot(name);
+    return probeLoginForm(slot.cdp, screenTabs.get(name), hints);
+  });
+
+  app.post<SlotParams>('/slots/:slot/login-form', async (req) => {
+    const name = slotParam(req.params.slot);
+    const { step, value, hints } = parseOrThrow(LoginFormBody, req.body);
+    const slot = await activeSlot(name);
+    if (filling.has(name)) throw new HttpError(409, 'BUSY', `slot ${name}: the login form is still being filled in`);
+    filling.add(name);
+    try {
+      return await fillLoginForm(slot.cdp, screenTabs.get(name), { step, value, hints: hints ?? {} });
+    } finally {
+      filling.delete(name);
+    }
   });
 }

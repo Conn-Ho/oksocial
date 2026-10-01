@@ -65,6 +65,22 @@ export type BrowserSessionIdentity = {
   picture?: string;
 };
 
+// oksocial's own login form: per-platform additions to the worker's generic detection (CSS selectors
+// unless noted). Nothing here is secret.
+export type BrowserLoginFormHints = {
+  // host + path prefixes of the login pages (no scheme): a page outside them that asks for nothing means
+  // the login is done. Default: the login page (and form page) itself.
+  loginUrls?: string[];
+  identifier?: string;
+  password?: string;
+  code?: string;
+  // the button that submits the current step (Next / Log in / Verify)
+  submit?: string;
+  error?: string;
+  prompt?: string;
+  captcha?: string;
+};
+
 export type BrowserSession = {
   // Page opened in the account's browser for the user to log in (QR code or password).
   loginUrl: string;
@@ -82,6 +98,12 @@ export type BrowserSession = {
   // DMs and notifications). Logged in after the main login, in the same browser: `cookies` appear
   // with the login, `verify` (an opencli command) succeeds only while it is logged in.
   web?: { url: string; label: string; cookies: { domain: string; names: string[] }; verify: string[] };
+  // Password platforms (no QR code to scan): the login dialog shows oksocial's own form for the step the
+  // login page is on (account, password, verification code) and the worker types what the user enters
+  // into that page; it is never stored or logged. Captchas and unknown steps fall back to the live
+  // screen. `url`: the page with the password form when loginUrl opens on another method (TikTok opens
+  // on its QR code).
+  form?: { url?: string; hints?: BrowserLoginFormHints };
 };
 
 export type InboxKind = 'COMMENT' | 'DM' | 'MENTION';
