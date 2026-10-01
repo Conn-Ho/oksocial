@@ -29,7 +29,9 @@ const simFleet = (env: Record<string, string> = {}) => {
     runs: [] as string[][],
     run: async (slot: string, args: string[]) => {
       fleet.runs.push(args);
-      const res = spawnSync(process.execPath, [SIM_BIN, ...args, '-f', 'json'], {
+      // as the worker's withJsonFormat: `-f json` only when the caller chose no format
+      const format = args.some((a) => a === '-f' || a === '--format') ? [] : ['-f', 'json'];
+      const res = spawnSync(process.execPath, [SIM_BIN, ...args, ...format], {
         env: { ...process.env, ...env, OPENCLI_PROFILE: slot, SIM_STATE_DIR: dir },
         encoding: 'utf8',
       });
@@ -126,7 +128,7 @@ describe('xiaohongshu provider on the simulator', () => {
     expect(messages.every((m) => typeof m.mine === 'boolean' && m.text && typeof m.time === 'string')).toBe(true);
 
     await p.dm.send(slot, conv.id, '在的，发你链接');
-    expect(fleet.writes().at(-1)).toEqual({ slot, args: ['xhsdm', 'send', conv.id, '在的，发你链接'], time: expect.any(String) });
+    expect(fleet.writes().at(-1)).toEqual({ slot, args: ['xhsdm', 'send', '--', conv.id, '在的，发你链接'], time: expect.any(String) });
     const after = await p.dm.read(slot, conv.id, 20);
     expect(after.at(-1)).toMatchObject({ mine: true, text: '在的，发你链接' });
   });

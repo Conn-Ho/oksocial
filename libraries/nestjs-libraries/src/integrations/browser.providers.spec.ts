@@ -319,7 +319,7 @@ describe('inbox fetch mapping', () => {
     expect(p.inbox.reply?.COMMENT).toBeUndefined();
     // a DM item an older oksocial stored still answers through the DM channel
     await p.inbox.reply!.DM!('s1', {} as any, { replyTarget: 'c1', threadId: 'c1' }, '在的');
-    expect(fleet.calls.at(-1)).toEqual(['xhsdm', 'send', 'c1', '在的']);
+    expect(fleet.calls.at(-1)).toEqual(['xhsdm', 'send', '-f', 'json', '--', 'c1', '在的']);
   });
 
   it('Xiaohongshu DM channel: conversations without group chats, messages with ours marked', async () => {
@@ -349,7 +349,9 @@ describe('inbox fetch mapping', () => {
     expect(fleet.calls).toEqual([
       ['xhsdm', 'list', '--limit', '30'],
       ['xhsdm', 'read', 'c1', '--limit', '20'],
-      ['xhsdm', 'send', 'c1', '您好，在的'],
+      // the format first (the worker appends one only when there is none), then -- : the
+      // conversation id and the text are never read as options
+      ['xhsdm', 'send', '-f', 'json', '--', 'c1', '您好，在的'],
     ]);
     expect(p.dm.maxLength).toBe(500);
     expect(p.dm.checkText!('--help')).toMatch(/不能以「-」开头/);

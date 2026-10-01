@@ -133,12 +133,16 @@ export function timetable(key, minInterval, maxInterval, limit, now = nowSec()) 
 
 // ── arguments ────────────────────────────────────────────────────────────────
 
-/** opencli's argv: positionals, `--name value` / `--name=value` / bare `--flag`, and `-f <format>`. */
+/** opencli's argv: positionals, `--name value` / `--name=value` / bare `--flag`, `-f <format>`, and `--` (the rest are positionals). */
 export function parseArgv(argv) {
   const positionals = [];
   const options = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
+    if (a === '--') {
+      positionals.push(...argv.slice(i + 1));
+      break;
+    }
     if (a === '-f' || a === '--format') {
       options.format = argv[i + 1] ?? 'json';
       i += 1;

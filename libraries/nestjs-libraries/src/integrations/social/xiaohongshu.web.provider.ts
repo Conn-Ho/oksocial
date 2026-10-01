@@ -287,7 +287,8 @@ export class XiaohongshuWebProvider
     maxLength: DM_MAX_LENGTH,
     readGapMs: READ_GAP_MS,
     loggedOutReason: XHS_DM_LOGGED_OUT,
-    // xhsdm takes the text as an argument: one starting with "-" would be read as an option
+    // the text goes after `--` (below); a text starting with "-" is still refused, in case a
+    // browser host's opencli reads it as an option anyway
     checkText: (text) => (text.startsWith('-') ? '回复不能以「-」开头（网页版发送会出错），请改一下开头再发' : null),
     conversations: async (slot) =>
       (
@@ -315,7 +316,9 @@ export class XiaohongshuWebProvider
           time: String(m.time || ''),
         })),
     send: async (slot, conversationId, text) => {
-      await this.exec(slot, ['xhsdm', 'send', conversationId, text]);
+      // `--`: the conversation id and the text are never options. The format goes before it, since
+      // the browser worker appends `-f json` (which would land after `--`) only when there is none.
+      await this.exec(slot, ['xhsdm', 'send', '-f', 'json', '--', conversationId, text]);
     },
   };
 

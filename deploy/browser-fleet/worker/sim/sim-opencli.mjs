@@ -34,10 +34,14 @@ function envelope(err) {
   return ['ok: false', 'error:', `  code: ${err.code}`, `  message: ${q(err.message)}`, ...(err.help ? [`  help: ${q(err.help)}`] : []), `  exitCode: ${err.exitCode}`, ''].join('\n');
 }
 
-/** The args as the caller gave them, without the `-f json` the worker appends. */
+/** The args as the caller gave them, without the `-f json` the worker appends (positionals after `--` kept as they are). */
 function withoutFormat(argv) {
   const out = [];
   for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--') {
+      out.push(...argv.slice(i));
+      break;
+    }
     if (argv[i] === '-f' || argv[i] === '--format') i += 1;
     else out.push(argv[i]);
   }
