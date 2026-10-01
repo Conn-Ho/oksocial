@@ -30,9 +30,20 @@ jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => {
   return {
     IntegrationManager: class {},
     socialIntegrationList: [
-      { identifier: 'xhs', name: '小红书', maxLength: () => 1000, monitor: monitor('xhs', { readGapMs: [8000, 15000], searchAccounts: jest.fn() }) },
+      {
+        identifier: 'xhs', name: '小红书', maxLength: () => 1000,
+        monitor: monitor('xhs', { readGapMs: [8000, 15000], searchAccounts: jest.fn() }),
+        interact: { like: jest.fn(), follow: jest.fn(), followers: jest.fn(), following: jest.fn(), replyToComment: jest.fn() },
+      },
       { identifier: 'wb', name: '微博', maxLength: () => 2000, monitor: monitor('wb', { search: undefined, ownPosts: undefined }) },
       { identifier: 'linkedin', name: 'LinkedIn' },
+      // keyword search only: no single-post or account read (Facebook, 公众号)
+      {
+        identifier: 'fb', name: 'Facebook', maxLength: () => 5000,
+        monitor: { ...monitor('fb', { readPost: undefined, readAccount: undefined, ownPosts: undefined }), parsePostUrl: jest.fn(() => null), parseAccount: jest.fn(() => null) },
+      },
+      // accounts but no post read, and posts without comments
+      { identifier: 'ig', name: 'Instagram', maxLength: () => 2200, monitor: monitor('ig', { readPost: undefined, search: undefined, comments: false }) },
     ],
   };
 });
@@ -154,11 +165,23 @@ const target = (over: Record<string, unknown> = {}): any => ({
 beforeEach(() => jest.clearAllMocks());
 
 describe('platforms and link detection', () => {
-  it('lists the platforms that implement monitoring, with what each supports', () => {
+  it('lists the platforms that implement monitoring, with what each supports and which interactions automations can use', () => {
+    const all = { posts: true, comments: true, accounts: true, search: true, vs: true, searchAccounts: true };
     expect(setup().service.platforms()).toEqual([
-      { identifier: 'xhs', name: '小红书', search: true, vs: true, searchAccounts: true },
-      { identifier: 'wb', name: '微博', search: false, vs: false, searchAccounts: false },
+      { identifier: 'xhs', name: '小红书', ...all, interact: ['like', 'follow', 'replyToComment', 'followBack'] },
+      { identifier: 'wb', name: '微博', ...all, search: false, vs: false, searchAccounts: false, interact: [] },
+      { identifier: 'fb', name: 'Facebook', posts: false, comments: false, accounts: false, search: true, vs: false, searchAccounts: false, interact: [] },
+      { identifier: 'ig', name: 'Instagram', ...all, posts: false, comments: false, search: false, searchAccounts: false, interact: [] },
     ]);
+  });
+
+  it('only platforms that read posts or accounts take post links or competitors, and say why not', async () => {
+    const { service } = setup();
+    expect(() => service.detectPost('https://fb.com/p/abc')).toThrow('认不出这个链接。支持：小红书、微博 的帖子链接');
+    expect(() => service.resolveAccount('rival', 'fb')).toThrow('Facebook暂不支持竞品账号监控');
+    expect(service.resolveAccount('https://ig.com/u/rival')).toEqual({ platform: 'ig', account: { handle: 'rival', url: 'https://ig.com/u/rival' } });
+    await expect(service.createTarget('o1', { kind: 'KEYWORD', input: '露营', platform: 'fb' })).resolves.toMatchObject({ platform: 'fb' });
+    await expect(service.searchAccounts('o1', 'fb', 'rival')).rejects.toThrow(/暂不支持搜索/);
   });
 
   it('detects the platform of a post link, even inside share text', () => {
@@ -458,6 +481,16 @@ describe('sync settings in monitor reads', () => {
     // the account read plus one charge per comment read
     expect(credits.withCredits.mock.calls.filter((c: any[]) => c[1] === 'monitor_sync')).toHaveLength(4);
     xhs.readPost.mockReset();
+  });
+
+  it('competitor comments are not read where the platform reads no comments, and its post targets fail clearly', async () => {
+    const ig = providers[4].monitor;
+    const { service, repo } = setup({ settings: { competitorCommentSync: true } });
+    ig.readAccount.mockResolvedValueOnce({ posts: [{ externalId: 'p1', url: 'https://ig.com/u/rival', title: '新品', publishedAt: new Date() }] });
+    expect(await service.runTarget(target({ kind: 'ACCOUNT', platform: 'ig', query: 'rival' }))).toEqual({ ok: true, added: 1 });
+    expect(repo.addComments).not.toHaveBeenCalled();
+    const res = await service.runTarget(target({ kind: 'POST', platform: 'ig', externalId: 'p1', url: 'https://ig.com/p/p1' }));
+    expect(res).toMatchObject({ ok: false, error: 'Instagram暂不支持监控单条帖子' });
   });
 
   it('competitor comments stop when the credits run out, and a risk-control block fails the read', async () => {

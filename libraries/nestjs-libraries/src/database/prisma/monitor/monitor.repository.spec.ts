@@ -81,6 +81,11 @@ describe('MonitorRepository', () => {
     expect(monitorItem.createManyAndReturn).toHaveBeenLastCalledWith(
       expect.objectContaining({ data: [expect.objectContaining({ externalId: 'd', url: 'https://p', title: '新品' })] })
     );
+    // a comment with its own link (B站 replies need the video and the comment) keeps it
+    await repo.addComments('t1', [{ externalId: 'e', authorName: 'x', content: 'w', url: 'https://v/BV1#reply1' }], { url: 'https://p', title: '新品' });
+    expect(monitorItem.createManyAndReturn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ externalId: 'e', url: 'https://v/BV1#reply1', title: '新品' })] })
+    );
     await repo.refreshMetrics('t1', 'POST', [{ externalId: 'a', url: 'u', likes: 9 }, { externalId: 'b', url: 'u' }]);
     expect(monitorItem.updateMany).toHaveBeenCalledTimes(2);
     expect(monitorItem.updateMany).toHaveBeenCalledWith({

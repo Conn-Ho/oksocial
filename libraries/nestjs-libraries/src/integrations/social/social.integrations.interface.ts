@@ -186,6 +186,8 @@ export type MonitorComment = {
   content: string;
   likes?: number | null;
   platformTime?: string;
+  // link to the comment (or its post) when replying needs more than the comment id
+  url?: string;
 };
 
 export type MonitorAccountRef = {
@@ -204,11 +206,16 @@ export type MonitorAccountCandidate = MonitorAccountRef & {
 
 // oksocial 帖文操作助手 / 帖文拓客助手: acting on other people's posts and comments.
 export type InteractPost = { externalId: string; url?: string | null; authorName?: string | null };
-export type InteractAccount = { name: string; displayName?: string; bio?: string };
+// url: the profile link, for platforms that follow by it rather than by name
+export type InteractAccount = { name: string; displayName?: string; bio?: string; url?: string };
+export type InteractAuthor = { name: string; url?: string | null };
 export type InteractCapabilities = {
   like?: (slot: string, post: InteractPost) => Promise<void>;
   bookmark?: (slot: string, post: InteractPost) => Promise<void>;
-  follow?: (slot: string, author: { name: string; url?: string | null }) => Promise<void>;
+  follow?: (slot: string, author: InteractAuthor) => Promise<void>;
+  // whether follow can find this author (default: it has a name); a keyword hit may only carry
+  // a display name where the platform follows by profile link
+  canFollow?: (author: InteractAuthor) => boolean;
   // a comment under someone's post (抢前排)
   comment?: (slot: string, post: InteractPost, text: string) => Promise<void>;
   // an account's newest followers / whom it follows (回关助手)
@@ -219,18 +226,21 @@ export type InteractCapabilities = {
 };
 
 export type MonitorCapabilities = {
-  // This platform's post link as a ref, or null when the link belongs to another platform.
+  // This platform's post link as a ref, or null when the link belongs to another platform (or the
+  // platform cannot read single posts).
   parsePostUrl(url: string): MonitorPostRef | null;
-  // A profile link, or a bare id / handle of this platform.
+  // A profile link, or a bare id / handle of this platform (null when it cannot read accounts).
   parseAccount(input: string): MonitorAccountRef | null;
-  // One post with its metrics, plus up to `comments` of its comments.
-  readPost(
+  // One post with its metrics, plus up to `comments` of its comments. Unset: posts cannot be monitored.
+  readPost?(
     token: string,
     ref: MonitorPostRef,
     comments: number
   ): Promise<{ post: MonitorPost; comments: MonitorComment[] }>;
-  // Latest posts of an account, newest first.
-  readAccount(
+  // false when readPost returns no comments (帖文评论, 竞品评论同步 and 帖文拓客 need them)
+  comments?: boolean;
+  // Latest posts of an account, newest first. Unset: no competitor monitoring.
+  readAccount?(
     token: string,
     account: MonitorAccountRef,
     limit: number
