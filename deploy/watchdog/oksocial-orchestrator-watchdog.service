@@ -1,5 +1,5 @@
 [Unit]
-Description=Restart the oksocial orchestrator when no worker polls Temporal
+Description=Restart the oksocial orchestrator when no worker polls Temporal, and the backend when it stops answering
 After=docker.service
 
 [Service]

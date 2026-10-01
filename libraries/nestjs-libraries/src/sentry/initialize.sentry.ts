@@ -1,5 +1,4 @@
 import * as Sentry from '@sentry/nestjs';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
 import { capitalize } from 'lodash';
 
 export const setSentryUserContext = (params: {
@@ -25,12 +24,28 @@ export const setSentryUserContext = (params: {
   }
 };
 
+/**
+ * The CPU profiler integration, only when asked for with SENTRY_PROFILING=1. Loading its native module
+ * hung the backend about one start in three (Node 22 in the image, 2026-10-01): the process sat right
+ * after the require and never mapped a route, Sentry or not. The orchestrator loads this file too.
+ * So it is not loaded by default, not even as an unused import.
+ */
+const profilingIntegrations = () => {
+  if (process.env.SENTRY_PROFILING !== '1') {
+    return [];
+  }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { nodeProfilingIntegration } = require('@sentry/profiling-node');
+  return [nodeProfilingIntegration()];
+};
+
 export const initializeSentry = (appName: string, allowLogs = false) => {
   if (!process.env.NEXT_PUBLIC_SENTRY_DSN) {
     return null;
   }
 
   try {
+    const profiling = profilingIntegrations();
     Sentry.init({
       initialScope: {
         tags: {
@@ -47,8 +62,7 @@ export const initializeSentry = (appName: string, allowLogs = false) => {
       dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
       spotlight: process.env.SENTRY_SPOTLIGHT === '1',
       integrations: [
-        // Add our Profiling integration
-        nodeProfilingIntegration(),
+        ...profiling,
         Sentry.consoleLoggingIntegration({ levels: ['log', 'info', 'warn', 'error', 'debug', 'assert', 'trace'] }),
         Sentry.openAIIntegration({
           recordInputs: true,
@@ -72,9 +86,10 @@ export const initializeSentry = (appName: string, allowLogs = false) => {
       },
       enableLogs: true,
 
-      // Profiling
-      profileSessionSampleRate: process.env.NODE_ENV === 'development' ? 1.0 : 0.2,
-      profileLifecycle: 'trace',
+      // Profiling (SENTRY_PROFILING=1)
+      ...(profiling.length
+        ? { profileSessionSampleRate: process.env.NODE_ENV === 'development' ? 1.0 : 0.2, profileLifecycle: 'trace' as const }
+        : {}),
     });
   } catch (err) {
     console.log(err);
