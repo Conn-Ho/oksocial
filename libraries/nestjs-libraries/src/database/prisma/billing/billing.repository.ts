@@ -10,7 +10,7 @@ import {
 const SERIALIZATION_RETRIES = 3;
 const HISTORY_PAGE_SIZE = 50;
 
-const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002';
+export const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002';
 
 @Injectable()
 export class BillingRepository {
@@ -162,6 +162,17 @@ export class BillingRepository {
     ]).then(([rows, total]) => ({ rows, total, pageSize: HISTORY_PAGE_SIZE }));
   }
 
+  /** A member's check-in rows in an organization (their idempotency keys end with the day), newest first. */
+  async checkinDays(orgId: string, userId: string, take: number) {
+    const rows = await this._credits.model.creditEntry.findMany({
+      where: { organizationId: orgId, kind: 'BONUS', action: 'checkin', referenceId: userId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: { idempotencyKey: true },
+    });
+    return rows.map((r) => (r.idempotencyKey || '').split(':').pop() || '');
+  }
+
   /** Organizations to run the monthly grant for, a page at a time. */
   organizationIds(cursor: string | undefined, take: number) {
     return this._organizations.model.organization.findMany({
@@ -211,14 +222,7 @@ export class BillingRepository {
 
   // --- orders -------------------------------------------------------------
 
-  createOrder(data: {
-    organizationId: string;
-    orderNo: string;
-    productId: string;
-    priceYuan: string;
-    payType: string;
-    userId?: string;
-  }) {
+  createOrder(data: NewOrder) {
     return this._orders.model.billingOrder.create({ data });
   }
 
@@ -255,7 +259,15 @@ export class BillingRepository {
         productId: true,
         priceYuan: true,
         payType: true,
+        provider: true,
         status: true,
+        kind: true,
+        tier: true,
+        accounts: true,
+        months: true,
+        days: true,
+        totalAccounts: true,
+        giftCredits: true,
         periodStart: true,
         periodEnd: true,
         paidAt: true,
@@ -326,15 +338,48 @@ export class BillingRepository {
     });
   }
 
-  /** Paid orders whose grant never finished (the process died between payment and grant). */
+  /**
+   * Paid orders whose grant never finished (the process died between payment and grant), and free
+   * ones (trials, coupons) that were created but never applied.
+   */
   paidUnfulfilled(before: Date) {
     return this._orders.model.billingOrder.findMany({
-      where: { status: 'PAID', fulfilledAt: null, paidAt: { lte: before } },
-      orderBy: { paidAt: 'asc' },
+      where: {
+        OR: [
+          { status: 'PAID', fulfilledAt: null, paidAt: { lte: before } },
+          { status: 'PENDING', provider: INTERNAL_PROVIDER, createdAt: { lte: before } },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
       take: 100,
     });
   }
 }
 
-export type PaidTerm = { tier: SubscriptionTier; periodStart: Date; periodEnd: Date; dailyPrice: number };
+/** Orders that give something without a payment (trials, coupon days). */
+export const INTERNAL_PROVIDER = 'internal';
+
+export type NewOrder = {
+  organizationId: string;
+  orderNo: string;
+  productId: string;
+  priceYuan: string;
+  payType: string;
+  userId?: string;
+  provider?: string;
+  kind?: string;
+  tier?: SubscriptionTier;
+  accounts?: number;
+  months?: number;
+  days?: number;
+  giftCredits?: number;
+};
+
+export type PaidTerm = {
+  tier: SubscriptionTier;
+  periodStart: Date;
+  periodEnd: Date;
+  dailyPrice: number;
+  totalAccounts: number;
+};
 export type TermInputs = { lastPaid: BillingOrder | null; subscription: Subscription | null };

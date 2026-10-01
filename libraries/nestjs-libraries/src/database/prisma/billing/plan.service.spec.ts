@@ -53,17 +53,37 @@ describe('PlanService', () => {
     xorpayOn();
     const plan = await setup().service.getPlan('o1');
     expect(plan).toMatchObject({ billing: true, tier: 'FREE', name: '免费版', subscription: null });
-    expect(plan.limits.channels).toBe(2);
+    expect(plan.limits.channels).toBe(1);
+    expect(plan.limits.history_days).toBe(30);
     expect(plan.features).toEqual([]);
   });
 
-  it('a subscription gives its tier, and the channels it carries', async () => {
+  it('a subscription gives its tier, and the accounts it carries', async () => {
     xorpayOn();
     const plan = await setup({ sub: sub({ totalChannels: 12 }) }).service.getPlan('o1');
     expect(plan).toMatchObject({ tier: 'TEAM', name: '团队版' });
     expect(plan.limits.channels).toBe(12);
-    expect(plan.limits.team_members).toBe(5);
-    expect(plan.subscription).toMatchObject({ provider: 'xorpay', period: 'MONTHLY' });
+    expect(plan.limits.team_members).toBe(-1);
+    expect(plan.limits.history_days).toBe(360);
+    expect(plan.subscription).toMatchObject({ provider: 'xorpay', period: 'MONTHLY', isTrial: false });
+    const basic = await setup({ sub: sub({ subscriptionTier: 'STANDARD', totalChannels: 7 }) }).service.getPlan('o1');
+    expect(basic).toMatchObject({ tier: 'STANDARD', name: '基础版' });
+    expect(basic.limits).toMatchObject({ channels: 7, team_members: 1, history_days: 180 });
+  });
+
+  it('subscriptions from the old tier plans read as 团队版 with the accounts they carry', async () => {
+    xorpayOn();
+    for (const [old, channels] of [['PRO', 30], ['ULTIMATE', 100]] as const) {
+      const plan = await setup({ sub: sub({ subscriptionTier: old, totalChannels: channels }) }).service.getPlan('o1');
+      expect(plan).toMatchObject({ tier: 'TEAM', name: '团队版' });
+      expect(plan.limits.channels).toBe(channels);
+    }
+  });
+
+  it('a trial subscription says so', async () => {
+    xorpayOn();
+    const plan = await setup({ sub: sub({ identifier: 'trial-o1', totalChannels: 5 }) }).service.getPlan('o1');
+    expect(plan.subscription).toMatchObject({ isTrial: true });
   });
 
   it('a period that ran out counts as the free plan; lifetime and open-ended ones never run out', async () => {
@@ -73,6 +93,21 @@ describe('PlanService', () => {
     expect(isExpired(ended as any)).toBe(true);
     expect(isExpired({ ...ended, isLifetime: true } as any)).toBe(false);
     expect(isExpired({ ...ended, cancelAt: null } as any)).toBe(false);
+  });
+
+  it('history days: the plan clamps report ranges; without billing nothing is clamped', async () => {
+    expect(await setup().service.historyDays('o1')).toBe(-1);
+    expect(await setup().service.clampDays('o1', 365)).toBe(365);
+    xorpayOn();
+    expect(await setup().service.historyDays('o1')).toBe(30);
+    expect(await setup().service.clampDays('o1', 90)).toBe(30);
+    expect(await setup().service.clampDays('o1', 7)).toBe(7);
+    const team = setup({ sub: sub() }).service;
+    expect(await team.clampDays('o1', 90)).toBe(90);
+    expect(await team.clampDays('o1', 400)).toBe(360);
+    // nonsense in, a sane range out
+    expect(await team.clampDays('o1', NaN)).toBe(1);
+    expect(await team.clampDays('o1', -3)).toBe(1);
   });
 
   it('Stripe alone keeps Postiz: oksocial limits are off, enabling channels uses the subscription', async () => {
@@ -89,24 +124,24 @@ describe('PlanService', () => {
 
   it('with XorPay the channel limit is the plan one', async () => {
     xorpayOn();
-    expect(await setup().service.channelLimit('o1')).toBe(2);
+    expect(await setup().service.channelLimit('o1')).toBe(1);
     expect(await setup({ sub: sub({ subscriptionTier: 'ULTIMATE', totalChannels: -1 }) }).service.channelLimit('o1')).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('refuses one more channel at the limit with a Chinese message and a link to the usage page', async () => {
     xorpayOn();
     process.env.FRONTEND_URL = 'https://app.oksocial.online';
-    const { service } = setup({ channels: 2 });
+    const { service } = setup({ channels: 1 });
     const err = await service.assertWithinLimit('o1', 'channels').catch((e) => e);
     expect(err).toBeInstanceOf(PaymentRequiredException);
     expect(err.getStatus()).toBe(402);
     expect(err.getResponse()).toEqual({
       statusCode: 402,
       code: 'plan_limit',
-      message: '账号数已达免费版上限（2 个），请升级套餐后再添加。',
+      message: '账号数已达免费版上限（1 个），请升级套餐后再添加。',
       url: 'https://app.oksocial.online/usage',
     });
-    await expect(setup({ channels: 1 }).service.assertWithinLimit('o1', 'channels')).resolves.toBeUndefined();
+    await expect(setup({ channels: 0 }).service.assertWithinLimit('o1', 'channels')).resolves.toBeUndefined();
   });
 
   it('team members are counted, and a passed count skips counting (monitoring limits)', async () => {
@@ -116,13 +151,14 @@ describe('PlanService', () => {
     await expect(service.assertWithinLimit('o1', 'competitors', 4)).resolves.toBeUndefined();
     await expect(service.assertWithinLimit('o1', 'competitors', 5)).rejects.toThrow('竞品账号已达免费版上限（5 个）');
     await expect(service.assertWithinLimit('o1', 'keywords', 0)).rejects.toThrow('监控关键词');
-    expect(await service.withinLimit('o1', 'monitored_posts', 4)).toBe(true);
+    expect(await service.withinLimit('o1', 'monitored_posts', 0)).toBe(true);
+    expect(await service.withinLimit('o1', 'monitored_posts', 1)).toBe(false);
     expect(repo.countMembers).toHaveBeenCalledTimes(1);
   });
 
   it('unlimited limits never refuse', async () => {
     xorpayOn();
-    const { service } = setup({ sub: sub({ subscriptionTier: 'ULTIMATE', totalChannels: 100 }), members: 500 });
+    const { service } = setup({ sub: sub({ subscriptionTier: 'TEAM', totalChannels: 100 }), members: 500 });
     await expect(service.assertWithinLimit('o1', 'team_members')).resolves.toBeUndefined();
   });
 
@@ -152,13 +188,15 @@ describe('PlanService', () => {
     const summary = await service.summary('o1');
     expect(summary.usage.find((u) => u.key === 'competitors')).toMatchObject({ used: 3, limit: 5, label: '竞品账号' });
     expect(summary.usage.find((u) => u.key === 'keywords')).toMatchObject({ used: null, limit: 0 });
+    // credits and the history window are shown elsewhere, not as usage bars
+    expect(summary.usage.map((u) => u.key)).toEqual(['channels', 'team_members', 'competitors', 'monitored_posts', 'keywords', 'storage_gb']);
     expect(summary.features.every((f) => !f.enabled)).toBe(true);
-    expect(summary).toMatchObject({ billing: true, tier: 'FREE', monthlyCredits: 300 });
+    expect(summary).toMatchObject({ billing: true, tier: 'FREE', monthlyCredits: 300, historyDays: 30 });
   });
 
   it('lists tiers without the Postiz mapping', () => {
     const tiers = setup().service.tiers();
-    expect(tiers.map((t) => t.tier)).toEqual(['FREE', 'STANDARD', 'TEAM', 'PRO', 'ULTIMATE']);
+    expect(tiers.map((t) => t.tier)).toEqual(['FREE', 'STANDARD', 'TEAM']);
     expect(tiers[0]).not.toHaveProperty('postizFeatures');
   });
 
@@ -182,9 +220,11 @@ describe('PlanService', () => {
       xorpayOn();
       const free = await setup().service.packageOptions('o1');
       expect(free.subscription).toBeNull();
-      expect(free.options).toMatchObject({ channel: 2, posts_per_month: pricing.STANDARD.posts_per_month, ai: true, team_members: true });
+      expect(free.options).toMatchObject({ channel: 1, posts_per_month: pricing.STANDARD.posts_per_month, ai: true, team_members: true });
       const team = await setup({ sub: sub() }).service.packageOptions('o1');
-      expect(team.options).toMatchObject({ channel: -10, autoPost: true, team_members: true });
+      expect(team.options).toMatchObject({ channel: -10, autoPost: true, team_members: true, image_generator: true });
+      const legacy = await setup({ sub: sub({ subscriptionTier: 'ULTIMATE' }) }).service.packageOptions('o1');
+      expect(legacy.options).toMatchObject({ channel: -10, autoPost: true });
     });
   });
 });

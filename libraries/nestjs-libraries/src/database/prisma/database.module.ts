@@ -25,6 +25,11 @@ import { BillingRepository } from '@gitroom/nestjs-libraries/database/prisma/bil
 import { PlanService } from '@gitroom/nestjs-libraries/database/prisma/billing/plan.service';
 import { CreditsService } from '@gitroom/nestjs-libraries/database/prisma/billing/credits.service';
 import { BillingOrdersService } from '@gitroom/nestjs-libraries/database/prisma/billing/billing.orders.service';
+import { ReferralRepository } from '@gitroom/nestjs-libraries/database/prisma/billing/referral.repository';
+import { ReferralService } from '@gitroom/nestjs-libraries/database/prisma/billing/referral.service';
+import { CouponRepository } from '@gitroom/nestjs-libraries/database/prisma/billing/coupon.repository';
+import { CouponService } from '@gitroom/nestjs-libraries/database/prisma/billing/coupon.service';
+import { CheckinService } from '@gitroom/nestjs-libraries/database/prisma/billing/checkin.service';
 import { ApiKeysRepository } from '@gitroom/nestjs-libraries/database/prisma/api-keys/api.keys.repository';
 import { ApiKeysService } from '@gitroom/nestjs-libraries/database/prisma/api-keys/api.keys.service';
 import { ExtractContentService } from '@gitroom/nestjs-libraries/openai/extract.content.service';
@@ -112,6 +117,11 @@ import { CreationAiService } from '@gitroom/nestjs-libraries/creation/creation.a
     PlanService,
     CreditsService,
     BillingOrdersService,
+    ReferralRepository,
+    ReferralService,
+    CouponRepository,
+    CouponService,
+    CheckinService,
     ApiKeysRepository,
     ApiKeysService,
     SignatureRepository,

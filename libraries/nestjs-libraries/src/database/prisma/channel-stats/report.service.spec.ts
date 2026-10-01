@@ -6,7 +6,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/billing/plan.service', () =
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { renderWeeklyEmail, ReportService } from '@gitroom/nestjs-libraries/database/prisma/channel-stats/report.service';
 
-const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email']) => {
+const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email'], historyDays = -1) => {
   const repo = {
     orgChannels: jest.fn(async () => [{ id: 'a', name: 'WenWen', providerIdentifier: 'xiaohongshu' }]),
     snapshotsSince: jest.fn(async () => []),
@@ -18,6 +18,7 @@ const setup = (share?: any, features: string[] = ['share_reports', 'weekly_email
   };
   const notifications = { sendEmail: jest.fn(async () => undefined) };
   const plans = {
+    historyDays: jest.fn(async () => historyDays),
     hasFeature: jest.fn(async (_o: string, f: string) => features.includes(f)),
     assertFeature: jest.fn(async (_o: string, f: string) => {
       if (!features.includes(f)) throw Object.assign(new Error('upgrade'), { status: 402 });
@@ -59,6 +60,21 @@ describe('ReportService', () => {
     const ok = await setup(locked).service.publicReport('t', 'pw12');
     expect(ok.organization).toBe('团队');
     expect(ok.report.channels[0].name).toBe('WenWen');
+  });
+
+  it('the range is clamped to the days of data the plan keeps, the comparison window too', async () => {
+    const DAY = 86400_000;
+    const free = setup(undefined, undefined, 30);
+    const report = await free.service.overview('o1', 90);
+    expect(report.days).toBe(30);
+    const since = (free.repo.snapshotsSince.mock.calls[0] as any[])[1] as Date;
+    expect(Math.round((Date.now() - since.getTime()) / DAY)).toBe(30);
+    const week = setup(undefined, undefined, 30);
+    expect((await week.service.overview('o1', 7)).days).toBe(7);
+    expect(Math.round((Date.now() - ((week.repo.snapshotsSince.mock.calls[0] as any[])[1] as Date).getTime()) / DAY)).toBe(14);
+    const unlimited = setup();
+    expect((await unlimited.service.overview('o1', 90)).days).toBe(90);
+    expect(Math.round((Date.now() - ((unlimited.repo.snapshotsSince.mock.calls[0] as any[])[1] as Date).getTime()) / DAY)).toBe(180);
   });
 
   it('weekly reports go to reviewers of opted-in orgs only', async () => {

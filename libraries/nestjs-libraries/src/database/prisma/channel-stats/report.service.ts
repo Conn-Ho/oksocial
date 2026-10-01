@@ -45,12 +45,16 @@ export class ReportService {
   ) {}
 
   async overview(orgId: string, days: number) {
-    const since = dayjs().subtract(days * 2, 'day').toDate();
+    // the plan keeps history_days of data: the range shown and the one it is compared with stay inside it
+    const history = await this._planService.historyDays(orgId);
+    const shown = history < 0 ? days : Math.max(1, Math.min(days, history));
+    const back = history < 0 ? shown * 2 : Math.min(shown * 2, history);
+    const since = dayjs().subtract(back, 'day').toDate();
     const [channels, snapshots] = await Promise.all([
       this._repository.orgChannels(orgId),
       this._repository.snapshotsSince(orgId, since),
     ]);
-    return buildChannelReport(channels, snapshots, days);
+    return buildChannelReport(channels, snapshots, shown);
   }
 
   private shareUrl(token: string) {

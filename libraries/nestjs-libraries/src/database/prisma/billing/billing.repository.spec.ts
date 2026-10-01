@@ -198,7 +198,12 @@ describe('BillingRepository', () => {
     }));
     await r.paidUnfulfilled(since);
     expect(billingOrder.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
-      where: { status: 'PAID', fulfilledAt: null, paidAt: { lte: since } },
+      where: {
+        OR: [
+          { status: 'PAID', fulfilledAt: null, paidAt: { lte: since } },
+          { status: 'PENDING', provider: 'internal', createdAt: { lte: since } },
+        ],
+      },
     }));
     await r.getOrder('oks1');
     await r.getOrgOrder('o1', 'oks1');
@@ -213,5 +218,16 @@ describe('BillingRepository', () => {
     const now = new Date();
     await r.expiredSubscriptions('xorpay', now);
     await r.lastGrant('o1');
+  });
+
+  it('check-in days come from the idempotency keys of the member\'s check-in rows', async () => {
+    const findMany = jest.fn(async () => [{ idempotencyKey: 'checkin:o1:u1:2026-10-01' }, { idempotencyKey: 'checkin:o1:u1:2026-09-30' }, { idempotencyKey: null }]);
+    expect(await repo({ creditEntry: { findMany } }).checkinDays('o1', 'u1', 400)).toEqual(['2026-10-01', '2026-09-30', '']);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { organizationId: 'o1', kind: 'BONUS', action: 'checkin', referenceId: 'u1' },
+      orderBy: { createdAt: 'desc' },
+      take: 400,
+      select: { idempotencyKey: true },
+    });
   });
 });

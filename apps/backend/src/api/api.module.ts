@@ -66,6 +66,8 @@ import { OauthProvider } from '@gitroom/backend/services/auth/providers/oauth.pr
 import { StripeController } from '@gitroom/backend/api/routes/stripe.controller';
 import { UsageController } from '@gitroom/backend/api/routes/usage.controller';
 import { ApiKeysController } from '@gitroom/backend/api/routes/api.keys.controller';
+import { AdminCouponsController } from '@gitroom/backend/api/routes/admin.coupons.controller';
+import { PublicPricingController } from '@gitroom/backend/api/routes/public.pricing.controller';
 
 const authenticatedController = [
   UsersController,
@@ -97,6 +99,7 @@ const authenticatedController = [
   AdminController,
   UsageController,
   ApiKeysController,
+  AdminCouponsController,
 ];
 @Module({
   imports: [UploadModule],
@@ -114,6 +117,7 @@ const authenticatedController = [
         AuthController,
         PublicController,
         PublicReportsController,
+        PublicPricingController,
         MonitorController,
         EnterpriseController,
         NoAuthIntegrationsController,

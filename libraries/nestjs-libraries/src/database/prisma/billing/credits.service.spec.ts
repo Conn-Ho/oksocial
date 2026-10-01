@@ -6,7 +6,7 @@ import { PaymentRequiredException } from '@gitroom/nestjs-libraries/database/pri
 type Row = {
   id: string;
   organizationId: string;
-  kind: 'GRANT' | 'EXPIRE' | 'TOPUP' | 'SPEND' | 'REFUND';
+  kind: 'GRANT' | 'EXPIRE' | 'TOPUP' | 'SPEND' | 'REFUND' | 'BONUS';
   amount: number;
   action: string | null;
   referenceId: string | null;
@@ -265,6 +265,37 @@ describe('CreditsService', () => {
     const month = await service.history('o1', 30);
     expect(month.rows.map((r) => r.label)).toEqual(['浏览器账号写操作（发帖、评论、回复）', '积分包 1,000', 'AI 回复草稿', '免费版']);
     expect(month.total).toBe(4);
+  });
+
+  it('bonus credits are given once per key, stay when the allowance expires, and read by their reason', async () => {
+    const { service, ledger } = setup();
+    expect(await service.bonus('o1', 10, 'checkin', 'u1', 'checkin:o1:u1:2026-09-01')).toBe(true);
+    expect(await service.bonus('o1', 10, 'checkin', 'u1', 'checkin:o1:u1:2026-09-01')).toBe(false);
+    expect(await service.bonus('o1', 0, 'coupon', 'c1', 'coupon:c1:o1')).toBe(false);
+    expect(ledger.rows.filter((r) => r.kind === 'BONUS')).toEqual([
+      expect.objectContaining({ amount: 10, action: 'checkin', referenceId: 'u1', idempotencyKey: 'checkin:o1:u1:2026-09-01' }),
+    ]);
+    await service.grantIfDue('o1');
+    jest.setSystemTime(new Date('2026-10-01T10:00:00+08:00'));
+    await service.grantIfDue('o1');
+    // the free allowance (300) expired and came back, the check-in stayed
+    expect(await service.balance('o1')).toBe(310);
+    const labels = (await service.history('o1', 30)).rows.map((r) => r.label);
+    expect(labels).toContain('每日签到');
+  });
+
+  it('bonus credits are not given without billing', async () => {
+    delete process.env.OKSOCIAL_XORPAY_AID;
+    const { service, ledger } = setup();
+    expect(await service.bonus('o1', 500, 'referral_signup', 'r1', 'referral-signup:o1')).toBe(false);
+    expect(ledger.rows).toEqual([]);
+  });
+
+  it('grants of plans from the earlier tiers keep a readable name', async () => {
+    const { service, ledger } = setup();
+    await ledger.addOnce({ organizationId: 'o1', kind: 'GRANT', amount: 15000, action: 'PRO', idempotencyKey: 'grant:o1:first' });
+    await ledger.addOnce({ organizationId: 'o1', kind: 'BONUS', amount: 4900, action: 'purchase_gift', idempotencyKey: 'gift:x' });
+    expect((await service.history('o1', 3)).rows.map((r) => r.label)).toEqual(['购买套餐赠送', '团队版']);
   });
 
   it('lists the price table', () => {

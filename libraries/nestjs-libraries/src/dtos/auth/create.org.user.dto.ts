@@ -1,6 +1,7 @@
 import {
   IsDefined,
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -37,4 +38,10 @@ export class CreateOrgUserDto {
   company: string;
 
   datafast_visitor_id: string;
+
+  // oksocial referral: the code of the sign-up link (/auth?ref=CODE)
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  referralCode?: string;
 }
