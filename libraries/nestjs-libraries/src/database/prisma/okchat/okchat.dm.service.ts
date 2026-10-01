@@ -30,6 +30,8 @@ type Channel = { integrationId: string; slot: string; platform: string; dm: DmCa
 
 /** A message text as the web IM shows it: whitespace collapsed, at most what a read keeps. Pure. */
 export const normalizeDmText = (text: string) => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, TEXT_KEPT);
+// echoes are compared with every whitespace removed (newlines, spaces, U+3000), the rule okchat's driver uses too
+export const echoKey = (text: string) => normalizeDmText(text).replace(/\s+/g, '');
 
 const same = (a: Read, b: Read) => a.mine === b.mine && normalizeDmText(a.text) === normalizeDmText(b.text);
 
@@ -216,11 +218,11 @@ export class OkchatDmService {
     const state: ThreadState = thread ? { initialized: thread.initialized, tail: (thread.tail as OkchatTailMessage[]) || [] } : null;
     const echoes = new Set(
       (await this._repository.sentTexts(channel.integrationId, conversation.id, new Date(now.getTime() - DM_ECHO_WINDOW_MS))).map(
-        normalizeDmText
+        echoKey
       )
     );
     // ours are never pushed, nor is what we sent to this conversation read back without the mark
-    const incoming = newMessages(state, read, conversation.unread).filter((m) => !m.mine && !echoes.has(normalizeDmText(m.text)));
+    const incoming = newMessages(state, read, conversation.unread).filter((m) => !m.mine && !echoes.has(echoKey(m.text)));
     const first = (thread?.seq ?? 0) + 1;
     const messages = incoming.map((m, i) => ({
       id: `${conversation.id}:${first + i}`,

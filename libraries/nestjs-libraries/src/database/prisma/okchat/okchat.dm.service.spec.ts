@@ -10,6 +10,7 @@ import {
   newMessages,
   nextTail,
   normalizeDmText,
+  echoKey,
   parseImTime,
   pickConversations,
 } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.service';
@@ -72,6 +73,11 @@ describe('tail alignment', () => {
     expect(grown).toHaveLength(30);
     expect(grown.at(-1)).toEqual({ from: '小C', mine: false, text: 'l' });
     expect(grown[0]).toEqual({ from: '小C', mine: false, text: 't2' });
+  });
+
+  it('echoKey drops every kind of whitespace, as okchat compares echoes', () => {
+    expect(echoKey('好的 ，\n马上\u3000发您')).toBe(echoKey('好的，马上发您'));
+    expect(echoKey('a b')).not.toBe(echoKey('ab c'));
   });
 
   it('normalizeDmText collapses whitespace like the page and keeps what a read keeps (500)', () => {
