@@ -9,6 +9,7 @@ const setup = () => {
   };
   const okchatBinding = {
     findMany: jest.fn(async () => [] as any[]),
+    findFirst: jest.fn(async () => null as any),
     updateMany: jest.fn((args: any) => ({ op: 'updateMany', args })),
     deleteMany: jest.fn((args: any) => ({ op: 'deleteMany', args })),
     upsert: jest.fn((args: any) => ({ op: 'upsert', args })),
@@ -202,5 +203,52 @@ describe('OkchatRepository read lease', () => {
       where: { integrationId: 'i1', readLeaseOwner: 'read-1' },
       data: { readLeaseUntil: null, readLeaseOwner: null },
     });
+  });
+});
+
+describe('OkchatRepository: the DM watch', () => {
+  const now = new Date('2026-10-03T06:00:00Z');
+  const usable = {
+    deletedAt: null,
+    disabled: false,
+    refreshNeeded: false,
+    inBetweenSteps: false,
+    providerIdentifier: { in: ['xiaohongshu'] },
+    organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
+  };
+
+  it('one account read right away: the same accounts a round reads, whenever it was last read', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.readableBinding('i1', ['xiaohongshu'], now);
+    const [args] = okchatBinding.findFirst.mock.calls[0] as any[];
+    expect(args.where).toEqual({
+      integrationId: 'i1',
+      active: true,
+      AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }],
+      integration: usable,
+    });
+    expect(args.include).toEqual({ integration: { select: expect.objectContaining({ token: true, providerIdentifier: true }) } });
+  });
+
+  it('the accounts to watch: readable ones whose DM site is not logged out, with their slot', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.watchableBindings(['xiaohongshu'], now);
+    expect(okchatBinding.findMany).toHaveBeenCalledWith({
+      where: { active: true, loggedOutReason: null, AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }], integration: usable },
+      select: { integrationId: true, integration: { select: { token: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('records which watchers are healthy until when, and clears the others', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValue({ count: 1 } as any);
+    const until = new Date('2026-10-03T06:03:00Z');
+    await repo.setWatchHealth(['i1'], ['i2', 'i3'], until);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({ where: { integrationId: { in: ['i1'] } }, data: { watchHealthyUntil: until } });
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({ where: { integrationId: { in: ['i2', 'i3'] } }, data: { watchHealthyUntil: null } });
+    okchatBinding.updateMany.mockClear();
+    await repo.setWatchHealth([], [], until);
+    expect(okchatBinding.updateMany).not.toHaveBeenCalled();
   });
 });

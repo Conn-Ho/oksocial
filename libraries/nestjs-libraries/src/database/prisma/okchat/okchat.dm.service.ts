@@ -222,6 +222,19 @@ export class OkchatDmService {
     return { accounts: due.length, read };
   }
 
+  /**
+   * A read of one account right away, because its real-time watcher saw the conversation list
+   * change: the same read as a round's (lease, alignment, outbox). Busy while another read has the
+   * account; nothing for an account a round would not read either (paused, unlinked, logged out).
+   */
+  async readOne(integrationId: string, now = new Date()): Promise<{ read: boolean; busy?: boolean }> {
+    const binding = await this._repository.readableBinding(integrationId, this._integrationManager.getDmProviders(), now);
+    if (!binding) {
+      return { read: false };
+    }
+    return (await this.readLeased(binding, now)) === 'read' ? { read: true } : { read: false, busy: true };
+  }
+
   /** Reads the account under its lease; 'busy' when another read holds it (that read covers it). */
   private async readLeased(binding: ReadableBinding, now: Date): Promise<'read' | 'busy'> {
     const lease: Lease = { integrationId: binding.integrationId, owner: this.newOwner() };

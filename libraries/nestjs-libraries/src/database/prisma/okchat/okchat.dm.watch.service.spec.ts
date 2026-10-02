@@ -1,0 +1,92 @@
+jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', () => ({ OkchatRepository: class {} }));
+
+import { BrowserFleetError } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
+import {
+  DM_WATCH_HEALTH_TTL_MS,
+  DM_WATCH_WAIT_MS,
+  OkchatDmWatchService,
+} from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.watch.service';
+
+const NOW = new Date('2026-10-03T06:00:00Z');
+
+const setup = (opts: { bindings?: any[]; watchers?: any[] | Error; changes?: any | Error; configured?: boolean } = {}) => {
+  const repo = {
+    watchableBindings: jest.fn(async () => opts.bindings ?? [
+      { integrationId: 'i1', integration: { token: 'xhs-1' } },
+      { integrationId: 'i2', integration: { token: 'xhs-2' } },
+    ]),
+    setWatchHealth: jest.fn(async () => undefined),
+  };
+  const fleet = {
+    configured: opts.configured ?? true,
+    dmWatch: jest.fn(async () => {
+      if (opts.watchers instanceof Error) throw opts.watchers;
+      return { ok: true, watchers: opts.watchers ?? [] };
+    }),
+    dmWatchChanges: jest.fn(async () => {
+      if (opts.changes instanceof Error) throw opts.changes;
+      return { ok: true, ...(opts.changes ?? { cursor: 'b1:0', changes: [] }) };
+    }),
+  };
+  const service = new OkchatDmWatchService(repo as any);
+  (service as any).fleet = fleet;
+  return { service, repo, fleet };
+};
+
+describe('OkchatDmWatchService.sync', () => {
+  it('tells the worker every account to watch and records which watchers are healthy for 3 minutes', async () => {
+    const { service, repo, fleet } = setup({
+      watchers: [
+        { slot: 'xhs-1', key: 'i1', healthy: true, phase: 'watching', page: 'list', reason: null },
+        { slot: 'xhs-2', key: 'i2', healthy: false, phase: 'starting', page: null, reason: null },
+        // a watcher the worker still had for an account no longer linked
+        { slot: 'xhs-9', key: 'i9', healthy: true, phase: 'watching', page: 'list', reason: null },
+      ],
+    });
+    expect(await service.sync(NOW)).toEqual({ watching: true, accounts: 2, healthy: 1 });
+    expect(repo.watchableBindings).toHaveBeenCalledWith(['xiaohongshu'], NOW);
+    expect(fleet.dmWatch).toHaveBeenCalledWith([{ slot: 'xhs-1', key: 'i1' }, { slot: 'xhs-2', key: 'i2' }]);
+    expect(repo.setWatchHealth).toHaveBeenCalledWith(['i1'], ['i2'], new Date(NOW.getTime() + DM_WATCH_HEALTH_TTL_MS));
+    expect(DM_WATCH_HEALTH_TTL_MS).toBe(3 * 60_000);
+  });
+
+  it('nothing linked: the worker drops every watcher, and there is nothing to wait for', async () => {
+    const { service, fleet } = setup({ bindings: [] });
+    expect(await service.sync(NOW)).toEqual({ watching: false, accounts: 0, healthy: 0 });
+    expect(fleet.dmWatch).toHaveBeenCalledWith([]);
+  });
+
+  it('a worker without the DM watch (not updated yet) or without a token: not watching, no error', async () => {
+    const old = setup({ watchers: new BrowserFleetError('route not found', 404, 'NOT_FOUND') });
+    expect(await old.service.sync(NOW)).toEqual({ watching: false, accounts: 2, healthy: 0, unsupported: true });
+    expect(old.repo.setWatchHealth).not.toHaveBeenCalled();
+    const none = setup({ configured: false });
+    expect(await none.service.sync(NOW)).toEqual({ watching: false, accounts: 0, healthy: 0 });
+    expect(none.fleet.dmWatch).not.toHaveBeenCalled();
+    const down = setup({ watchers: new BrowserFleetError('bad gateway', 502) });
+    await expect(down.service.sync(NOW)).rejects.toThrow('bad gateway');
+  });
+});
+
+describe('OkchatDmWatchService.changes', () => {
+  it('long-polls the worker and gives each changed account once', async () => {
+    const { service, fleet } = setup({
+      changes: {
+        cursor: 'b1:5',
+        changes: [
+          { slot: 'xhs-1', key: 'i1', at: 'x' },
+          { slot: 'xhs-2', key: 'i2', at: 'y' },
+          { slot: 'xhs-1', key: 'i1', at: 'z' },
+        ],
+      },
+    });
+    expect(await service.changes('b1:3')).toEqual({ cursor: 'b1:5', integrationIds: ['i1', 'i2'] });
+    expect(fleet.dmWatchChanges).toHaveBeenCalledWith('b1:3', DM_WATCH_WAIT_MS);
+    expect(DM_WATCH_WAIT_MS).toBeLessThanOrEqual(55_000);
+  });
+
+  it('a worker without the DM watch keeps the cursor and says so', async () => {
+    const { service } = setup({ changes: new BrowserFleetError('route not found', 404, 'NOT_FOUND') });
+    expect(await service.changes('b1:3')).toEqual({ cursor: 'b1:3', integrationIds: [], unsupported: true });
+  });
+});

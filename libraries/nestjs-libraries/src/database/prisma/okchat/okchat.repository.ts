@@ -27,6 +27,17 @@ const channelSelect = {
   deletedAt: true,
 } satisfies Prisma.IntegrationSelect;
 
+// an account whose DMs can be read: in use, its browser logged in, its team linked to okchat
+const usableIntegration = (providers: string[]): Prisma.IntegrationWhereInput => ({
+  deletedAt: null,
+  disabled: false,
+  refreshNeeded: false,
+  inBetweenSteps: false,
+  providerIdentifier: { in: providers },
+  organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
+});
+const notPaused = (now: Date): Prisma.OkchatBindingWhereInput => ({ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] });
+
 @Injectable()
 export class OkchatRepository {
   constructor(
@@ -195,7 +206,7 @@ export class OkchatRepository {
       where: {
         active: true,
         AND: [
-          { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+          notPaused(now),
           // another read has the account right now
           { OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: now } }] },
           {
@@ -206,19 +217,39 @@ export class OkchatRepository {
             ],
           },
         ],
-        integration: {
-          deletedAt: null,
-          disabled: false,
-          refreshNeeded: false,
-          inBetweenSteps: false,
-          providerIdentifier: { in: providers },
-          organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
-        },
+        integration: usableIntegration(providers),
       },
       orderBy: { lastReadAt: { sort: 'asc', nulls: 'first' } },
       take: limit,
       include: { integration: { select: channelSelect } },
     });
+  }
+
+  /** One binding a round would read, whenever it was last read (a read its watcher asked for). */
+  readableBinding(integrationId: string, providers: string[], now: Date) {
+    return this._bindings.model.okchatBinding.findFirst({
+      where: { integrationId, active: true, AND: [notPaused(now)], integration: usableIntegration(providers) },
+      include: { integration: { select: channelSelect } },
+    });
+  }
+
+  /** The accounts to keep a real-time DM watcher for: readable ones whose DM site is logged in. */
+  watchableBindings(providers: string[], now: Date) {
+    return this._bindings.model.okchatBinding.findMany({
+      where: { active: true, loggedOutReason: null, AND: [notPaused(now)], integration: usableIntegration(providers) },
+      select: { integrationId: true, integration: { select: { token: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** The accounts whose watcher is healthy (until `until`, when the poll is a safety net) and the others. */
+  async setWatchHealth(healthy: string[], unhealthy: string[], until: Date) {
+    if (healthy.length) {
+      await this._bindings.model.okchatBinding.updateMany({ where: { integrationId: { in: healthy } }, data: { watchHealthyUntil: until } });
+    }
+    if (unhealthy.length) {
+      await this._bindings.model.okchatBinding.updateMany({ where: { integrationId: { in: unhealthy } }, data: { watchHealthyUntil: null } });
+    }
   }
 
   /**

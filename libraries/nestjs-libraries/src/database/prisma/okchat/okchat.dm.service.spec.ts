@@ -533,3 +533,50 @@ describe('OkchatDmService: one read of an account at a time', () => {
     expect(repo.updateBinding).not.toHaveBeenCalled();
   });
 });
+
+describe('OkchatDmService.readOne: a read right away (the watcher saw the list change)', () => {
+  const NOW = new Date('2026-10-03T06:30:00Z');
+  const make = (opts: { binding?: any; claim?: boolean } = {}) => {
+    const dm = {
+      maxLength: 500,
+      readGapMs: [0, 0] as [number, number],
+      loggedOutReason: 'x',
+      conversations: jest.fn(async () => [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }]),
+      read: jest.fn(async () => [them('在吗')]),
+      send: jest.fn(),
+    };
+    const binding = { integrationId: 'i1', loggedOutReason: null, integration: { token: 'slot1', providerIdentifier: 'xiaohongshu' } };
+    const repo = {
+      readableBinding: jest.fn(async () => ('binding' in opts ? opts.binding : binding)),
+      claimRead: jest.fn(async () => opts.claim ?? true),
+      releaseRead: jest.fn(async () => ({ count: 1 })),
+      threads: jest.fn(async () => []),
+      sentTexts: jest.fn(async () => []),
+      saveRead: jest.fn(async () => []),
+      updateBinding: jest.fn(async () => ({ count: 1 })),
+    };
+    const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm }) };
+    const service = new OkchatDmService(repo as any, manager as any, { queueStatus: jest.fn() } as any);
+    Object.assign(service as any, { sleep: async () => undefined, random: () => 0, clock: () => NOW, newOwner: () => 'read-9' });
+    return { service, repo, dm };
+  };
+
+  it('reads the account the same way a round does: list, conversations, batch, lastReadAt', async () => {
+    const { service, repo, dm } = make();
+    expect(await service.readOne('i1', NOW)).toEqual({ read: true });
+    expect(repo.readableBinding).toHaveBeenCalledWith('i1', ['xiaohongshu'], NOW);
+    expect(dm.conversations).toHaveBeenCalledWith('slot1');
+    expect(repo.saveRead).toHaveBeenCalledTimes(1);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: null });
+    expect(repo.releaseRead).toHaveBeenCalledWith('i1', 'read-9');
+  });
+
+  it('busy while another read has the account; nothing for an account not to be read (paused, unlinked)', async () => {
+    const busy = make({ claim: false });
+    expect(await busy.service.readOne('i1', NOW)).toEqual({ read: false, busy: true });
+    expect(busy.dm.conversations).not.toHaveBeenCalled();
+    const none = make({ binding: null });
+    expect(await none.service.readOne('i1', NOW)).toEqual({ read: false });
+    expect(none.repo.claimRead).not.toHaveBeenCalled();
+  });
+});
