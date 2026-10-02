@@ -1,0 +1,7 @@
+[Unit]
+Description=Restart account browsers that hold too many leaked automation pages
+
+[Service]
+Type=oneshot
+User=mac
+ExecStart=/usr/local/bin/oksocial-slot-janitor

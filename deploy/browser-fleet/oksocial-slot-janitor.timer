@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly check of account browsers for leaked automation pages
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
