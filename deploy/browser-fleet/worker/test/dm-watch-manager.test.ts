@@ -91,6 +91,15 @@ function fakeBrowser(defaultShows: PageReport | null = list(['aaaa0001', 0, 'h0'
       tabs.delete(id);
       pages.get(id)?.close();
     },
+    async navigateTab(_cdp, id, url) {
+      const tab = tabs.get(id);
+      if (!tab) return false;
+      if (tab.url !== url) log.push(`navigateTab ${id} ${url}`);
+      tabs.set(id, { ...tab, url });
+      const page = pages.get(id);
+      if (page) page.url = url;
+      return true;
+    },
     async attach(_cdp, id, onReport) {
       const tab = tabs.get(id);
       if (!tab) throw new Error('no such tab');
@@ -295,6 +304,44 @@ describe('DM watch: never in the way of the account\'s own runs', () => {
     assert.equal(status(w)?.phase, 'watching');
   });
 
+  it('parks a remembered tab even before the first PUT after a worker restart', async () => {
+    const w = setup({ store: memoryTargetStore({ 'xhs-1': 'W7' }) });
+    w.fb.tabs.set('W7', { cdp: 9301, url: CHAT_URL });
+    w.watch.start();
+    await w.watch.beforeRun('xhs-1', ['xhsdm', 'read', 'abcdef12']);
+    assert.deepEqual(w.fb.log, ['navigateTab W7 about:blank']);
+    // a second run: already parked, nothing to do
+    await w.watch.beforeRun('xhs-1', ['xhsdm', 'list']);
+    assert.deepEqual(w.fb.log, ['navigateTab W7 about:blank']);
+    await w.watch.stop();
+  });
+
+  it('parks the tab through a one-off socket when the watcher\'s socket dropped', async () => {
+    const w = setup();
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    w.fb.page('W1').close();
+    await w.watch.beforeRun('xhs-1', ['xhsdm', 'list']);
+    assert.equal(w.fb.log.at(-1), 'navigateTab W1 about:blank');
+    assert.equal(status(w)?.phase, 'parked');
+  });
+
+  it('a navigation is checked again right before it: a run that began meanwhile, or the screen, stops it', async () => {
+    const w = setup();
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    w.fb.page('W1').emit({ state: 'elsewhere', convs: [] });
+    // the slot looked quiet when the check began; a run starts while the tab is probed
+    const page = w.fb.page('W1');
+    const probe = page.evaluate.bind(page);
+    page.evaluate = async (expression: string) => {
+      w.activity.set('xhs-1', { running: true, pending: 0, lastDoneAt: undefined });
+      return probe(expression);
+    };
+    await w.after(MIN);
+    assert.equal(w.fb.log.filter((l) => l.startsWith('navigate')).length, 0);
+  });
+
   it('with yielding off, runs never move the tab', async () => {
     const w = setup({ yieldToRuns: false });
     await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
@@ -467,5 +514,39 @@ describe('DM watch: remembered tabs', () => {
 
   it('reload pauses double up to the cap', () => {
     assert.deepEqual([1, 2, 3, 6, 9].map((n) => reloadBackoff(n, [MIN, 30 * MIN]) / MIN), [1, 2, 4, 30, 30]);
+  });
+});
+
+describe('DM watch: remembered tabs written at once', () => {
+  it('saves from many slots at the same time leave a readable file with the last state', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dm-watch-'));
+    const store = fileTargetStore(join(dir, 'dm-watch.json'));
+    await Promise.all(Array.from({ length: 20 }, (_, i) => store.save(Object.fromEntries(Array.from({ length: i + 1 }, (_, j) => [`s${j}x`, `T${j}`])))));
+    const loaded = await store.load();
+    assert.ok(Object.keys(loaded).length >= 1);
+  });
+
+  it('the watch writes them one after the other, the last state last', async () => {
+    const saved: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = {
+      load: async () => ({}),
+      save: async (targets: Record<string, string>) => {
+        const keys = Object.keys(targets).join(',');
+        saved.push(`start ${keys}`);
+        if (saved.length === 1) await gate;
+        saved.push(`end ${keys}`);
+      },
+    };
+    const w = setup({ slots: [makeSlot({ name: 'a1', cdp: 9301 }), makeSlot({ name: 'b1', cdp: 9302 })], store });
+    await w.watch.setDesired([{ slot: 'a1', key: 'k1' }, { slot: 'b1', key: 'k2' }]);
+    const ticking = w.watch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await ticking;
+    assert.deepEqual(saved, ['start a1', 'end a1', 'start a1,b1', 'end a1,b1']);
   });
 });

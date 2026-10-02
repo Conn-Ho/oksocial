@@ -81,6 +81,17 @@ describe('the DM watch browser (CDP)', () => {
     await assert.rejects(createCdpWatchBrowser().attach(c.port, 'T1', () => undefined), /Binding failed/);
   });
 
+  it('navigates a tab through a one-off socket, not when it is already there or gone', async () => {
+    const c = await chrome([{ id: 'T1', type: 'page', url: CHAT_URL }]);
+    const browser = createCdpWatchBrowser();
+    assert.equal(await browser.navigateTab(c.port, 'T1', 'about:blank'), true);
+    assert.deepEqual(c.calls, [{ target: 'T1', method: 'Page.navigate', params: { url: 'about:blank' } }]);
+    c.targets = [{ id: 'T1', type: 'page', url: 'about:blank' }];
+    assert.equal(await browser.navigateTab(c.port, 'T1', 'about:blank'), true);
+    assert.equal(await browser.navigateTab(c.port, 'GONE', 'about:blank'), false);
+    assert.equal(c.calls.length, 1);
+  });
+
   it('closes its tab through the browser socket; an unreachable Chrome is an error', async () => {
     const c = await chrome([{ id: 'T1', type: 'page', url: CHAT_URL }]);
     await createCdpWatchBrowser().closeTab(c.port, 'T1');

@@ -29,6 +29,13 @@ export function createCdpWatchBrowser({ fetchImpl = fetch, observer = OBSERVER }
       await browserCall(cdpPort, 'Target.closeTarget', { targetId }, fetchImpl);
     },
 
+    async navigateTab(cdpPort, targetId, url) {
+      const target = (await listTargets(cdpPort, fetchImpl)).find((t) => t.id === targetId && t.type === 'page');
+      if (!target?.webSocketDebuggerUrl) return false;
+      if (target.url !== url) await withPageSocket(target.webSocketDebuggerUrl, (call) => call('Page.navigate', { url }));
+      return true;
+    },
+
     async attach(cdpPort, targetId, onReport) {
       const target = (await listTargets(cdpPort, fetchImpl)).find((t) => t.id === targetId && t.type === 'page');
       if (!target?.webSocketDebuggerUrl) throw new HttpError(502, 'CHROME_ERROR', 'the watcher tab is gone');

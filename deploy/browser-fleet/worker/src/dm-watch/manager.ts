@@ -46,6 +46,8 @@ export interface WatchBrowser {
   /** Opens url in a new window of its own (never one the bridge extension owns); its target id. */
   openWindow(cdpPort: number, url: string): Promise<string>;
   closeTab(cdpPort: number, targetId: string): Promise<void>;
+  /** Navigates a tab through a one-off socket (no watcher session needed); false when it is gone. */
+  navigateTab(cdpPort: number, targetId: string, url: string): Promise<boolean>;
   /** Attaches with the binding and the observer installed; every binding call goes to onReport. */
   attach(cdpPort: number, targetId: string, onReport: (payload: string) => void): Promise<WatchPage>;
 }
@@ -228,10 +230,16 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
       },
       (err: Error) => log.warn({ err: safeMessage(err.message) }, 'dm watch: could not read the remembered tabs'),
     ));
-  const remember = async (slot: string, targetId: string | undefined): Promise<void> => {
+  // saves one after the other, each of the state when it was asked for: the file ends as the last one
+  let saving: Promise<void> = Promise.resolve();
+  const remember = (slot: string, targetId: string | undefined): Promise<void> => {
     const { [slot]: _gone, ...rest } = targets;
     targets = targetId ? { ...rest, [slot]: targetId } : rest;
-    await store.save(targets).catch((err: Error) => log.warn({ err: safeMessage(err.message) }, 'dm watch: could not remember the tabs'));
+    const state = targets;
+    saving = saving.then(() =>
+      store.save(state).catch((err: Error) => log.warn({ err: safeMessage(err.message) }, 'dm watch: could not remember the tabs')),
+    );
+    return saving;
   };
   const detach = (slot: string): void => {
     sessions.get(slot)?.close();
@@ -240,6 +248,11 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
   const quiet = (slot: string, now: number): boolean => {
     const a = options.activity(slot);
     return !a.running && a.pending === 0 && (a.lastDoneAt === undefined || now - a.lastDoneAt >= t.quietMs);
+  };
+  /** Right before a navigation of the slot's tab: a fresh look at the slot and its runs. */
+  const mayNavigate = async (name: string): Promise<boolean> => {
+    const slot = await options.slots.get(name, 0);
+    return !!slot && !slot.screen && slot.chrome === 'active' && quiet(name, clock.now());
   };
   const healthy = (w: Watcher, now: number): boolean => {
     if (!sessions.get(w.slot)?.isOpen()) return false;
@@ -287,7 +300,7 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
         update(w.slot, { phase: 'screen', reason: 'someone is watching this browser (noVNC): no tab is opened meanwhile' });
         return undefined;
       }
-      if (!quiet(w.slot, now)) {
+      if (!quiet(w.slot, now) || !(await mayNavigate(w.slot))) {
         update(w.slot, { phase: 'starting', reason: "waiting for the account's runs to finish" });
         return undefined;
       }
@@ -310,6 +323,12 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
   /** Navigations the tab is due: back from parking, a reload of a dead tab, the periodic refresh. */
   const navigate = async (w: Watcher, slot: Slot, page: WatchPage, now: number): Promise<void> => {
     if (slot.screen || !quiet(w.slot, now)) return;
+    const due =
+      w.parkedAt !== undefined ||
+      (w.page === 'list'
+        ? now - (w.openedAt ?? now) >= t.refreshEveryMs
+        : now - (w.openedAt ?? 0) >= t.loadGraceMs && (w.nextReloadAt === undefined || now >= w.nextReloadAt));
+    if (!due || !(await mayNavigate(w.slot))) return;
     if (w.parkedAt !== undefined) {
       await page.navigate(CHAT_URL);
       update(w.slot, { parkedAt: undefined, phase: 'watching', openedAt: now, page: null });
@@ -317,14 +336,11 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
       return;
     }
     if (w.page === 'list') {
-      if (now - (w.openedAt ?? now) >= t.refreshEveryMs) {
-        await page.navigate(CHAT_URL);
-        update(w.slot, { openedAt: now });
-        log.info({ slot: w.slot }, 'dm watch: refreshed the watcher tab');
-      }
+      await page.navigate(CHAT_URL);
+      update(w.slot, { openedAt: now });
+      log.info({ slot: w.slot }, 'dm watch: refreshed the watcher tab');
       return;
     }
-    if (now - (w.openedAt ?? 0) < t.loadGraceMs || (w.nextReloadAt !== undefined && now < w.nextReloadAt)) return;
     await page.navigate(CHAT_URL);
     const reloads = w.reloads + 1;
     update(w.slot, { openedAt: now, reloads, nextReloadAt: now + reloadBackoff(reloads, t.reloadBackoffMs) });
@@ -462,14 +478,20 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
     },
 
     async beforeRun(name, args) {
-      if (!yieldToRuns || !YIELDS_TO.has(args[0] ?? '') || !watchers.has(name)) return;
+      if (!yieldToRuns || !YIELDS_TO.has(args[0] ?? '')) return;
+      await ensureLoaded();
+      if (!(watchers.get(name)?.targetId ?? targets[name])) return;
+      // also a tab remembered from before a worker restart (no PUT yet) or whose socket dropped
       const park = run(name, async () => {
         const w = watchers.get(name);
+        const targetId = w?.targetId ?? targets[name];
+        if (!targetId || w?.parkedAt !== undefined) return;
+        const slot = await options.slots.get(name);
+        if (!slot || slot.screen || slot.chrome !== 'active') return;
         const page = sessions.get(name);
-        if (!w || w.parkedAt !== undefined || !page?.isOpen()) return;
-        if ((await options.slots.get(name))?.screen) return;
-        await page.navigate(BLANK_URL);
-        update(name, { parkedAt: clock.now(), phase: 'parked' });
+        if (page?.isOpen() && page.targetId === targetId) await page.navigate(BLANK_URL);
+        else if (!(await browser.navigateTab(slot.cdp, targetId, BLANK_URL))) return;
+        if (w) update(name, { parkedAt: clock.now(), phase: 'parked' });
       });
       // a run is never held up for long by its watcher
       let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -503,6 +525,8 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
 
 /** The remembered tabs in a JSON file (0600), written atomically. */
 export function fileTargetStore(path: string): TargetStore {
+  // each write has a file of its own until it is renamed into place
+  let written = 0;
   return {
     async load() {
       let raw: unknown;
@@ -521,7 +545,8 @@ export function fileTargetStore(path: string): TargetStore {
       );
     },
     async save(targets) {
-      const tmp = `${path}.${process.pid}.tmp`;
+      written += 1;
+      const tmp = `${path}.${process.pid}.${written}.tmp`;
       await writeFile(tmp, JSON.stringify({ version: 1, targets }), { mode: 0o600 });
       await rename(tmp, path);
     },
