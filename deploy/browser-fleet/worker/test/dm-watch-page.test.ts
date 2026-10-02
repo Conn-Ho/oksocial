@@ -118,6 +118,8 @@ describe('the DM watcher page observer', () => {
 describe('parseReport', () => {
   it('accepts only the observer\'s own shape', () => {
     assert.deepEqual(parseReport('{"v":1,"state":"list","convs":[["aaaa0001",2,"x1"]]}'), { state: 'list', convs: [['aaaa0001', 2, 'x1']] });
+    const huge = JSON.stringify({ state: 'list', convs: [['aaaa0001', 0, 'h']], pad: 'x'.repeat(70_000) });
+    assert.equal(parseReport(huge), null, 'over 64 KB is never parsed');
     for (const bad of ['', 'nope', '{"state":"weird","convs":[]}', '{"state":"list","convs":[["a",-1,"x"]]}', '{"state":"list","convs":"x"}', JSON.stringify({ state: 'list', convs: Array.from({ length: 201 }, () => ['a', 0, 'h']) })]) {
       assert.equal(parseReport(bad), null, bad.slice(0, 40));
     }

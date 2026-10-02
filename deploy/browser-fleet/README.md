@@ -238,7 +238,7 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
 | `PUT /dm-watch` | `{accounts: [{slot, key: /^[A-Za-z0-9_-]{1,64}$/}] (≤200)}`: every account to watch | `{ok:true, watchers: Watcher[]}`; accounts left out are dropped and their tabs closed |
 | `GET /dm-watch` | | `{ok:true, watchers: Watcher[]}` |
-| `GET /dm-watch/changes?cursor=<c>&waitMs=0..55000` | | `{ok:true, cursor, changes:[{slot, key, at}]}`: one per account changed after `cursor`, waiting up to `waitMs` for one |
+| `GET /dm-watch/changes?cursor=<c>&waitMs=0..55000` | | `{ok:true, cursor, changes:[{slot, key, at}]}`: one per account changed after `cursor`, waiting up to `waitMs` for one; no cursor, or one of another worker process, starts from now (nothing is replayed) |
 
 **Runs** execute `opencli <args> -f json` (unless a format is given) with `OPENCLI_PROFILE=<profileId>` and
 execFile (no shell; the worker token is stripped from every child's env); 400 `NO_PROFILE` if the slot has no profile
@@ -284,12 +284,16 @@ checks the tab: the check doubles as a fallback when binding calls do not arrive
 - A tab that shows no list (`在其他页面打开`, logged out, nothing) for 45 s after it was loaded is reloaded, then again
   after 1, 2, 4… up to 30 minutes; one that looks fine is reloaded every 3 hours.
 - When the account's Chrome restarts (the janitor, `update-extension.sh`, a heal), the socket closes and the next
-  check opens a new tab. Tabs are remembered in `DM_WATCH_STATE_FILE` (0600) and adopted after a worker restart.
+  check opens a new tab. Tabs are remembered in `DM_WATCH_STATE_FILE` (0600) and adopted after a worker restart;
+  remembered tabs of accounts the first PUT leaves out are closed.
+- Opening never piles up windows: an open that failed but made its window anyway (a busy Chrome) keeps that
+  window, a failed open waits 1, 2, 4… minutes before the next, and no tab is opened in a browser that already
+  holds 20 pages.
 - While `screen` is on (someone on noVNC), nothing is opened, navigated, parked or closed; an existing tab is still
   watched. The login screen's tab picker never takes a watcher tab.
 - `Watcher`: `{slot, key, phase: starting|watching|parked|screen|chrome-down|missing|simulated|failed, page:
   list|elsewhere|logged-out|no-list|blank|null, healthy, reason, lastListAt, lastChangeAt}`. Healthy: the list was
-  seen in the last 3 minutes, or the tab is parked for the account's runs (up to 10 minutes). oksocial reads a
+  seen in the last 3 minutes, or the tab is parked for the account's runs (up to 45 s + 3 minutes, a read). oksocial reads a
   healthy account every 5 minutes as a safety net instead of every minute.
 
 **Media**: only http(s) URLs on `MEDIA_ALLOWED_ORIGINS`, re-checked after each of at most 3 redirects; `MEDIA_MAX_BYTES`

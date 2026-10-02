@@ -101,10 +101,12 @@ export interface DmWatchTimings {
   refreshEveryMs: number;
   /** Healthy: the list was seen this recently... */
   healthyWithinMs: number;
-  /** ...or it is parked for the account's runs, for at most this long. */
+  /** ...or it is parked for the account's runs, for at most this long (the quiet wait and a read). */
   parkedHealthyMs: number;
   /** A run waits at most this long for its account's tab to be parked. */
   parkWaitMs: number;
+  /** No tab is opened in a browser that already holds this many pages (the janitor restarts at 40). */
+  maxPages: number;
 }
 
 export const DM_WATCH_TIMINGS: DmWatchTimings = {
@@ -114,8 +116,9 @@ export const DM_WATCH_TIMINGS: DmWatchTimings = {
   reloadBackoffMs: [60_000, 30 * 60_000],
   refreshEveryMs: 3 * 60 * 60_000,
   healthyWithinMs: 3 * 60_000,
-  parkedHealthyMs: 10 * 60_000,
+  parkedHealthyMs: 45_000 + 3 * 60_000,
   parkWaitMs: 10_000,
+  maxPages: 20,
 };
 
 /** Sites whose runs the watcher tab steps aside for: they open the same web IM. */
@@ -169,6 +172,9 @@ interface Watcher {
   readonly reloads: number;
   readonly nextReloadAt: number | undefined;
   readonly parkedAt: number | undefined;
+  /** Opens of its tab that failed in a row, and when the next one may happen. */
+  readonly openFailures: number;
+  readonly nextOpenAt: number | undefined;
   /** The list last seen (kept across reloads and parking: the next list is compared with it). */
   readonly snapshot: readonly ConvSnapshot[] | undefined;
   /** No longer wanted: its tab is closed at the next tick (not while someone watches the screen). */
@@ -188,6 +194,8 @@ const newWatcher = (slot: string, key: string, targetId: string | undefined): Wa
   reloads: 0,
   nextReloadAt: undefined,
   parkedAt: undefined,
+  openFailures: 0,
+  nextOpenAt: undefined,
   snapshot: undefined,
   leaving: false,
 });
@@ -285,6 +293,33 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
     if (changed) emit(w, now);
   };
 
+  /**
+   * Opens the watcher tab. A call that failed may still have made the window (a busy Chrome answers
+   * after the timeout): a page that appeared meanwhile is kept, any second one on the chat closed,
+   * so a failure never leaves a window behind for the next check to add to. Otherwise the next open
+   * waits, longer after each failure.
+   */
+  const open = async (w: Watcher, slot: Slot, before: readonly PageTarget[], now: number): Promise<string> => {
+    try {
+      return await browser.openWindow(slot.cdp, CHAT_URL);
+    } catch (err) {
+      const known = new Set(before.map((p) => p.id));
+      const fresh = (await browser.pages(slot.cdp).catch(() => [] as PageTarget[])).filter((p) => !known.has(p.id));
+      const chats = fresh.filter((p) => p.url.startsWith(CHAT_URL));
+      const kept = chats[0] ?? fresh.find((p) => p.url === BLANK_URL || p.url === '');
+      for (const extra of chats.filter((p) => p !== kept)) {
+        await browser.closeTab(slot.cdp, extra.id).catch(() => undefined);
+      }
+      if (kept) {
+        log.warn({ slot: w.slot, err: safeMessage((err as Error).message) }, 'dm watch: opening the tab failed, but its window is there: kept');
+        return kept.id;
+      }
+      const openFailures = w.openFailures + 1;
+      update(w.slot, { openFailures, nextOpenAt: now + reloadBackoff(openFailures, t.reloadBackoffMs) });
+      throw err;
+    }
+  };
+
   /** A session with the slot's watcher tab: the remembered one, else a new tab when allowed. */
   const connect = async (w: Watcher, slot: Slot, now: number): Promise<WatchPage | undefined> => {
     let pages: PageTarget[];
@@ -300,13 +335,21 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
         update(w.slot, { phase: 'screen', reason: 'someone is watching this browser (noVNC): no tab is opened meanwhile' });
         return undefined;
       }
+      if (w.nextOpenAt !== undefined && now < w.nextOpenAt) {
+        update(w.slot, { phase: 'failed', reason: 'opening the watcher tab failed; trying again later' });
+        return undefined;
+      }
+      if (pages.length >= t.maxPages) {
+        update(w.slot, { phase: 'failed', reason: `the browser already has ${pages.length} pages: no watcher tab is opened` });
+        return undefined;
+      }
       if (!quiet(w.slot, now) || !(await mayNavigate(w.slot))) {
         update(w.slot, { phase: 'starting', reason: "waiting for the account's runs to finish" });
         return undefined;
       }
-      targetId = await browser.openWindow(slot.cdp, CHAT_URL);
+      targetId = await open(w, slot, pages, now);
       await remember(w.slot, targetId);
-      update(w.slot, { targetId, openedAt: now, parkedAt: undefined, reloads: 0, nextReloadAt: undefined, page: null });
+      update(w.slot, { targetId, openedAt: now, parkedAt: undefined, reloads: 0, nextReloadAt: undefined, page: null, openFailures: 0, nextOpenAt: undefined });
       log.info({ slot: w.slot }, 'dm watch: opened the watcher tab');
     }
     const id = targetId;
@@ -421,9 +464,10 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
     return ticking;
   };
 
+  // no cursor, or one of another worker process: from now on (what came before is the poll's)
   const parseCursor = (cursor: string | undefined): number => {
     const [b, n] = (cursor ?? '').split(':');
-    return b === boot && n && /^\d+$/.test(n) ? Number(n) : 0;
+    return b === boot && n && /^\d+$/.test(n) ? Number(n) : seq;
   };
 
   return {
@@ -437,6 +481,10 @@ export function createDmWatch(options: DmWatchOptions): DmWatch {
         else if (w.key !== key || w.leaving) update(slot, { key, leaving: false });
       }
       for (const slot of watchers.keys()) if (!wanted.has(slot)) update(slot, { leaving: true });
+      // tabs remembered from before a restart for accounts no longer watched: closed at the next check
+      for (const [slot, targetId] of Object.entries(targets)) {
+        if (!wanted.has(slot) && !watchers.has(slot)) watchers = new Map(watchers).set(slot, { ...newWatcher(slot, '', targetId), leaving: true });
+      }
       return this.statuses();
     },
 

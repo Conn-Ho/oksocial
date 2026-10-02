@@ -9,8 +9,16 @@ import { HttpError } from '../errors.ts';
 import type { WatchBrowser, WatchPage } from './manager.ts';
 import { BINDING, OBSERVER } from './page.ts';
 
-async function browserCall(cdpPort: number, method: string, params: Record<string, unknown>, fetchImpl: FetchLike) {
-  return withPageSocket(await browserSocketUrl(cdpPort, fetchImpl), (call) => call(method, params));
+// a new window on a busy Chrome can take a while: longer than a page call
+const OPEN_WINDOW_TIMEOUT_MS = 30_000;
+
+async function browserCall(cdpPort: number, method: string, params: Record<string, unknown>, fetchImpl: FetchLike, timeoutMs?: number) {
+  const session = await openPageSession(await browserSocketUrl(cdpPort, fetchImpl), undefined, timeoutMs);
+  try {
+    return await session.call(method, params);
+  } finally {
+    session.close();
+  }
 }
 
 export function createCdpWatchBrowser({ fetchImpl = fetch, observer = OBSERVER }: { fetchImpl?: FetchLike; observer?: string } = {}): WatchBrowser {
@@ -20,7 +28,7 @@ export function createCdpWatchBrowser({ fetchImpl = fetch, observer = OBSERVER }
     },
 
     async openWindow(cdpPort, url) {
-      const created = await browserCall(cdpPort, 'Target.createTarget', { url, newWindow: true, background: true }, fetchImpl);
+      const created = await browserCall(cdpPort, 'Target.createTarget', { url, newWindow: true, background: true }, fetchImpl, OPEN_WINDOW_TIMEOUT_MS);
       if (typeof created?.targetId !== 'string') throw new HttpError(502, 'CHROME_ERROR', 'Chrome DevTools returned no target id');
       return created.targetId;
     },

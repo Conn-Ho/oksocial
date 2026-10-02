@@ -75,15 +75,20 @@ function fakeBrowser(defaultShows: PageReport | null = list(['aaaa0001', 0, 'h0'
   const pages = new Map<string, FakePage>();
   const down = new Set<number>();
   let n = 0;
+  // the next openWindow calls fail: 'timeout' still creates the window (a busy Chrome), 'refused' does not
+  const openFails: Array<'timeout' | 'refused'> = [];
   const browser: WatchBrowser = {
     async pages(cdp) {
       if (down.has(cdp)) throw new Error('cannot reach Chrome DevTools');
       return [...tabs].filter(([, t]) => t.cdp === cdp).map(([id, t]) => ({ id, url: t.url }));
     },
     async openWindow(cdp, url) {
+      const fail = openFails.shift();
+      log.push(`open ${cdp} ${url}${fail ? ` (${fail})` : ''}`);
+      if (fail === 'refused') throw new Error('Chrome DevTools socket failed');
       const id = `W${(n += 1)}`;
       tabs.set(id, { cdp, url });
-      log.push(`open ${cdp} ${url}`);
+      if (fail === 'timeout') throw new Error('the page did not answer Target.createTarget');
       return id;
     },
     async closeTab(_cdp, id) {
@@ -123,6 +128,7 @@ function fakeBrowser(defaultShows: PageReport | null = list(['aaaa0001', 0, 'h0'
       }
     },
     down,
+    openFails,
   };
 }
 
@@ -245,7 +251,7 @@ describe('DM watch: changes', () => {
     assert.ok(Date.now() - started >= 45);
   });
 
-  it('a burst of changes of one account is one entry; a cursor of another worker process starts over', async () => {
+  it('a burst of changes of one account is one entry', async () => {
     const w = setup();
     await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
     await w.watch.tick();
@@ -253,7 +259,19 @@ describe('DM watch: changes', () => {
     w.fb.page('W1').emit(list(['aaaa0001', 2, 'h2']));
     w.fb.page('W1').emit(list(['aaaa0001', 3, 'h3']));
     assert.equal((await w.watch.changes('b1:0', 0)).changes.length, 1);
-    assert.equal((await w.watch.changes('old-boot:57', 0)).changes.length, 1);
+  });
+
+  it('no cursor, or one of another worker process, starts from now: nothing old is replayed', async () => {
+    const w = setup();
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    w.fb.page('W1').emit(list(['aaaa0001', 1, 'h1']));
+    assert.deepEqual(await w.watch.changes(undefined, 0), { cursor: 'b1:1', changes: [] });
+    assert.deepEqual(await w.watch.changes('old-boot:57', 0), { cursor: 'b1:1', changes: [] });
+    // and waits for what comes next
+    const waiting = w.watch.changes('old-boot:57', 5_000);
+    setTimeout(() => w.fb.page('W1').emit(list(['aaaa0001', 2, 'h2'])), 20);
+    assert.equal((await waiting).changes.length, 1);
   });
 
   it('our own read (unread going down) is no change; a report the page cannot have made is ignored', async () => {
@@ -261,7 +279,7 @@ describe('DM watch: changes', () => {
     await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
     await w.watch.tick();
     // the first list had unread messages: one change, for a read right away
-    const first = await w.watch.changes(undefined, 0);
+    const first = await w.watch.changes('b1:0', 0);
     assert.equal(first.changes.length, 1);
     w.fb.page('W1').emit(list(['aaaa0001', 0, 'h1']));
     w.fb.page('W1').report('{"state":"list","convs":"<script>"}');
@@ -365,6 +383,48 @@ describe('DM watch: never in the way of the account\'s own runs', () => {
   });
 });
 
+describe('DM watch: opening its tab never piles up windows', () => {
+  it('an open that timed out although the window was made: that window is kept, not a second one', async () => {
+    const w = setup();
+    w.fb.openFails.push('timeout');
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    assert.deepEqual(w.fb.log, [`open 9301 ${CHAT_URL} (timeout)`, 'attach W1']);
+    assert.deepEqual(await w.store.load(), { 'xhs-1': 'W1' });
+    await w.after(MIN);
+    assert.equal(w.fb.log.filter((l) => l.startsWith('open')).length, 1);
+    assert.equal(status(w)?.healthy, true);
+  });
+
+  it('a failed open is tried again after 1, 2, 4… minutes, not every check', async () => {
+    const w = setup();
+    w.fb.openFails.push('refused', 'refused');
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    assert.equal(status(w)?.phase, 'failed');
+    await w.after(45_000);
+    assert.equal(w.fb.log.filter((l) => l.startsWith('open')).length, 1);
+    await w.after(15_000);
+    assert.equal(w.fb.log.filter((l) => l.startsWith('open')).length, 2);
+    await w.after(MIN + 45_000);
+    assert.equal(w.fb.log.filter((l) => l.startsWith('open')).length, 2);
+    await w.after(15_000);
+    assert.deepEqual(w.fb.log.slice(-2), [`open 9301 ${CHAT_URL}`, 'attach W1']);
+  });
+
+  it('opens nothing in a browser that already holds 20 pages', async () => {
+    const w = setup();
+    for (let i = 0; i < 20; i += 1) w.fb.tabs.set(`X${i}`, { cdp: 9301, url: 'about:blank' });
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    assert.deepEqual(w.fb.log, []);
+    assert.deepEqual([status(w)?.phase, status(w)?.reason], ['failed', 'the browser already has 20 pages: no watcher tab is opened']);
+    w.fb.tabs.delete('X0');
+    await w.after(15_000);
+    assert.deepEqual(w.fb.log, [`open 9301 ${CHAT_URL}`, 'attach W1']);
+  });
+});
+
 describe('DM watch: a dead tab', () => {
   for (const state of ['elsewhere', 'logged-out', 'no-list'] as const) {
     it(`is reloaded when it shows ${state}, with a growing pause between reloads`, async () => {
@@ -440,6 +500,19 @@ describe('DM watch: a dead tab', () => {
     assert.equal(status(w)?.page, 'blank');
   });
 
+  it('parked for the account\'s runs, it stays healthy only as long as a read takes (45 s quiet + 3 min)', async () => {
+    const w = setup();
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    await w.watch.tick();
+    w.activity.set('xhs-1', { running: true, pending: 0, lastDoneAt: undefined });
+    await w.watch.beforeRun('xhs-1', ['xhsdm', 'list']);
+    await w.after(3 * MIN + 30_000);
+    assert.equal(status(w)?.healthy, true);
+    await w.after(30_000);
+    assert.equal(status(w)?.healthy, false);
+    assert.equal(status(w)?.phase, 'parked');
+  });
+
   it('is unhealthy once the list has not been seen for 3 minutes', async () => {
     const w = setup();
     await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
@@ -483,6 +556,18 @@ describe('DM watch: someone watching the browser over noVNC', () => {
     w.setSlot('xhs-1', { screen: false });
     await w.watch.tick();
     assert.equal(w.fb.log.at(-1), 'close W9');
+  });
+});
+
+describe('DM watch: tabs remembered for accounts no longer watched', () => {
+  it('are closed once the first PUT after a restart leaves them out', async () => {
+    const w = setup({ slots: [makeSlot({ name: 'xhs-1', cdp: 9301 }), makeSlot({ name: 'old-1', cdp: 9302 })], store: memoryTargetStore({ 'old-1': 'W8' }) });
+    w.fb.tabs.set('W8', { cdp: 9302, url: CHAT_URL });
+    await w.watch.setDesired([{ slot: 'xhs-1', key: 'int-1' }]);
+    assert.deepEqual(w.watch.statuses().map((s) => s.slot), ['xhs-1']);
+    await w.watch.tick();
+    assert.ok(w.fb.log.includes('close W8'));
+    assert.deepEqual(await w.store.load(), { 'xhs-1': 'W1' });
   });
 });
 

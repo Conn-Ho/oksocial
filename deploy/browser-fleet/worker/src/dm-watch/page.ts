@@ -17,6 +17,8 @@ export const REPORT_DEBOUNCE_MS = 2_000;
 /** Conversations reported (the top of the list: a new message moves its conversation up). */
 const MAX_CONVERSATIONS = 50;
 const MAX_REPORTED = 200;
+/** A binding call longer than this is not the observer's (50 conversations are ~3 KB). */
+export const MAX_REPORT_CHARS = 64 * 1024;
 
 export type PageState = 'list' | 'elsewhere' | 'logged-out' | 'no-list';
 /** One conversation as reported: id, unread count, hash of its last-message preview. */
@@ -125,6 +127,7 @@ export function parseProbe(value: unknown): PageReport | null {
 
 /** A binding call's payload, or null for anything that is not the observer's report. Pure. */
 export function parseReport(payload: string): PageReport | null {
+  if (typeof payload !== 'string' || payload.length > MAX_REPORT_CHARS) return null;
   try {
     return parseProbe(JSON.parse(payload));
   } catch {
