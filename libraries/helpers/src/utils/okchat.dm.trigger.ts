@@ -10,7 +10,9 @@ export interface TriggeredRead {
 export interface ReadCoalescerOptions {
   read: (integrationId: string) => Promise<TriggeredRead | null | undefined>;
   sleep: (ms: number) => Promise<unknown>;
-  // after a read, when changes came in meanwhile: one more read after this pause, for all of them
+  now: () => number;
+  // at least this long between the end of one triggered read of an account and the start of the
+  // next: changes during a read make one more read after it, for all of them
   cooldownMs: number;
   // an account another read has is tried again after this pause, at most busyRetries times
   busyRetryMs: number;
@@ -19,16 +21,22 @@ export interface ReadCoalescerOptions {
 
 /**
  * One triggered read per account at a time: a change of an account being read only marks it for
- * one more read once that read is done (after a short pause, so a burst of messages is one read),
- * never a second read alongside it. A read that fails is left to the poll, the safety net.
+ * one more read once that read is done, never a second read alongside it, and reads of an account
+ * are at least cooldownMs apart (a burst of messages is one read; risk control watches bursts of
+ * page loads). A read that fails is left to the poll, the safety net.
  */
 export const createReadCoalescer = (options: ReadCoalescerOptions) => {
   const running = new Map<string, Promise<void>>();
   const again = new Set<string>();
+  const ended = new Map<string, number>();
 
   const readUntilCaughtUp = async (id: string) => {
     let busy = 0;
     for (;;) {
+      const wait = (ended.get(id) ?? -Infinity) + options.cooldownMs - options.now();
+      if (wait > 0) {
+        await options.sleep(wait);
+      }
       again.delete(id);
       let result: TriggeredRead | null | undefined = null;
       try {
@@ -41,10 +49,10 @@ export const createReadCoalescer = (options: ReadCoalescerOptions) => {
         await options.sleep(options.busyRetryMs);
         continue;
       }
+      ended.set(id, options.now());
       if (!again.has(id)) {
         break;
       }
-      await options.sleep(options.cooldownMs);
     }
     running.delete(id);
   };

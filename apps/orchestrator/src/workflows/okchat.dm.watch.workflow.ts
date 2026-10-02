@@ -24,8 +24,9 @@ const SYNC_EVERY_MS = 60_000;
 const IDLE_MS = 60_000;
 // the worker could not be asked for changes: try again after this long
 const RETRY_MS = 30_000;
-// changes during a read: one more read of the account after this pause, for all of them
-const COOLDOWN_MS = 15_000;
+// at least this long between two triggered reads of an account (each is several page loads): changes
+// during a read make one more read after it, for all of them
+const COOLDOWN_MS = 30_000;
 // an account the poll is reading: tried again after this long, a few times (a read takes ~1-2 min)
 const BUSY_RETRY_MS = 20_000;
 const BUSY_RETRIES = 12;
@@ -43,6 +44,7 @@ export async function okchatDmWatchWorkflow(input?: { cursor?: string | null }):
   const reads = createReadCoalescer({
     read: (integrationId) => readOkchatAccount(integrationId),
     sleep: (ms) => sleep(ms),
+    now: () => Date.now(),
     cooldownMs: COOLDOWN_MS,
     busyRetryMs: BUSY_RETRY_MS,
     busyRetries: BUSY_RETRIES,

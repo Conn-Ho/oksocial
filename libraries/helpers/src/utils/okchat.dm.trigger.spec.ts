@@ -14,7 +14,8 @@ const harness = (results: Array<{ busy?: boolean } | Error> = []) => {
     log.push(`sleep ${ms}`);
     return new Promise<void>((resolve) => sleeps.push(resolve));
   });
-  const reads = createReadCoalescer({ read, sleep, cooldownMs: 15_000, busyRetryMs: 20_000, busyRetries: 2 });
+  let clock = 1_000_000;
+  const reads = createReadCoalescer({ read, sleep, now: () => clock, cooldownMs: 15_000, busyRetryMs: 20_000, busyRetries: 2 });
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   return {
     reads,
@@ -31,6 +32,9 @@ const harness = (results: Array<{ busy?: boolean } | Error> = []) => {
       await flush();
     },
     flush,
+    advance: (ms: number) => {
+      clock += ms;
+    },
   };
 };
 
@@ -51,6 +55,29 @@ describe('createReadCoalescer: one triggered read per account at a time', () => 
     await h.finish();
     await h.reads.settled();
     expect(h.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('a change right after a read waits out the rest of the pause: never back-to-back page loads', async () => {
+    const h = harness();
+    h.reads.trigger('i1');
+    await h.flush();
+    await h.finish();
+    await h.reads.settled();
+    h.advance(5_000);
+    h.reads.trigger('i1');
+    await h.flush();
+    expect(h.log).toEqual(['read i1', 'sleep 10000']);
+    await h.wake();
+    expect(h.log).toEqual(['read i1', 'sleep 10000', 'read i1']);
+    await h.finish();
+    await h.reads.settled();
+    // long after: at once
+    h.advance(60_000);
+    h.reads.trigger('i1');
+    await h.flush();
+    expect(h.log.at(-1)).toBe('read i1');
+    await h.finish();
+    await h.reads.settled();
   });
 
   it('accounts are read independently', async () => {
@@ -85,7 +112,8 @@ describe('createReadCoalescer: one triggered read per account at a time', () => 
     await h.finish();
     await h.reads.settled();
     expect(h.read).toHaveBeenCalledTimes(1);
-    // the next change reads again
+    // the next change reads again (a failed read keeps the pause too)
+    h.advance(15_000);
     h.reads.trigger('i1');
     await h.flush();
     expect(h.read).toHaveBeenCalledTimes(2);
