@@ -4,6 +4,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.servic
 
 import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
+  DM_ECHO_WINDOW_MS,
   DM_READ_EVERY_MS,
   DM_WATCHED_READ_EVERY_MS,
   OkchatDmService,
@@ -186,6 +187,10 @@ describe('DM read cadence', () => {
     expect(DM_READ_EVERY_MS).toBe(60_000);
     expect(DM_WATCHED_READ_EVERY_MS).toBe(5 * 60_000);
   });
+
+  it('what we sent is taken for an echo for 10 minutes', () => {
+    expect(DM_ECHO_WINDOW_MS).toBe(10 * 60_000);
+  });
 });
 
 describe('OkchatDmService', () => {
@@ -199,7 +204,9 @@ describe('OkchatDmService', () => {
     ...over,
   });
 
-  const setup = (opts: { conversations?: any; lists?: any[]; reads?: Record<string, any>; threads?: any[]; sent?: string[]; bindings?: any[] } = {}) => {
+  const setup = (
+    opts: { conversations?: any; lists?: any[]; reads?: Record<string, any>; threads?: any[]; sent?: string[]; sentLog?: Array<{ text: string; sentAt: Date }>; bindings?: any[] } = {}
+  ) => {
     const dm = {
       maxLength: 500,
       readGapMs: [8000, 15000] as [number, number],
@@ -221,7 +228,10 @@ describe('OkchatDmService', () => {
       claimRead: jest.fn(async (..._args: any[]) => true),
       releaseRead: jest.fn(async (..._args: any[]) => ({ count: 1 })),
       threads: jest.fn(async () => opts.threads ?? []),
-      sentTexts: jest.fn(async () => opts.sent ?? []),
+      sentTexts: jest.fn(async (_id: string, _thread: string, since: Date) => [
+        ...(opts.sent ?? []),
+        ...(opts.sentLog ?? []).filter((r) => r.sentAt >= since).map((r) => r.text),
+      ]),
       saveRead: jest.fn(async () => []),
       updateBinding: jest.fn(async () => ({ count: 1 })),
     };
@@ -339,6 +349,32 @@ describe('OkchatDmService', () => {
     await service.readDue(NOW);
     expect(dm.read).not.toHaveBeenCalled();
     expect(repo.saveRead).not.toHaveBeenCalled();
+  });
+
+  it('drops an echo of what we sent in the last 10 minutes, not a customer saying the same later', async () => {
+    const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
+    const thread = { threadId: 'c1', initialized: true, seq: 1, lastSummary: '在吗', tail: tailOf(them('在吗')) };
+    // we said 你好 15 minutes ago; the customer says 你好 now
+    const later = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('在吗'), me('你好'), them('你好')] },
+      threads: [thread],
+      sentLog: [{ text: '你好', sentAt: minutesAgo(15) }],
+    });
+    await later.service.readDue(NOW);
+    expect(later.repo.sentTexts).toHaveBeenCalledWith('i1', 'c1', new Date(NOW.getTime() - DM_ECHO_WINDOW_MS));
+    expect(((later.repo.saveRead.mock.calls[0] as any[])[3] as any).payload.threads[0].messages).toEqual([
+      { id: 'c1:2', text: '你好', sentAt: '2026-10-02T10:00:00+08:00' },
+    ]);
+    // our 你好 of a minute ago read back without the mark of ours: an echo, dropped
+    const echo = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('在吗'), them('你好')] },
+      threads: [thread],
+      sentLog: [{ text: '你好', sentAt: minutesAgo(1) }],
+    });
+    await echo.service.readDue(NOW);
+    expect((echo.repo.saveRead.mock.calls[0] as any[])[3]).toBeNull();
   });
 
   it('a conversation with nothing new still stores its tail, without a batch', async () => {

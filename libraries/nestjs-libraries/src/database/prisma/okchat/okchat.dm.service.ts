@@ -22,8 +22,12 @@ export const DM_TAIL_MAX = 30;
 // A read holds the account this long, renewed before each page it reads: two reads of one account
 // (the poll and one the watcher triggered) never interleave, and a read that died lets go soon.
 export const DM_READ_LEASE_MS = 5 * 60_000;
-// what we sent to a conversation in this window is not taken for the customer's (echo)
-export const DM_ECHO_WINDOW_MS = 24 * 60 * 60_000;
+// A customer message equal to what we sent to the conversation within this window is taken for
+// our own reply read back without the mark of ours (an echo) and dropped. The mark comes from the
+// bubble's side in the page (chat-item__content--left/right) and is reliable, so this is only a
+// safety net, kept short and simple: any match in the window, no pairing with a particular reply.
+// It was 24 hours: a customer answering our 「你好」 with 「你好」 was dropped.
+export const DM_ECHO_WINDOW_MS = 10 * 60_000;
 // accounts read at once (the browser fleet runs a few commands at a time)
 const READ_CONCURRENCY = 3;
 // accounts read per round (the least recently read first; the rest come next round, a minute later)
