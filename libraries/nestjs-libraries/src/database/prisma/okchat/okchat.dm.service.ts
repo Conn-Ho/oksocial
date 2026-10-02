@@ -70,9 +70,10 @@ export const alignedNew = <T extends Read>(tail: Read[], read: T[]): T[] => {
 };
 
 /**
- * The new messages of a read. A conversation read for the first time has no tail: only when it
- * has unread messages, the customer's messages after our last one are new; otherwise the read
- * just becomes the tail. Pure.
+ * The new messages of a read. A conversation read for the first time has no tail: its unread badge
+ * says how many of the customer's last messages are new, counted from the end; anything older
+ * (the platform's greeting from hours before the account was linked) is history, and without
+ * unread messages the read only becomes the tail. Pure.
  */
 export const newMessages = <T extends Read>(thread: ThreadState, read: T[], unread: number): T[] => {
   if (thread?.initialized) {
@@ -81,8 +82,7 @@ export const newMessages = <T extends Read>(thread: ThreadState, read: T[], unre
   if (unread <= 0) {
     return [];
   }
-  const lastOurs = read.map((m) => m.mine).lastIndexOf(true);
-  return read.slice(lastOurs + 1);
+  return read.filter((m) => !m.mine).slice(-unread);
 };
 
 /** The tail stored after a read: the last DM_TAIL_MAX messages, ours included. Pure. */

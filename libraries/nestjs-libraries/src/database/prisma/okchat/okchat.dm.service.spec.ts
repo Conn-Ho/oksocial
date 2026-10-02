@@ -53,12 +53,16 @@ describe('tail alignment', () => {
     expect(alignedNew(tail, [them('在吗'), me('您好'), me('请问需要什么'), them('看看这个')])).toEqual([me('请问需要什么'), them('看看这个')]);
   });
 
-  it('the first read of a conversation: with unread, the customer\'s messages after our last one', () => {
+  it('the first read of a conversation: the customer\'s last `unread` messages, counted from the end', () => {
     const read = [them('上次的'), me('好的'), them('在吗'), them('还有货吗')];
     expect(newMessages(null, read, 2)).toEqual([them('在吗'), them('还有货吗')]);
-    expect(newMessages({ initialized: false, tail: [] }, read, 1)).toEqual([them('在吗'), them('还有货吗')]);
-    // never answered: everything the customer wrote
+    expect(newMessages({ initialized: false, tail: [] }, read, 1)).toEqual([them('还有货吗')]);
     expect(newMessages(null, [them('一'), them('二')], 2)).toEqual([them('一'), them('二')]);
+    // the platform's greeting from hours before the account was linked stays history
+    const live = [them('我们已相互关注，开始聊天吧', '03:47'), them('你好，请问还有货吗', '17:21')];
+    expect(newMessages(null, live, 1)).toEqual([them('你好，请问还有货吗', '17:21')]);
+    // more unread than the read holds: every customer message of it, never ours
+    expect(newMessages(null, [me('您好'), them('在吗')], 5)).toEqual([them('在吗')]);
     // nothing unread: the tail is only initialized
     expect(newMessages(null, read, 0)).toEqual([]);
     // initialized: the tail decides, not unread
@@ -246,6 +250,27 @@ describe('OkchatDmService', () => {
     expect(thread.seq).toBe(8);
     expect(batch.batchId).toBe('c1:8-8');
     expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:8', text: '谢谢', sentAt: '2026-10-02T10:00:00+08:00' }]);
+  });
+
+  it('a conversation read for the first time pushes only its unread messages, not older history', async () => {
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好，请问还有货吗' }],
+      reads: { c1: [them('我们已相互关注，开始聊天吧', '03:47'), them('你好，请问还有货吗', '17:21')] },
+      threads: [],
+    });
+    await service.readDue(NOW);
+    const [, , thread, batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:1', text: '你好，请问还有货吗', sentAt: '2026-10-02T17:21:00+08:00' }]);
+    // both are in the tail the next read aligns with
+    expect(thread.tail).toEqual(tailOf(them('我们已相互关注，开始聊天吧'), them('你好，请问还有货吗')));
+    expect(thread.seq).toBe(1);
+  });
+
+  it('a conversation never read and without unread messages is left alone', async () => {
+    const { service, dm, repo } = setup({ conversations: [{ id: 'c1', name: '小C', unread: 0, summary: 'x' }], reads: { c1: [them('旧的')] } });
+    await service.readDue(NOW);
+    expect(dm.read).not.toHaveBeenCalled();
+    expect(repo.saveRead).not.toHaveBeenCalled();
   });
 
   it('a conversation with nothing new still stores its tail, without a batch', async () => {
