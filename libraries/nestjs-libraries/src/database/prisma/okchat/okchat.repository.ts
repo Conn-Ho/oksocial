@@ -195,6 +195,8 @@ export class OkchatRepository {
         active: true,
         AND: [
           { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+          // another read has the account right now
+          { OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: now } }] },
           {
             OR: [
               { lastReadAt: null },
@@ -215,6 +217,26 @@ export class OkchatRepository {
       orderBy: { lastReadAt: { sort: 'asc', nulls: 'first' } },
       take: limit,
       include: { integration: { select: channelSelect } },
+    });
+  }
+
+  /**
+   * Takes (or renews) the account's read lease for `owner` until `until`: false while another read
+   * holds an unexpired one. A row update, so two readers cannot both win.
+   */
+  async claimRead(integrationId: string, owner: string, at: Date, until: Date) {
+    const { count } = await this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }, { readLeaseOwner: owner }] },
+      data: { readLeaseUntil: until, readLeaseOwner: owner },
+    });
+    return count === 1;
+  }
+
+  /** Gives the read lease back, unless another read took it over meanwhile. */
+  releaseRead(integrationId: string, owner: string) {
+    return this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, readLeaseOwner: owner },
+      data: { readLeaseUntil: null, readLeaseOwner: null },
     });
   }
 

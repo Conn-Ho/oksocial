@@ -175,7 +175,8 @@ export type DmCapabilities = {
   loggedOutReason: string;
   // why a reply cannot go out as written (shown to the agent), or null
   checkText?(text: string): string | null;
-  conversations(token: string): Promise<DmConversation[]>;
+  // `patient`: a second try after the list did not show, waiting longer for it
+  conversations(token: string, opts?: { patient?: boolean }): Promise<DmConversation[]>;
   // the last `limit` messages of a conversation, oldest first
   read(token: string, conversationId: string, limit: number): Promise<DmMessage[]>;
   send(token: string, conversationId: string, text: string): Promise<void>;

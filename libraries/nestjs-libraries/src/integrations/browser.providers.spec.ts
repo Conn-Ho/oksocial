@@ -346,12 +346,15 @@ describe('inbox fetch mapping', () => {
       { from: 'me', mine: true, text: '在', time: '10:01' },
     ]);
     await p.dm.send('s1', 'c1', '您好，在的');
+    await p.dm.conversations('s1', { patient: true });
     expect(fleet.calls).toEqual([
       ['xhsdm', 'list', '--limit', '30'],
       ['xhsdm', 'read', 'c1', '--limit', '20'],
       // the format first (the worker appends one only when there is none), then -- : the
       // conversation id and the text are never read as options
       ['xhsdm', 'send', '-f', 'json', '--', 'c1', '您好，在的'],
+      // the second try of a list that did not show waits longer for it
+      ['xhsdm', 'list', '--limit', '30', '--wait', '40'],
     ]);
     expect(p.dm.maxLength).toBe(500);
     expect(p.dm.checkText!('--help')).toMatch(/不能以「-」开头/);

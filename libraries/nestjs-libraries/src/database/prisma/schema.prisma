@@ -2732,6 +2732,10 @@ model OkchatBinding {
   // the browser worker's real-time DM watcher reported the account healthy until then: meanwhile
   // the poll is only a 5-minute safety net (it lapses by itself when the watch stops reporting)
   watchHealthyUntil DateTime?
+  // one read of the account at a time (the poll and watcher-triggered reads): held until then by
+  // readLeaseOwner and renewed before each page it reads, so a read that died lets go soon
+  readLeaseUntil  DateTime?
+  readLeaseOwner  String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   integration     Integration @relation(fields: [integrationId], references: [id])

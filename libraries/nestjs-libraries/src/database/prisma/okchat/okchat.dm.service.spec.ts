@@ -146,14 +146,15 @@ describe('OkchatDmService', () => {
     ...over,
   });
 
-  const setup = (opts: { conversations?: any; reads?: Record<string, any>; threads?: any[]; sent?: string[]; bindings?: any[] } = {}) => {
+  const setup = (opts: { conversations?: any; lists?: any[]; reads?: Record<string, any>; threads?: any[]; sent?: string[]; bindings?: any[] } = {}) => {
     const dm = {
       maxLength: 500,
       readGapMs: [8000, 15000] as [number, number],
       loggedOutReason: '小红书网页版已退出登录',
-      conversations: jest.fn(async () => {
-        if (opts.conversations instanceof Error) throw opts.conversations;
-        return opts.conversations ?? [];
+      conversations: jest.fn(async (..._args: any[]) => {
+        const next = Array.isArray(opts.lists) && opts.lists.length ? opts.lists.shift() : opts.conversations;
+        if (next instanceof Error) throw next;
+        return next ?? [];
       }),
       read: jest.fn(async (_slot: string, id: string) => {
         const r = opts.reads?.[id];
@@ -164,6 +165,8 @@ describe('OkchatDmService', () => {
     };
     const repo = {
       readableBindings: jest.fn(async () => opts.bindings ?? [binding()]),
+      claimRead: jest.fn(async (..._args: any[]) => true),
+      releaseRead: jest.fn(async (..._args: any[]) => ({ count: 1 })),
       threads: jest.fn(async () => opts.threads ?? []),
       sentTexts: jest.fn(async () => opts.sent ?? []),
       saveRead: jest.fn(async () => []),
@@ -177,6 +180,8 @@ describe('OkchatDmService', () => {
       sleeps.push(ms);
     };
     (service as any).random = () => 0.5;
+    (service as any).clock = () => NOW;
+    (service as any).newOwner = () => 'read-1';
     return { service, repo, dm, outbox, sleeps };
   };
 
@@ -295,5 +300,107 @@ describe('OkchatDmService', () => {
     const { service, repo } = setup({ conversations: new Error('xiaohongshu BRIDGE_DOWN: worker') });
     await service.readDue(NOW);
     expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW });
+  });
+
+  it('a conversation list that does not show is tried once more right away, waiting longer', async () => {
+    const { service, repo, dm } = setup({
+      lists: [new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item'), [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }]],
+      reads: { c1: [them('在吗')] },
+    });
+    await service.readDue(NOW);
+    expect(dm.conversations.mock.calls).toEqual([['slot1'], ['slot1', { patient: true }]]);
+    expect(repo.saveRead).toHaveBeenCalledTimes(1);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: null });
+  });
+
+  it('the second try failing too counts as one failed read', async () => {
+    const { service, repo, dm } = setup({ conversations: new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item') });
+    await service.readDue(NOW);
+    expect(dm.conversations).toHaveBeenCalledTimes(2);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW });
+    expect(repo.saveRead).not.toHaveBeenCalled();
+  });
+
+  it('a logged-out site or platform pushback is not tried again', async () => {
+    const out = setup({ conversations: new RefreshToken('xiaohongshu', '{}', '{}', 'Not logged in') });
+    await out.service.readDue(NOW);
+    expect(out.dm.conversations).toHaveBeenCalledTimes(1);
+    const pushed = setup({ conversations: new Error('平台风控拦截了这次操作：请完成滑块验证') });
+    await pushed.service.readDue(NOW);
+    expect(pushed.dm.conversations).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OkchatDmService: one read of an account at a time', () => {
+  const NOW = new Date('2026-10-02T06:30:00Z');
+  const make = (claims: boolean[]) => {
+    const order: string[] = [];
+    const dm = {
+      maxLength: 500,
+      readGapMs: [0, 0] as [number, number],
+      loggedOutReason: 'x',
+      conversations: jest.fn(async () => {
+        order.push('list');
+        return [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }];
+      }),
+      read: jest.fn(async () => {
+        order.push('read c1');
+        return [them('在吗')];
+      }),
+      send: jest.fn(),
+    };
+    const repo = {
+      readableBindings: jest.fn(async () => [
+        { integrationId: 'i1', loggedOutReason: null, integration: { token: 'slot1', providerIdentifier: 'xiaohongshu' } },
+      ]),
+      claimRead: jest.fn(async (_id: string, owner: string, at: Date, until: Date) => {
+        order.push(`claim ${owner} until +${(until.getTime() - at.getTime()) / 60_000}m`);
+        return claims.length ? claims.shift()! : true;
+      }),
+      releaseRead: jest.fn(async (_id: string, owner: string) => {
+        order.push(`release ${owner}`);
+        return { count: 1 };
+      }),
+      threads: jest.fn(async () => []),
+      sentTexts: jest.fn(async () => []),
+      saveRead: jest.fn(async () => {
+        order.push('save c1');
+        return [];
+      }),
+      updateBinding: jest.fn(async () => ({ count: 1 })),
+    };
+    const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm }) };
+    const service = new OkchatDmService(repo as any, manager as any, { queueStatus: jest.fn() } as any);
+    Object.assign(service as any, { sleep: async () => undefined, random: () => 0, clock: () => NOW, newOwner: () => 'read-1' });
+    return { service, repo, order };
+  };
+
+  it('a read holds the account\'s lease, renewed before each page, and gives it back', async () => {
+    const { service, order } = make([]);
+    expect(await service.readDue(NOW)).toEqual({ accounts: 1, read: 1 });
+    expect(order).toEqual([
+      'claim read-1 until +5m',
+      'list',
+      'claim read-1 until +5m',
+      'read c1',
+      'claim read-1 until +5m',
+      'save c1',
+      'release read-1',
+    ]);
+  });
+
+  it('an account another read holds (the watcher\'s or a stuck one\'s) is left to it', async () => {
+    const { service, order, repo } = make([false]);
+    expect(await service.readDue(NOW)).toEqual({ accounts: 1, read: 0 });
+    expect(order).toEqual(['claim read-1 until +5m']);
+    expect(repo.releaseRead).not.toHaveBeenCalled();
+  });
+
+  it('a read that lost its lease (it took longer than the lease) stops without saving', async () => {
+    const { service, order, repo } = make([true, true, false]);
+    await service.readDue(NOW);
+    expect(order).toEqual(['claim read-1 until +5m', 'list', 'claim read-1 until +5m', 'read c1', 'claim read-1 until +5m', 'release read-1']);
+    expect(repo.saveRead).not.toHaveBeenCalled();
+    expect(repo.updateBinding).not.toHaveBeenCalled();
   });
 });

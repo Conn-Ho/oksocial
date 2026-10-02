@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { OkchatBinding, OkchatThread, Prisma } from '@prisma/client';
 import { OkchatRepository, OkchatTailMessage } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository';
 import { OkchatOutboxService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service';
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
-import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { BadBody, RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { DmCapabilities, DmConversation, DmMessage } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { DM_PAUSE_MINUTES, TOO_FREQUENT_RE, isPushback } from '@gitroom/nestjs-libraries/browser/risk.control';
 
@@ -18,6 +19,9 @@ export const DM_CONVERSATIONS_PER_READ = 5;
 // messages read per conversation, and kept as its tail
 export const DM_READ_LIMIT = 20;
 export const DM_TAIL_MAX = 30;
+// A read holds the account this long, renewed before each page it reads: two reads of one account
+// (the poll and one the watcher triggered) never interleave, and a read that died lets go soon.
+export const DM_READ_LEASE_MS = 5 * 60_000;
 // what we sent to a conversation in this window is not taken for the customer's (echo)
 export const DM_ECHO_WINDOW_MS = 24 * 60 * 60_000;
 // accounts read at once (the browser fleet runs a few commands at a time)
@@ -31,6 +35,15 @@ const SHANGHAI_MS = 8 * 60 * 60_000;
 type Read = Pick<DmMessage, 'from' | 'mine' | 'text'> & Partial<Pick<DmMessage, 'time'>>;
 type ThreadState = { initialized: boolean; tail: OkchatTailMessage[] } | null;
 type Channel = { integrationId: string; slot: string; platform: string; dm: DmCapabilities };
+type Lease = { integrationId: string; owner: string };
+type ReadableBinding = OkchatBinding & { integration: { token: string; providerIdentifier: string } };
+
+/**
+ * Whether a conversation list that failed is worth one more try right away: not a logged-out site,
+ * a refused command or the platform pushing back (those only get worse with another page load). Pure.
+ */
+export const retriesList = (err: unknown) =>
+  !(err instanceof RefreshToken) && !(err instanceof BadBody) && !isPushback((err as Error)?.message || '');
 
 /** A message text as the web IM shows it: whitespace collapsed, at most what a read keeps. Pure. */
 export const normalizeDmText = (text: string) => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, TEXT_KEPT);
@@ -154,6 +167,8 @@ export const inParallel = async <T>(items: T[], limit: number, run: (item: T) =>
 export class OkchatDmService {
   protected sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
   protected random = Math.random;
+  protected clock = () => new Date();
+  protected newOwner = (): string => randomUUID();
 
   constructor(
     private _repository: OkchatRepository,
@@ -175,8 +190,9 @@ export class OkchatDmService {
     let read = 0;
     await inParallel(due, READ_CONCURRENCY, async (binding) => {
       try {
-        await this.readAccount(binding, now);
-        read += 1;
+        if ((await this.readLeased(binding, now)) === 'read') {
+          read += 1;
+        }
       } catch (err) {
         console.log(`okchat dm read ${binding.integrationId}`, (err as Error)?.message);
       }
@@ -184,7 +200,40 @@ export class OkchatDmService {
     return { accounts: due.length, read };
   }
 
-  private async readAccount(binding: OkchatBinding & { integration: { token: string; providerIdentifier: string } }, now: Date) {
+  /** Reads the account under its lease; 'busy' when another read holds it (that read covers it). */
+  private async readLeased(binding: ReadableBinding, now: Date): Promise<'read' | 'busy'> {
+    const lease: Lease = { integrationId: binding.integrationId, owner: this.newOwner() };
+    if (!(await this.renew(lease))) {
+      return 'busy';
+    }
+    try {
+      await this.readAccount(binding, now, lease);
+      return 'read';
+    } finally {
+      await this._repository.releaseRead(lease.integrationId, lease.owner);
+    }
+  }
+
+  /** Takes or extends the read lease from now; false when another read took the account. */
+  private renew(lease: Lease) {
+    const at = this.clock();
+    return this._repository.claimRead(lease.integrationId, lease.owner, at, new Date(at.getTime() + DM_READ_LEASE_MS));
+  }
+
+  /** The conversation list; one more try right away, waiting longer, when it did not show. */
+  private async listConversations(channel: Channel) {
+    try {
+      return await channel.dm.conversations(channel.slot);
+    } catch (err) {
+      if (!retriesList(err)) {
+        throw err;
+      }
+      console.log(`okchat dm list ${channel.integrationId}, trying once more`, (err as Error)?.message);
+      return channel.dm.conversations(channel.slot, { patient: true });
+    }
+  }
+
+  private async readAccount(binding: ReadableBinding, now: Date, lease: Lease) {
     const provider = this._integrationManager.getSocialIntegration(binding.integration.providerIdentifier);
     if (!provider?.dm) {
       return;
@@ -197,7 +246,7 @@ export class OkchatDmService {
     };
     let conversations: DmConversation[];
     try {
-      conversations = await channel.dm.conversations(channel.slot);
+      conversations = await this.listConversations(channel);
     } catch (err) {
       return this.readFailed(binding, channel, err, now);
     }
@@ -205,6 +254,9 @@ export class OkchatDmService {
     for (const conversation of pickConversations(conversations, threads, DM_CONVERSATIONS_PER_READ)) {
       const [min, max] = channel.dm.readGapMs;
       await this.sleep(min + this.random() * (max - min));
+      if (!(await this.renew(lease))) {
+        return this.leaseLost(channel);
+      }
       let read: DmMessage[];
       try {
         read = await channel.dm.read(channel.slot, conversation.id, DM_READ_LIMIT);
@@ -216,9 +268,17 @@ export class OkchatDmService {
         console.log(`okchat dm conversation ${channel.integrationId}`, (err as Error)?.message);
         continue;
       }
+      // the page took longer than the lease and another read may have the account: it saves instead
+      if (!(await this.renew(lease))) {
+        return this.leaseLost(channel);
+      }
       await this.saveConversation(channel, conversation, threads.get(conversation.id) ?? null, read, now);
     }
     await this._repository.updateBinding(channel.integrationId, { lastReadAt: now, loggedOutReason: null });
+  }
+
+  private leaseLost(channel: Channel) {
+    console.log(`okchat dm read ${channel.integrationId}: another read took the account over, stopping`);
   }
 
   private async saveConversation(channel: Channel, conversation: DmConversation, thread: OkchatThread | null, read: DmMessage[], now: Date) {

@@ -1,5 +1,5 @@
 /**
- * opencli xhsdm list [--limit 50]        conversations (id, name, time, summary, pinned, unread, group)
+ * opencli xhsdm list [--limit 50] [--wait 15]  conversations (id, name, time, summary, pinned, unread, group)
  * opencli xhsdm read <conv-id> [--limit 40]  messages of one conversation (time, from, text, mine)
  * opencli xhsdm send <conv-id> <text>    type into the composer and press Enter; verifies the message appears
  *
@@ -28,13 +28,31 @@ const LIST = `(() => Array.from(document.querySelectorAll('.xhs-im-conv-item')).
   return { id: e.getAttribute('data-conv-id') || '', name, time: (e.querySelector('.xhs-im-conv-item__time')?.innerText || '').trim(), summary, pinned: e.classList.contains('xhs-im-conv-item--pinned'), unread: Number((unreadEl?.innerText || '').replace(/\\D/g, '')) || 0, group: /^\\d+$/.test(e.getAttribute('data-conv-id') || '') };
 }).filter((c) => c.id))()`;
 
+// What the chat page shows instead of the conversation list, for the error (never message text).
+const PAGE_STATE = `(() => {
+  const text = (document.body?.innerText || '').slice(0, 3000);
+  const shows = /在其他页面|其他页面打开|其他窗口|已在别处/.test(text) ? 'it says the chat is open in another page'
+    : /手机号登录|获取验证码|扫码登录/.test(text) ? 'it shows a login form'
+    : 'no conversation list';
+  return shows + ' (path ' + location.pathname + ', ' + document.querySelectorAll('.xhs-im-conv-item').length + ' conversations)';
+})()`;
+
 cli({
   ...base, access: 'read', name: 'list', description: 'Xiaohongshu DM conversations (web IM)',
-  args: [{ name: 'limit', type: 'int', required: false, help: 'max conversations (default 50)' }],
+  args: [
+    { name: 'limit', type: 'int', required: false, help: 'max conversations (default 50)' },
+    { name: 'wait', type: 'int', required: false, help: 'seconds to wait for the list (default 15, 5-60)' },
+  ],
   columns: ['id', 'name', 'time', 'summary', 'unread', 'pinned', 'group'],
   func: async (page, kwargs) => {
     await openChat(page);
-    await page.wait({ selector: '.xhs-im-conv-item', timeout: 15 });
+    const wait = Math.min(60, Math.max(5, Number(kwargs.wait) || 15));
+    try {
+      await page.wait({ selector: '.xhs-im-conv-item', timeout: wait });
+    } catch (err) {
+      const shows = await page.evaluate(PAGE_STATE).catch(() => 'unknown');
+      throw new CommandExecutionError(`Selector not found: .xhs-im-conv-item after ${wait}s: ${shows}`, String(err?.message || err));
+    }
     const rows = await page.evaluate(LIST);
     return rows.slice(0, Number(kwargs.limit) || 50);
   },

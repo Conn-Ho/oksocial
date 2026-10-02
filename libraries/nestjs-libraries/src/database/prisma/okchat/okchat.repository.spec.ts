@@ -162,6 +162,7 @@ describe('OkchatRepository.readableBindings', () => {
     expect(args.where.AND).toEqual(
       expect.arrayContaining([
         { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+        { OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: now } }] },
         {
           OR: [
             { lastReadAt: null },
@@ -174,5 +175,32 @@ describe('OkchatRepository.readableBindings', () => {
     expect(args.where.integration).toMatchObject({ providerIdentifier: { in: ['xiaohongshu'] }, deletedAt: null, disabled: false });
     expect(args.orderBy).toEqual({ lastReadAt: { sort: 'asc', nulls: 'first' } });
     expect(args.take).toBe(12);
+  });
+});
+
+describe('OkchatRepository read lease', () => {
+  const at = new Date('2026-10-03T06:00:00Z');
+  const until = new Date('2026-10-03T06:05:00Z');
+
+  it('is taken when free, expired or already the same read\'s (a renewal)', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    expect(await repo.claimRead('i1', 'read-1', at, until)).toBe(true);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }, { readLeaseOwner: 'read-1' }] },
+      data: { readLeaseUntil: until, readLeaseOwner: 'read-1' },
+    });
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+    expect(await repo.claimRead('i1', 'read-2', at, until)).toBe(false);
+  });
+
+  it('is given back only by the read that holds it', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    await repo.releaseRead('i1', 'read-1');
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', readLeaseOwner: 'read-1' },
+      data: { readLeaseUntil: null, readLeaseOwner: null },
+    });
   });
 });

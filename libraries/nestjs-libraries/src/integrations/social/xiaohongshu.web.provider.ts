@@ -39,6 +39,8 @@ export const XHS_DM_LOGGED_OUT =
 const DRAFT_BOX_URL = 'https://creator.xiaohongshu.com/publish/publish?source=official&target=image';
 const IMAGES_MAX = 9;
 const isVideo = (p: string) => /\.(mp4|mov|webm)(\?|$)/i.test(p);
+// xhsdm list waits 15 s for the conversation list; a second try after it did not show waits this long
+const DM_LIST_PATIENT_WAIT_S = 40;
 // Xiaohongshu's risk control watches bursts of page reads: 8-15 s between two of them.
 const READ_GAP_MS: [number, number] = [8_000, 15_000];
 const NOTE_LINK = /xiaohongshu\.com\/(?:explore|discovery\/item|search_result|user\/profile\/[^/?#]+)\/([0-9a-f]{24})/i;
@@ -290,11 +292,11 @@ export class XiaohongshuWebProvider
     // the text goes after `--` (below); a text starting with "-" is still refused, in case a
     // browser host's opencli reads it as an option anyway
     checkText: (text) => (text.startsWith('-') ? '回复不能以「-」开头（网页版发送会出错），请改一下开头再发' : null),
-    conversations: async (slot) =>
+    conversations: async (slot, opts) =>
       (
         await this.list<{ id: string; name: string; unread: number | string; summary: string; group: boolean | string }>(
           slot,
-          ['xhsdm', 'list', '--limit', '30'],
+          ['xhsdm', 'list', '--limit', '30', ...(opts?.patient ? ['--wait', String(DM_LIST_PATIENT_WAIT_S)] : [])],
           120_000
         )
       )
