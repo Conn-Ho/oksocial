@@ -253,13 +253,25 @@ export class OkchatRepository {
   }
 
   /**
-   * Takes (or renews) the account's read lease for `owner` until `until`: false while another read
-   * holds an unexpired one. A row update, so two readers cannot both win.
+   * Takes the account's read lease for `owner` until `until`: false while another read holds an
+   * unexpired one. A row update, so two readers cannot both win.
    */
   async claimRead(integrationId: string, owner: string, at: Date, until: Date) {
     const { count } = await this._bindings.model.okchatBinding.updateMany({
-      where: { integrationId, OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }, { readLeaseOwner: owner }] },
+      where: { integrationId, OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }] },
       data: { readLeaseUntil: until, readLeaseOwner: owner },
+    });
+    return count === 1;
+  }
+
+  /**
+   * Extends the lease `owner` holds: false once it lapsed, even if nobody took it meanwhile (another
+   * read may have come and gone, and what this read loaded at its start is stale).
+   */
+  async renewRead(integrationId: string, owner: string, at: Date, until: Date) {
+    const { count } = await this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, readLeaseOwner: owner, readLeaseUntil: { gte: at } },
+      data: { readLeaseUntil: until },
     });
     return count === 1;
   }

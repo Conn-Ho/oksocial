@@ -2,7 +2,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', 
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({ IntegrationManager: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service', () => ({ OkchatOutboxService: class {} }));
 
-import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { BadBody, RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
   DM_ECHO_WINDOW_MS,
   DM_READ_EVERY_MS,
@@ -68,6 +68,18 @@ describe('tail alignment', () => {
     expect(newMessages(null, read, 0)).toEqual([]);
     // initialized: the tail decides, not unread
     expect(newMessages({ initialized: true, tail: tailOf(them('上次的'), me('好的')) }, read, 0)).toEqual([them('在吗'), them('还有货吗')]);
+  });
+
+  it('the first read keeps what came in between the list and the read, anchored on the list\'s preview', () => {
+    // the list said 1 unread, preview 你好; two more came in before the conversation was opened
+    const read = [them('我们已相互关注，开始聊天吧'), them('你好'), them('在吗'), them('想问下价格')];
+    expect(newMessages(null, read, 1, '你好')).toEqual([them('你好'), them('在吗'), them('想问下价格')]);
+    expect(newMessages(null, read, 2, '在吗')).toEqual([them('你好'), them('在吗'), them('想问下价格')]);
+    // a preview cut short by the list, with an ellipsis
+    expect(newMessages(null, [them('旧'), them('请问这款还有现货吗我想买两件')], 1, '请问这款还有现货吗…')).toEqual([them('请问这款还有现货吗我想买两件')]);
+    // a preview the read does not show ([图片], a card): counted from the end as before
+    expect(newMessages(null, read, 1, '[图片]')).toEqual([them('想问下价格')]);
+    expect(newMessages(null, read, 1)).toEqual([them('想问下价格')]);
   });
 
   it('the next tail is the last 30 messages read, ours included, without times', () => {
@@ -226,6 +238,7 @@ describe('OkchatDmService', () => {
     const repo = {
       readableBindings: jest.fn(async () => opts.bindings ?? [binding()]),
       claimRead: jest.fn(async (..._args: any[]) => true),
+      renewRead: jest.fn(async (..._args: any[]) => true),
       releaseRead: jest.fn(async (..._args: any[]) => ({ count: 1 })),
       threads: jest.fn(async () => opts.threads ?? []),
       sentTexts: jest.fn(async (_id: string, _thread: string, since: Date) => [
@@ -344,6 +357,17 @@ describe('OkchatDmService', () => {
     expect(thread.tail.at(-1)).toEqual({ from: '小C', mine: false, text: PHOTO, kind: 'media' });
   });
 
+  it('first contact: messages sent while the read waited between the list and the conversation are kept', async () => {
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('我们已相互关注，开始聊天吧', '03:47'), them('你好', '17:21'), them('在吗', '17:21'), them('想问下价格', '17:21')] },
+      threads: [],
+    });
+    await service.readDue(NOW);
+    const [, , , batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages.map((m: any) => m.text)).toEqual(['你好', '在吗', '想问下价格']);
+  });
+
   it('a conversation never read and without unread messages is left alone', async () => {
     const { service, dm, repo } = setup({ conversations: [{ id: 'c1', name: '小C', unread: 0, summary: 'x' }], reads: { c1: [them('旧的')] } });
     await service.readDue(NOW);
@@ -450,6 +474,19 @@ describe('OkchatDmService', () => {
     expect(repo.saveRead).not.toHaveBeenCalled();
   });
 
+  it('a second try refused by an xhsdm without --wait keeps the first failure; one that finds the site logged out says so', async () => {
+    const logs = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const refused = setup({
+      lists: [new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item'), new BadBody('xiaohongshu', '{}', '{}', "error: unknown option '--wait'")],
+    });
+    await refused.service.readDue(NOW);
+    expect(logs.mock.calls.at(-1)).toEqual(['okchat dm list i1', 'xiaohongshu FAILED: Selector not found: .xhs-im-conv-item']);
+    const out = setup({ lists: [new Error('xiaohongshu TIMEOUT: slow'), new RefreshToken('xiaohongshu', '{}', '{}', 'Not logged in')] });
+    await out.service.readDue(NOW);
+    expect(out.repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: '小红书网页版已退出登录' });
+    logs.mockRestore();
+  });
+
   it('a logged-out site or platform pushback is not tried again', async () => {
     const out = setup({ conversations: new RefreshToken('xiaohongshu', '{}', '{}', 'Not logged in') });
     await out.service.readDue(NOW);
@@ -486,6 +523,10 @@ describe('OkchatDmService: one read of an account at a time', () => {
         order.push(`claim ${owner} until +${(until.getTime() - at.getTime()) / 60_000}m`);
         return claims.length ? claims.shift()! : true;
       }),
+      renewRead: jest.fn(async (_id: string, owner: string, at: Date, until: Date) => {
+        order.push(`renew ${owner} until +${(until.getTime() - at.getTime()) / 60_000}m`);
+        return claims.length ? claims.shift()! : true;
+      }),
       releaseRead: jest.fn(async (_id: string, owner: string) => {
         order.push(`release ${owner}`);
         return { count: 1 };
@@ -510,9 +551,9 @@ describe('OkchatDmService: one read of an account at a time', () => {
     expect(order).toEqual([
       'claim read-1 until +5m',
       'list',
-      'claim read-1 until +5m',
+      'renew read-1 until +5m',
       'read c1',
-      'claim read-1 until +5m',
+      'renew read-1 until +5m',
       'save c1',
       'release read-1',
     ]);
@@ -528,7 +569,7 @@ describe('OkchatDmService: one read of an account at a time', () => {
   it('a read that lost its lease (it took longer than the lease) stops without saving', async () => {
     const { service, order, repo } = make([true, true, false]);
     await service.readDue(NOW);
-    expect(order).toEqual(['claim read-1 until +5m', 'list', 'claim read-1 until +5m', 'read c1', 'claim read-1 until +5m', 'release read-1']);
+    expect(order).toEqual(['claim read-1 until +5m', 'list', 'renew read-1 until +5m', 'read c1', 'renew read-1 until +5m', 'release read-1']);
     expect(repo.saveRead).not.toHaveBeenCalled();
     expect(repo.updateBinding).not.toHaveBeenCalled();
   });
@@ -549,6 +590,7 @@ describe('OkchatDmService.readOne: a read right away (the watcher saw the list c
     const repo = {
       readableBinding: jest.fn(async () => ('binding' in opts ? opts.binding : binding)),
       claimRead: jest.fn(async () => opts.claim ?? true),
+      renewRead: jest.fn(async () => true),
       releaseRead: jest.fn(async () => ({ count: 1 })),
       threads: jest.fn(async () => []),
       sentTexts: jest.fn(async () => []),

@@ -183,16 +183,28 @@ describe('OkchatRepository read lease', () => {
   const at = new Date('2026-10-03T06:00:00Z');
   const until = new Date('2026-10-03T06:05:00Z');
 
-  it('is taken when free, expired or already the same read\'s (a renewal)', async () => {
+  it('is taken when free or expired', async () => {
     const { repo, okchatBinding } = setup();
     okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
     expect(await repo.claimRead('i1', 'read-1', at, until)).toBe(true);
     expect(okchatBinding.updateMany).toHaveBeenCalledWith({
-      where: { integrationId: 'i1', OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }, { readLeaseOwner: 'read-1' }] },
+      where: { integrationId: 'i1', OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }] },
       data: { readLeaseUntil: until, readLeaseOwner: 'read-1' },
     });
     okchatBinding.updateMany.mockResolvedValueOnce({ count: 0 } as any);
     expect(await repo.claimRead('i1', 'read-2', at, until)).toBe(false);
+  });
+
+  it('is renewed only while the same read still holds it unbroken: once it lapsed, the read stops', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    expect(await repo.renewRead('i1', 'read-1', at, until)).toBe(true);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', readLeaseOwner: 'read-1', readLeaseUntil: { gte: at } },
+      data: { readLeaseUntil: until },
+    });
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+    expect(await repo.renewRead('i1', 'read-1', at, until)).toBe(false);
   });
 
   it('is given back only by the read that holds it', async () => {

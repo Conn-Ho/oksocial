@@ -86,20 +86,35 @@ export const alignedNew = <T extends Read>(tail: Read[], read: T[]): T[] => {
   return read;
 };
 
+// the list's preview of a message, without the ellipsis it may be cut short with
+const previewKey = (summary: string) => normalizeDmText(summary).replace(/(…|\.{3})$/, '').trim();
+
 /**
  * The new messages of a read. A conversation read for the first time has no tail: its unread badge
- * says how many of the customer's last messages are new, counted from the end; anything older
- * (the platform's greeting from hours before the account was linked) is history, and without
- * unread messages the read only becomes the tail. Pure.
+ * says how many of the customer's messages were new when the list was read; anything older (the
+ * platform's greeting from hours before the account was linked) is history, and without unread
+ * messages the read only becomes the tail. The conversation is opened seconds after the list, so
+ * the `unread` messages are counted back from the one the list's preview showed, and whatever came
+ * after it is new too; a preview the read cannot be matched with ([图片]) counts from the end. Pure.
  */
-export const newMessages = <T extends Read>(thread: ThreadState, read: T[], unread: number): T[] => {
+export const newMessages = <T extends Read>(thread: ThreadState, read: T[], unread: number, summary = ''): T[] => {
   if (thread?.initialized) {
     return alignedNew(thread.tail, read);
   }
   if (unread <= 0) {
     return [];
   }
-  return read.filter((m) => !m.mine).slice(-unread);
+  const theirs = read.filter((m) => !m.mine);
+  const preview = previewKey(summary);
+  let last = -1;
+  if (preview.length >= 2) {
+    for (let i = theirs.length - 1; i >= 0 && last < 0; i -= 1) {
+      if (!isMedia(theirs[i]) && normalizeDmText(theirs[i].text).startsWith(preview)) {
+        last = i;
+      }
+    }
+  }
+  return last >= 0 ? theirs.slice(Math.max(0, last + 1 - unread)) : theirs.slice(-unread);
 };
 
 /**
@@ -238,7 +253,8 @@ export class OkchatDmService {
   /** Reads the account under its lease; 'busy' when another read holds it (that read covers it). */
   private async readLeased(binding: ReadableBinding, now: Date): Promise<'read' | 'busy'> {
     const lease: Lease = { integrationId: binding.integrationId, owner: this.newOwner() };
-    if (!(await this.renew(lease))) {
+    const at = this.clock();
+    if (!(await this._repository.claimRead(lease.integrationId, lease.owner, at, new Date(at.getTime() + DM_READ_LEASE_MS)))) {
       return 'busy';
     }
     try {
@@ -249,10 +265,10 @@ export class OkchatDmService {
     }
   }
 
-  /** Takes or extends the read lease from now; false when another read took the account. */
+  /** Extends the read lease from now; false once it lapsed (another read may have the account). */
   private renew(lease: Lease) {
     const at = this.clock();
-    return this._repository.claimRead(lease.integrationId, lease.owner, at, new Date(at.getTime() + DM_READ_LEASE_MS));
+    return this._repository.renewRead(lease.integrationId, lease.owner, at, new Date(at.getTime() + DM_READ_LEASE_MS));
   }
 
   /** The conversation list; one more try right away, waiting longer, when it did not show. */
@@ -264,7 +280,12 @@ export class OkchatDmService {
         throw err;
       }
       console.log(`okchat dm list ${channel.integrationId}, trying once more`, (err as Error)?.message);
-      return channel.dm.conversations(channel.slot, { patient: true });
+      try {
+        return await channel.dm.conversations(channel.slot, { patient: true });
+      } catch (again) {
+        // a refused second try (an xhsdm not updated yet has no --wait) tells nothing new
+        throw again instanceof BadBody ? err : again;
+      }
     }
   }
 
@@ -324,7 +345,7 @@ export class OkchatDmService {
       )
     );
     // ours are never pushed, nor is what we sent to this conversation read back without the mark
-    const incoming = newMessages(state, read, conversation.unread).filter((m) => !m.mine && !echoes.has(echoKey(m.text)));
+    const incoming = newMessages(state, read, conversation.unread, conversation.summary).filter((m) => !m.mine && !echoes.has(echoKey(m.text)));
     const first = (thread?.seq ?? 0) + 1;
     const messages = incoming.map((m, i) => ({
       id: `${conversation.id}:${first + i}`,
