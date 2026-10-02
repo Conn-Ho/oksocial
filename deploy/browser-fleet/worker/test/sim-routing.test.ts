@@ -20,6 +20,14 @@ describe('config', () => {
     assert.equal(loadConfig({ ...base, SIM_OPENCLI_BIN: '  ' }).simOpencliBin, undefined);
   });
 
+  it('DM watch: its tabs are remembered in /tmp, and it parks for xhsdm runs unless DM_WATCH_YIELD is off', () => {
+    const c = loadConfig(base);
+    assert.deepEqual([c.dmWatchStateFile, c.dmWatchYield], ['/tmp/oksocial-dm-watch.json', true]);
+    for (const off of ['0', 'false', 'off', 'no']) assert.equal(loadConfig({ ...base, DM_WATCH_YIELD: off }).dmWatchYield, false, off);
+    assert.equal(loadConfig({ ...base, DM_WATCH_YIELD: '1', DM_WATCH_STATE_FILE: '/home/mac/oksocial/dm-watch.json' }).dmWatchStateFile, '/home/mac/oksocial/dm-watch.json');
+    assert.throws(() => loadConfig({ ...base, DM_WATCH_YIELD: 'maybe' }), /DM_WATCH_YIELD/);
+  });
+
   it('reads SIM_OPENCLI_BIN and SIM_STATE_DIR', () => {
     const c = loadConfig({ ...base, SIM_OPENCLI_BIN: '/opt/sim/sim-opencli.mjs', SIM_STATE_DIR: '/var/tmp/sim' });
     assert.deepEqual([c.simOpencliBin, c.simStateDir], ['/opt/sim/sim-opencli.mjs', '/var/tmp/sim']);

@@ -27,6 +27,43 @@ function setup(outcomes: RunOutcome[], slot: Slot = makeSlot()) {
   return { clock, ctl, opencli, go };
 }
 
+describe('slot runner: the hook before a run', () => {
+  it('runs inside the slot\'s turn, right before opencli, with the slot and the args', async () => {
+    const order: string[] = [];
+    const clock = fakeClock();
+    const slot = makeSlot();
+    const slots = createSlotsService({ ctl: createFakeCtl([slot]), clock, probe: async () => true });
+    const opencli = createFakeOpencli([OK]);
+    const realRun = opencli.run;
+    opencli.run = async (args, opts) => {
+      order.push(`opencli ${args[0]}`);
+      return realRun(args, opts);
+    };
+    const queue = new KeyedQueue({ maxConcurrent: 3 });
+    const run = createSlotRunner({
+      opencli,
+      slots,
+      queue,
+      clock,
+      beforeRun: async (name, args) => {
+        order.push(`before ${name} ${args[0]} running=${queue.activity(name).running}`);
+      },
+    });
+    await run({ slot, profileId: 'abcd1234', args: ['xhsdm', 'list'], timeoutMs: 5000, log });
+    assert.deepEqual(order, ['before xhs-2 xhsdm running=true', 'opencli xhsdm']);
+  });
+
+  it('a failing hook never stops the run', async () => {
+    const clock = fakeClock();
+    const slot = makeSlot();
+    const slots = createSlotsService({ ctl: createFakeCtl([slot]), clock, probe: async () => true });
+    const opencli = createFakeOpencli([OK]);
+    const run = createSlotRunner({ opencli, slots, queue: new KeyedQueue({ maxConcurrent: 3 }), clock, beforeRun: async () => { throw new Error('tab gone'); } });
+    assert.equal((await run({ slot, profileId: 'abcd1234', args: ['xhsdm', 'list'], timeoutMs: 5000, log })).ok, true);
+    assert.equal(opencli.runs.length, 1);
+  });
+});
+
 describe('slot runner', () => {
   it('returns a successful run as is, with the total duration', async () => {
     const { opencli, go } = setup([OK]);

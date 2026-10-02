@@ -19,6 +19,13 @@ const EnvSchema = z.object({
   // E2E only: when set, slots named sim-* run this simulator instead of opencli (see sim/sim-opencli.mjs).
   SIM_OPENCLI_BIN: z.string().optional().transform((v) => v?.trim() || undefined),
   SIM_STATE_DIR: z.string().min(1).default('/tmp/oksocial-sim'),
+  // Real-time DM watch: where its tabs are remembered across restarts, and whether the tab steps
+  // aside (about:blank) during xhsdm runs of its account.
+  DM_WATCH_STATE_FILE: z.string().min(1).default('/tmp/oksocial-dm-watch.json'),
+  DM_WATCH_YIELD: z
+    .enum(['1', 'true', 'on', 'yes', '0', 'false', 'off', 'no'], { message: 'must be on or off (1/0, true/false)' })
+    .default('1')
+    .transform((v) => ['1', 'true', 'on', 'yes'].includes(v)),
 });
 
 export interface Config {
@@ -37,6 +44,10 @@ export interface Config {
   simOpencliBin: string | undefined;
   /** Where the simulator keeps its per-slot state, control files and writes.jsonl. */
   simStateDir: string;
+  /** The DM watch's remembered tabs (slot → target id). */
+  dmWatchStateFile: string;
+  /** The DM watch's tab steps aside during xhsdm runs. */
+  dmWatchYield: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -58,5 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     logLevel: e.LOG_LEVEL,
     simOpencliBin: e.SIM_OPENCLI_BIN,
     simStateDir: e.SIM_STATE_DIR,
+    dmWatchStateFile: e.DM_WATCH_STATE_FILE,
+    dmWatchYield: e.DM_WATCH_YIELD,
   };
 }

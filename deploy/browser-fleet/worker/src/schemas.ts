@@ -121,6 +121,22 @@ export function parseAllowedSites(csv: string | undefined): ReadonlySet<string> 
 
 export const MediaFetchBody = z.object({ urls: z.array(z.string().max(8192)).min(1).max(20) });
 
+/** The accounts the DM watch keeps a tab for (PUT /dm-watch): slot + the caller's id for it. */
+export const DM_WATCH_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const DM_WATCH_MAX_ACCOUNTS = 200;
+export const DmWatchBody = z.object({
+  accounts: z
+    .array(z.object({ slot: z.string().regex(SLOT_PARAM_RE, 'invalid slot name'), key: z.string().regex(DM_WATCH_KEY_RE, 'invalid key') }))
+    .max(DM_WATCH_MAX_ACCOUNTS),
+});
+
+/** GET /dm-watch/changes: after which change (`<process>:<n>`), and how long to wait for one. */
+export const DM_WATCH_MAX_WAIT_MS = 55_000;
+export const DmWatchChangesQuery = z.object({
+  cursor: z.string().regex(/^[a-z0-9]{1,16}:\d{1,12}$/, 'invalid cursor').optional(),
+  waitMs: z.coerce.number().int().min(0).max(DM_WATCH_MAX_WAIT_MS).default(0),
+});
+
 /** oksocial's login form: per-platform hints (CSS selectors and login page prefixes, nothing secret). */
 const SELECTOR_MAX = 300;
 const Selector = z.string().max(SELECTOR_MAX).optional();

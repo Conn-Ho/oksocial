@@ -70,10 +70,7 @@ export function presentCookieNames(cookies: readonly CdpCookie[], domain: string
  * poll while someone is scanning a QR code in that browser.
  */
 export async function readCookies(cdpPort: number, fetchImpl: FetchLike = fetch): Promise<CdpCookie[]> {
-  const res = await fetchImpl(`http://127.0.0.1:${cdpPort}/json/version`, { signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) }).catch(() => undefined);
-  if (!res?.ok) throw new HttpError(502, 'CHROME_UNREACHABLE', `cannot reach Chrome DevTools on port ${cdpPort}`);
-  const { webSocketDebuggerUrl } = (await res.json().catch(() => ({}))) as { webSocketDebuggerUrl?: string };
-  if (!webSocketDebuggerUrl) throw new HttpError(502, 'CHROME_ERROR', 'Chrome DevTools gave no browser socket');
+  const webSocketDebuggerUrl = await browserSocketUrl(cdpPort, fetchImpl);
   return new Promise<CdpCookie[]>((resolve, reject) => {
     const ws = new WebSocket(webSocketDebuggerUrl);
     const timer = setTimeout(() => {
@@ -113,65 +110,123 @@ export async function listTargets(cdpPort: number, fetchImpl: FetchLike): Promis
 
 export type PageCall = (method: string, params?: Record<string, unknown>) => Promise<Record<string, any> | undefined>;
 
-/** Runs `fn` with one DevTools socket to a page, then closes it. Every step is bounded by a timeout. */
-export async function withPageSocket<T>(wsUrl: string, fn: (call: PageCall) => Promise<T>): Promise<T> {
+/** A DevTools socket kept open: calls, the events it receives, and when it closed. */
+export interface PageSession {
+  call: PageCall;
+  isOpen(): boolean;
+  /** Settles when the socket closes (the target went away, or close()). */
+  readonly closed: Promise<void>;
+  close(): void;
+}
+
+/**
+ * Opens one DevTools socket (a page's or the browser's). Every call is bounded by a timeout, and a
+ * socket that closes or fails answers every call still waiting. Events go to `onEvent`.
+ */
+export async function openPageSession(
+  wsUrl: string,
+  onEvent: (method: string, params: Record<string, any>) => void = () => {},
+  timeoutMs = PAGE_CALL_TIMEOUT_MS
+): Promise<PageSession> {
   const ws = new WebSocket(wsUrl);
   const pending = new Map<number, (msg: { result?: Record<string, any>; error?: { message?: string } }) => void>();
-  // a socket that closes or fails answers every call still waiting, instead of leaving it to its timer
-  const failAll = () => {
-    for (const settle of pending.values()) settle({ error: { message: 'page DevTools socket closed' } });
-    pending.clear();
-  };
+  let open = false;
+  let settleClosed: () => void = () => {};
+  const closed = new Promise<void>((resolve) => {
+    settleClosed = resolve;
+  });
   ws.addEventListener('message', (event) => {
-    let msg: { id?: number; result?: Record<string, any>; error?: { message?: string } };
+    let msg: { id?: number; method?: string; params?: Record<string, any>; result?: Record<string, any>; error?: { message?: string } };
     try {
       msg = JSON.parse(String(event.data));
     } catch {
       return;
     }
-    if (typeof msg.id !== 'number') return;
-    pending.get(msg.id)?.(msg);
-    pending.delete(msg.id);
+    if (typeof msg.id === 'number') {
+      pending.get(msg.id)?.(msg);
+      pending.delete(msg.id);
+    } else if (typeof msg.method === 'string') {
+      try {
+        onEvent(msg.method, msg.params ?? {});
+      } catch {
+        // a listener's failure is not the socket's
+      }
+    }
   });
-  ws.addEventListener('close', failAll);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new HttpError(504, 'CHROME_TIMEOUT', 'the page DevTools socket did not open')), PAGE_CALL_TIMEOUT_MS);
-      ws.addEventListener('open', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      ws.addEventListener('error', () => {
-        clearTimeout(timer);
-        reject(new HttpError(502, 'CHROME_ERROR', 'page DevTools socket failed'));
-      });
+  ws.addEventListener('close', () => {
+    open = false;
+    for (const settle of pending.values()) settle({ error: { message: 'page DevTools socket closed' } });
+    pending.clear();
+    settleClosed();
+  });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new HttpError(504, 'CHROME_TIMEOUT', 'the page DevTools socket did not open'));
+    }, timeoutMs);
+    ws.addEventListener('open', () => {
+      clearTimeout(timer);
+      open = true;
+      resolve();
     });
-    let nextId = 0;
-    const call: PageCall = (method, params = {}) =>
-      new Promise((resolve, reject) => {
-        const id = ++nextId;
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          reject(new HttpError(504, 'CHROME_TIMEOUT', `the page did not answer ${method}`));
-        }, PAGE_CALL_TIMEOUT_MS);
-        pending.set(id, (msg) => {
-          clearTimeout(timer);
-          if (msg.error) reject(new HttpError(502, 'CHROME_ERROR', msg.error.message || `${method} failed`));
-          else resolve(msg.result);
-        });
-        ws.send(JSON.stringify({ id, method, params }));
+    ws.addEventListener('error', () => {
+      clearTimeout(timer);
+      reject(new HttpError(502, 'CHROME_ERROR', 'page DevTools socket failed'));
+    });
+  });
+  let nextId = 0;
+  const call: PageCall = (method, params = {}) =>
+    new Promise((resolve, reject) => {
+      if (!open) return reject(new HttpError(502, 'CHROME_ERROR', 'page DevTools socket closed'));
+      const id = ++nextId;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new HttpError(504, 'CHROME_TIMEOUT', `the page did not answer ${method}`));
+      }, timeoutMs);
+      pending.set(id, (msg) => {
+        clearTimeout(timer);
+        if (msg.error) reject(new HttpError(502, 'CHROME_ERROR', msg.error.message || `${method} failed`));
+        else resolve(msg.result);
       });
-    return await fn(call);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  return {
+    call,
+    isOpen: () => open,
+    closed,
+    close: () => {
+      if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) ws.close();
+    },
+  };
+}
+
+/** Runs `fn` with one DevTools socket to a page, then closes it. Every step is bounded by a timeout. */
+export async function withPageSocket<T>(wsUrl: string, fn: (call: PageCall) => Promise<T>): Promise<T> {
+  const session = await openPageSession(wsUrl);
+  try {
+    return await fn(session.call);
   } finally {
-    ws.close();
+    session.close();
   }
 }
 
-/** The tab the login screen shows: the one opened for it last time, else the first web page. Pure. */
-export function pickScreenTab<T extends { id: string; type: string; url: string }>(tabs: readonly T[], rememberedId?: string): T | undefined {
+/** The browser-level DevTools socket URL of a slot's Chrome. */
+export async function browserSocketUrl(cdpPort: number, fetchImpl: FetchLike = fetch): Promise<string> {
+  const res = await fetchImpl(`http://127.0.0.1:${cdpPort}/json/version`, { signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) }).catch(() => undefined);
+  if (!res?.ok) throw new HttpError(502, 'CHROME_UNREACHABLE', `cannot reach Chrome DevTools on port ${cdpPort}`);
+  const { webSocketDebuggerUrl } = (await res.json().catch(() => ({}))) as { webSocketDebuggerUrl?: string };
+  if (!webSocketDebuggerUrl) throw new HttpError(502, 'CHROME_ERROR', 'Chrome DevTools gave no browser socket');
+  return webSocketDebuggerUrl;
+}
+
+/**
+ * The tab the login screen shows: the one opened for it last time, else the first web page that is
+ * not one of `avoid` (the DM watcher's tabs: typing or clicking there is never wanted). Pure.
+ */
+export function pickScreenTab<T extends { id: string; type: string; url: string }>(tabs: readonly T[], rememberedId?: string, avoid: ReadonlySet<string> = new Set()): T | undefined {
   return (
     (rememberedId ? tabs.find((t) => t.id === rememberedId && t.type === 'page') : undefined) ??
-    tabs.find((t) => t.type === 'page' && /^https?:/.test(t.url))
+    tabs.find((t) => t.type === 'page' && /^https?:/.test(t.url) && !avoid.has(t.id))
   );
 }
 
@@ -290,9 +345,9 @@ export async function captureQr(
   cdpPort: number,
   targetId?: string,
   reveal?: string,
-  { fetchImpl = fetch, sleep = pause }: { fetchImpl?: FetchLike; sleep?: (ms: number) => Promise<void> } = {}
+  { fetchImpl = fetch, sleep = pause, avoid }: { fetchImpl?: FetchLike; sleep?: (ms: number) => Promise<void>; avoid?: ReadonlySet<string> } = {}
 ): Promise<QrCapture> {
-  const tab = pickScreenTab(await listTargets(cdpPort, fetchImpl), targetId);
+  const tab = pickScreenTab(await listTargets(cdpPort, fetchImpl), targetId, avoid);
   if (!tab?.webSocketDebuggerUrl) return { image: null, revealed: false };
   return withPageSocket(tab.webSocketDebuggerUrl, async (call) => {
     const find = async () => ((await call('Runtime.evaluate', { expression: QR_FINDER, returnByValue: true }))?.result?.value ?? null) as QrRect | null;

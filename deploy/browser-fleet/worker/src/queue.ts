@@ -37,24 +37,43 @@ export interface QueueStats {
   pending: number;
 }
 
+/** One key's work: running now, how many wait, when its last job ended (undefined: none yet). */
+export interface KeyActivity {
+  running: boolean;
+  pending: number;
+  lastDoneAt: number | undefined;
+}
+
 export class KeyedQueue {
   readonly #maxConcurrent: number;
   readonly #maxPendingPerKey: number;
   readonly #maxPending: number;
+  readonly #now: () => number;
   #pending: readonly Job[] = [];
   #busy: ReadonlySet<string> = new Set();
+  #lastDone: ReadonlyMap<string, number> = new Map();
   #nextId = 0;
   #closed = false;
 
-  constructor({ maxConcurrent, maxPendingPerKey = Number.POSITIVE_INFINITY, maxPending = Number.POSITIVE_INFINITY }: { maxConcurrent: number; maxPendingPerKey?: number; maxPending?: number }) {
+  constructor({
+    maxConcurrent,
+    maxPendingPerKey = Number.POSITIVE_INFINITY,
+    maxPending = Number.POSITIVE_INFINITY,
+    now = Date.now,
+  }: { maxConcurrent: number; maxPendingPerKey?: number; maxPending?: number; now?: () => number }) {
     if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) throw new Error('maxConcurrent must be a positive integer');
     this.#maxConcurrent = maxConcurrent;
     this.#maxPendingPerKey = maxPendingPerKey;
     this.#maxPending = maxPending;
+    this.#now = now;
   }
 
   stats(): QueueStats {
     return { running: this.#busy.size, pending: this.#pending.length };
+  }
+
+  activity(key: string): KeyActivity {
+    return { running: this.#busy.has(key), pending: this.#pending.filter((j) => j.key === key).length, lastDoneAt: this.#lastDone.get(key) };
   }
 
   /** Stop accepting work and fail every job that has not started; running jobs finish normally. */
@@ -83,6 +102,7 @@ export class KeyedQueue {
           .then(resolve, reject)
           .finally(() => {
             this.#busy = new Set([...this.#busy].filter((k) => k !== key));
+            this.#lastDone = new Map([...this.#lastDone, [key, this.#now()]]);
             this.#pump();
           });
       };

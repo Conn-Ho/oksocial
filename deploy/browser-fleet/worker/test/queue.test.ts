@@ -133,6 +133,29 @@ describe('KeyedQueue', () => {
     assert.deepEqual(q.stats(), { running: 0, pending: 0 });
   });
 
+  it('activity(key): whether a key runs or waits, and when its last job ended', async () => {
+    let now = 1_000;
+    const q = new KeyedQueue({ maxConcurrent: 1, now: () => now });
+    assert.deepEqual(q.activity('a'), { running: false, pending: 0, lastDoneAt: undefined });
+    const g = gate();
+    const first = q.run('a', () => g.promise);
+    const second = q.run('a', async () => undefined);
+    await tick();
+    assert.deepEqual(q.activity('a'), { running: true, pending: 1, lastDoneAt: undefined });
+    assert.deepEqual(q.activity('b'), { running: false, pending: 0, lastDoneAt: undefined });
+    now = 5_000;
+    g.open();
+    await first;
+    await second;
+    await tick();
+    assert.deepEqual(q.activity('a'), { running: false, pending: 0, lastDoneAt: 5_000 });
+    // a failing job ends too
+    now = 7_000;
+    await assert.rejects(q.run('a', async () => { throw new Error('boom'); }));
+    await tick();
+    assert.equal(q.activity('a').lastDoneAt, 7_000);
+  });
+
   it('rejects a bad concurrency setting', () => {
     assert.throws(() => new KeyedQueue({ maxConcurrent: 0 }), /positive integer/);
   });

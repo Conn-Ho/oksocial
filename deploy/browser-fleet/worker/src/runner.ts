@@ -32,6 +32,8 @@ export interface SlotRunnerOptions {
   clock: Clock;
   reconnectTimeoutMs?: number;
   reconnectPollMs?: number;
+  /** Called in the slot's turn right before a real run (the DM watch parks its tab for xhsdm). */
+  beforeRun?: (slot: string, args: readonly string[]) => Promise<void>;
 }
 
 export interface RunRequest {
@@ -49,7 +51,7 @@ export const isBridgeDown = (outcome: RunOutcome): boolean => !outcome.ok && out
 /** The bridge tab is wedged: relaunch the slot's Chrome, but do not retry (the command may have acted). Pure. */
 export const isStuckTab = (outcome: RunOutcome): boolean => !outcome.ok && outcome.code === 'FAILED' && isBridgeStuck(outcome.message);
 
-export function createSlotRunner({ opencli, sim, slots, queue, clock, reconnectTimeoutMs = 40_000, reconnectPollMs = 2_000 }: SlotRunnerOptions) {
+export function createSlotRunner({ opencli, sim, slots, queue, clock, reconnectTimeoutMs = 40_000, reconnectPollMs = 2_000, beforeRun }: SlotRunnerOptions) {
   /** Restart an active slot's Chrome and wait for its bridge profile. False when nothing was restarted. */
   const relaunch = async (name: string, profileId: string, log: RunLog): Promise<boolean> => {
     const fresh = await slots.get(name, 0);
@@ -76,6 +78,7 @@ export function createSlotRunner({ opencli, sim, slots, queue, clock, reconnectT
         const simulated = await sim.run(args, { profileId, timeoutMs });
         return { ...simulated, durationMs: clock.now() - started };
       }
+      await beforeRun?.(slot.name, args).catch((err: Error) => log.warn({ slot: slot.name, err: err.message }, 'before-run hook failed; running anyway'));
       const remaining = (): number => Math.max(MIN_RETRY_MS, started + timeoutMs - clock.now());
       const attempt = (budget: number): Promise<RunOutcome> => opencli.run(args, { profileId, timeoutMs: budget });
       let outcome = await attempt(timeoutMs);

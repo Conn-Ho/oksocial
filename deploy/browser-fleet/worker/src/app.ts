@@ -3,12 +3,14 @@ import Fastify from 'fastify';
 import type { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
 import { TOKEN_HEADER, tokenMatches } from './auth.ts';
 import type { OpenedTab, QrCapture } from './cdp.ts';
+import type { DmWatch } from './dm-watch/manager.ts';
 import { HttpError } from './errors.ts';
 import type { LoginFormHints, LoginFormInput, LoginFormResult, LoginFormState } from './login-form.ts';
 import type { MediaFetcher } from './media.ts';
 import { QueueAbortedError, QueueClosedError, QueueFullError } from './queue.ts';
 import type { KeyedQueue } from './queue.ts';
 import { carriesTypedSecrets, safeMessage, SECRET_LOG_PATHS } from './redact.ts';
+import { registerDmWatchRoutes } from './routes/dm-watch.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerRunRoutes } from './routes/run.ts';
@@ -25,12 +27,17 @@ export interface AppDeps {
   daemonUp: () => Promise<boolean>;
   /** Shows url in the slot's screen tab: `reuseId` (the tab shown last time) if it is still open, else a new tab. */
   openTab: (cdpPort: number, url: string, reuseId?: string) => Promise<OpenedTab>;
-  /** The login QR code of the screen tab (PNG data URL or null), clicking `reveal` first when none shows. */
-  captureQr: (cdpPort: number, targetId?: string, reveal?: string) => Promise<QrCapture>;
+  /**
+   * The login QR code of the screen tab (PNG data URL or null), clicking `reveal` first when none
+   * shows. `avoid`: tabs never taken for the screen tab (the DM watcher's), as for the login form.
+   */
+  captureQr: (cdpPort: number, targetId?: string, reveal?: string, avoid?: ReadonlySet<string>) => Promise<QrCapture>;
   /** The login step the screen tab's page is on (oksocial's own login form), with its prompt and errors. */
-  probeLoginForm: (cdpPort: number, targetId: string | undefined, hints: LoginFormHints) => Promise<LoginFormState>;
+  probeLoginForm: (cdpPort: number, targetId: string | undefined, hints: LoginFormHints, avoid?: ReadonlySet<string>) => Promise<LoginFormState>;
   /** Types one login step into the screen tab's page and submits it; the page's state after. */
-  fillLoginForm: (cdpPort: number, targetId: string | undefined, input: LoginFormInput) => Promise<LoginFormResult>;
+  fillLoginForm: (cdpPort: number, targetId: string | undefined, input: LoginFormInput, avoid?: ReadonlySet<string>) => Promise<LoginFormResult>;
+  /** Real-time DM watch (routes /dm-watch*); absent: those routes answer 404. */
+  dmWatch?: DmWatch;
   media: MediaFetcher;
   /** Optional allow-list of opencli site commands for /run (RUN_ALLOWED_SITES). */
   runAllowedSites?: ReadonlySet<string>;
@@ -73,6 +80,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerSlotRoutes(app, deps);
   registerRunRoutes(app, deps);
   registerMediaRoutes(app, deps);
+  if (deps.dmWatch) registerDmWatchRoutes(app, deps.dmWatch);
   await registerScreenRoutes(app, deps);
   return app;
 }

@@ -66,6 +66,8 @@ export interface FormDeps {
   fetchImpl?: FetchLike;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
+  /** Tabs never taken for the screen tab (the DM watcher's). */
+  avoid?: ReadonlySet<string>;
 }
 
 const TEXT_MAX = 300;
@@ -219,15 +221,15 @@ async function settle(call: PageCall, hints: LoginFormHints, before: LoginFormSt
   return last ?? { step: 'unknown', prompt: null, detail: null, error: null, field: null };
 }
 
-async function screenSocket(cdpPort: number, targetId: string | undefined, fetchImpl: FetchLike): Promise<string> {
-  const tab = pickScreenTab(await listTargets(cdpPort, fetchImpl), targetId);
+async function screenSocket(cdpPort: number, targetId: string | undefined, fetchImpl: FetchLike, avoid?: ReadonlySet<string>): Promise<string> {
+  const tab = pickScreenTab(await listTargets(cdpPort, fetchImpl), targetId, avoid);
   if (!tab?.webSocketDebuggerUrl) throw new HttpError(409, 'NO_LOGIN_PAGE', 'the slot shows no web page');
   return tab.webSocketDebuggerUrl;
 }
 
 /** Which login step the slot's screen tab is on, with the page's prompt, error and field. */
-export async function probeLoginForm(cdpPort: number, targetId: string | undefined, hints: LoginFormHints, { fetchImpl = fetch }: FormDeps = {}): Promise<LoginFormState> {
-  return withPageSocket(await screenSocket(cdpPort, targetId, fetchImpl), (call) => probe(call, hints));
+export async function probeLoginForm(cdpPort: number, targetId: string | undefined, hints: LoginFormHints, { fetchImpl = fetch, avoid }: FormDeps = {}): Promise<LoginFormState> {
+  return withPageSocket(await screenSocket(cdpPort, targetId, fetchImpl, avoid), (call) => probe(call, hints));
 }
 
 /**
@@ -240,10 +242,10 @@ export async function fillLoginForm(
   cdpPort: number,
   targetId: string | undefined,
   input: LoginFormInput,
-  { fetchImpl = fetch, sleep = pause, random = Math.random }: FormDeps = {}
+  { fetchImpl = fetch, sleep = pause, random = Math.random, avoid }: FormDeps = {}
 ): Promise<LoginFormResult> {
   const { step, hints } = input;
-  return withPageSocket(await screenSocket(cdpPort, targetId, fetchImpl), async (call) => {
+  return withPageSocket(await screenSocket(cdpPort, targetId, fetchImpl, avoid), async (call) => {
     const before = await probe(call, hints);
     if (before.step !== step) return { ...before, stale: true };
     const at = await evaluate(call, pageExpression('focus', hints, step));

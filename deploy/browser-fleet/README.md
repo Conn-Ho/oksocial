@@ -56,6 +56,9 @@ MEDIA_ALLOWED_ORIGINS=https://oksocial.online
 MEDIA_MAX_BYTES=1073741824
 # Optional but recommended: only these opencli sites may be run (comma-separated first args).
 # RUN_ALLOWED_SITES=twitter,xq,xq2,xapi,xiaohongshu,xhs2,xhsdm,weibo,douyin,wechat-channels,bilibili,zhihu,jike,toutiao,instagram,facebook,tiktok,youtube,linkedin,reddit,pinterest,pinterest-auth,weixin,weixin-auth
+# Optional, real-time DM watch (see "Real-time DM watch" below); these are the defaults:
+# DM_WATCH_STATE_FILE=/tmp/oksocial-dm-watch.json
+# DM_WATCH_YIELD=1
 EOF
 
 # 5. service
@@ -74,8 +77,9 @@ never logged). Rollback: `sudo systemctl disable --now oksocial-browser-worker` 
 ### opencli plugins
 
 `plugins/` holds the commands oksocial needs that opencli does not ship: `xhs2` (小红书 creator identity and
-notes), `xhs-dm` (`xhsdm`, 小红书 web DMs), `pinterest-auth` and `weixin-auth` (`whoami` of the Pinterest and
-公众号 channels: opencli has no login check for those sites). Each folder is a plugin; install or update one with
+notes), `xhs-dm` (`xhsdm`, 小红书 web DMs; its page scripts are in `pages.js` next to `dm.js`, so always copy the
+whole folder), `pinterest-auth` and `weixin-auth` (`whoami` of the Pinterest and 公众号 channels: opencli has no
+login check for those sites). Each folder is a plugin; install or update one with
 
 ```bash
 opencli plugin install ~/oksocial/browser-fleet/plugins/<name>   # or copy the folder to ~/.opencli/plugins/<name>
@@ -216,7 +220,7 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /health` | | `{ok:true, slots:n, daemon:"up"\|"down", runs:{running, pending}}`; 503 if account-ctl fails |
+| `GET /health` | | `{ok:true, slots:n, daemon:"up"\|"down", runs:{running, pending}, dmWatch:{watchers, healthy}}`; 503 if account-ctl fails |
 | `GET /slots` | | `Slot[]` |
 | `GET /slots/:slot` | | `Slot` or 404 |
 | `POST /slots` | `{slot: /^[a-z0-9][a-z0-9-]{1,31}$/, proxy?: string\|null}` | `201 Slot` after Chrome is active (≤30 s), or `200 Slot` if it existed. An existing slot is only touched when `proxy` is given and differs; a stopped one stays stopped. |
@@ -232,6 +236,9 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /slots/:slot/login-form` | `{step: identifier\|password\|code, value: string[1..512] (no control characters), hints?}` | the state after typing `value` into that step's field and submitting it (`next:"password"`: only typed); `stale:true` when the page was on another step (nothing typed); `409 BUSY` while another submit types into the slot |
 | `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, ≤200000 in all, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
+| `PUT /dm-watch` | `{accounts: [{slot, key: /^[A-Za-z0-9_-]{1,64}$/}] (≤200)}`: every account to watch | `{ok:true, watchers: Watcher[]}`; accounts left out are dropped and their tabs closed |
+| `GET /dm-watch` | | `{ok:true, watchers: Watcher[]}` |
+| `GET /dm-watch/changes?cursor=<c>&waitMs=0..55000` | | `{ok:true, cursor, changes:[{slot, key, at}]}`: one per account changed after `cursor`, waiting up to `waitMs` for one |
 
 **Runs** execute `opencli <args> -f json` (unless a format is given) with `OPENCLI_PROFILE=<profileId>` and
 execFile (no shell; the worker token is stripped from every child's env); 400 `NO_PROFILE` if the slot has no profile
@@ -257,6 +264,33 @@ non-ASCII) with 45-140 ms gaps, then a click on the step's button (or Enter), an
 (at most ~8 s). The value is only ever in the request body and in `Input.*` events: never in an evaluated expression, a
 response, an error message (typing failures become `TYPING_FAILED`) or a log line (`req.body`/`value` are redacted and
 errors of `/login-form` requests are logged without their message). A captcha is never touched: the step is `captcha`.
+
+**Real-time DM watch** (`src/dm-watch/`): the orchestrator (oksocial's `okchatDmWatchWorkflow`) PUTs the accounts
+linked to okchat every minute and long-polls `/dm-watch/changes`; a change is read right away, the same read as the
+poll's. For each watched account the worker keeps one tab on `https://www.xiaohongshu.com/chat` in a window of its
+own (`Target.createTarget` with `newWindow`), so the bridge extension, which only ever leases tabs it created in its
+automation window, never adopts, reuses or closes it. It attaches over the slot's CDP port with `Runtime.addBinding`
+and a MutationObserver (`Page.addScriptToEvaluateOnNewDocument`, and evaluated at once) over the conversation list;
+the observer reports ids, unread counts and a hash of each preview (never message text), at most every 2 s. A list
+with more unread or a new preview is a change; our own reads (unread going down) are not. Every 15 s the worker also
+checks the tab: the check doubles as a fallback when binding calls do not arrive.
+
+- It only ever shows the conversation list: nothing is clicked, typed or marked read.
+- It stays out of the account's runs: no tab is opened or navigated while a run of that slot runs or waits, nor
+  within 45 s after one (the bridge releases its tab after 30 s). An `xhsdm` run first parks the tab on
+  `about:blank` (the web IM may serve one page per account) and it comes back once the slot is quiet; the list is
+  then compared with the one before, so a DM that came in meanwhile is still a change. `DM_WATCH_YIELD=0` turns
+  parking off if the web IM turns out to serve both tabs.
+- A tab that shows no list (`在其他页面打开`, logged out, nothing) for 45 s after it was loaded is reloaded, then again
+  after 1, 2, 4… up to 30 minutes; one that looks fine is reloaded every 3 hours.
+- When the account's Chrome restarts (the janitor, `update-extension.sh`, a heal), the socket closes and the next
+  check opens a new tab. Tabs are remembered in `DM_WATCH_STATE_FILE` (0600) and adopted after a worker restart.
+- While `screen` is on (someone on noVNC), nothing is opened, navigated, parked or closed; an existing tab is still
+  watched. The login screen's tab picker never takes a watcher tab.
+- `Watcher`: `{slot, key, phase: starting|watching|parked|screen|chrome-down|missing|simulated|failed, page:
+  list|elsewhere|logged-out|no-list|blank|null, healthy, reason, lastListAt, lastChangeAt}`. Healthy: the list was
+  seen in the last 3 minutes, or the tab is parked for the account's runs (up to 10 minutes). oksocial reads a
+  healthy account every 5 minutes as a safety net instead of every minute.
 
 **Media**: only http(s) URLs on `MEDIA_ALLOWED_ORIGINS`, re-checked after each of at most 3 redirects; `MEDIA_MAX_BYTES`
 enforced on `Content-Length` and while streaming (the partial file is deleted); extension from the content type

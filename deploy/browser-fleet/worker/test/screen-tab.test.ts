@@ -26,6 +26,12 @@ describe('the screen tab of a slot', () => {
     assert.equal(pickScreenTab(tabs.slice(0, 2)), undefined);
   });
 
+  it('is never one of the DM watcher\'s tabs, unless the worker opened it for the screen itself', () => {
+    assert.equal(pickScreenTab(tabs, undefined, new Set(['LOGIN']))?.id, 'OTHER');
+    assert.equal(pickScreenTab(tabs, 'GONE', new Set(['LOGIN', 'OTHER'])), undefined);
+    assert.equal(pickScreenTab(tabs, 'LOGIN', new Set(['LOGIN']))?.id, 'LOGIN');
+  });
+
   it('is reused (activated and navigated) instead of adding a tab per open', async () => {
     await withDevtools(tabs, () => ({ frameId: 'f' }), async (port, log) => {
       assert.deepEqual(await showTab(port, 'https://www.xiaohongshu.com/explore', 'LOGIN'), { id: 'LOGIN', url: 'https://www.xiaohongshu.com/explore' });
