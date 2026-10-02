@@ -33,3 +33,19 @@ export const okchatHookAllowed = (hookUrl: string, bindingId?: string) => {
     return false;
   }
 };
+
+/**
+ * Which linked accounts the browser worker watches in real time (OKCHAT_DM_WATCH): unset or "all"
+ * every one, "off" none (each is then read every minute), else a comma-separated list of integration
+ * ids, e.g. one account for a first live test. Pure (reads the env).
+ */
+export const okchatDmWatchScope = (): 'all' | 'off' | ReadonlySet<string> => {
+  const raw = (process.env.OKCHAT_DM_WATCH || '').trim();
+  if (!raw || raw.toLowerCase() === 'all') {
+    return 'all';
+  }
+  if (['off', '0', 'false', 'none'].includes(raw.toLowerCase())) {
+    return 'off';
+  }
+  return new Set(raw.split(',').map((id) => id.trim()).filter(Boolean));
+};

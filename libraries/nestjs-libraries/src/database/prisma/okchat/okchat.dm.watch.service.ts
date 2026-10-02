@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { BrowserFleetError, browserFleet } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import type { BrowserFleetClient, DmWatcherStatus } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import { OkchatRepository } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository';
+import { okchatDmWatchScope } from '@gitroom/nestjs-libraries/okchat/okchat.config';
 
 // the platforms the browser worker can watch in real time (its watcher knows www.xiaohongshu.com/chat)
 export const DM_WATCH_PROVIDERS = ['xiaohongshu'];
@@ -25,12 +26,18 @@ export class OkchatDmWatchService {
 
   constructor(private _repository: OkchatRepository) {}
 
-  /** Tells the worker every account to watch (the others' tabs close) and records their health. */
+  /**
+   * Tells the worker every account to watch (the others' tabs close) and records their health. The
+   * accounts left out by OKCHAT_DM_WATCH are read every minute.
+   */
   async sync(now = new Date()) {
     if (!this.fleet.configured) {
       return { watching: false, accounts: 0, healthy: 0 };
     }
-    const bindings = await this._repository.watchableBindings(DM_WATCH_PROVIDERS, now);
+    const scope = okchatDmWatchScope();
+    const all = await this._repository.watchableBindings(DM_WATCH_PROVIDERS, now);
+    const bindings = scope === 'all' ? all : scope === 'off' ? [] : all.filter((b) => scope.has(b.integrationId));
+    const left = all.filter((b) => !bindings.includes(b)).map((b) => b.integrationId);
     let watchers: DmWatcherStatus[];
     try {
       watchers = (await this.fleet.dmWatch(bindings.map((b) => ({ slot: b.integration.token, key: b.integrationId })))).watchers;
@@ -45,7 +52,7 @@ export class OkchatDmWatchService {
     const healthy = new Set(watchers.filter((w) => w.healthy).map((w) => w.key));
     await this._repository.setWatchHealth(
       ids.filter((id) => healthy.has(id)),
-      ids.filter((id) => !healthy.has(id)),
+      [...ids.filter((id) => !healthy.has(id)), ...left],
       new Date(now.getTime() + DM_WATCH_HEALTH_TTL_MS)
     );
     return { watching: ids.length > 0, accounts: ids.length, healthy: ids.filter((id) => healthy.has(id)).length };

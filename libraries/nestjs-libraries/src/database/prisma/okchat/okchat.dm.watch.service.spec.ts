@@ -68,6 +68,29 @@ describe('OkchatDmWatchService.sync', () => {
   });
 });
 
+describe('OkchatDmWatchService.sync: OKCHAT_DM_WATCH', () => {
+  afterEach(() => {
+    delete process.env.OKCHAT_DM_WATCH;
+  });
+
+  it('a list of integration ids watches only those (a first live test on one account)', async () => {
+    process.env.OKCHAT_DM_WATCH = ' i2 ';
+    const { service, fleet, repo } = setup({ watchers: [{ slot: 'xhs-2', key: 'i2', healthy: true, phase: 'watching', page: 'list', reason: null }] });
+    expect(await service.sync(NOW)).toEqual({ watching: true, accounts: 1, healthy: 1 });
+    expect(fleet.dmWatch).toHaveBeenCalledWith([{ slot: 'xhs-2', key: 'i2' }]);
+    // the others are read every minute
+    expect(repo.setWatchHealth).toHaveBeenCalledWith(['i2'], ['i1'], expect.any(Date));
+  });
+
+  it('"off" watches nothing: the worker closes every watcher tab and every account is read every minute', async () => {
+    process.env.OKCHAT_DM_WATCH = 'off';
+    const { service, fleet, repo } = setup();
+    expect(await service.sync(NOW)).toEqual({ watching: false, accounts: 0, healthy: 0 });
+    expect(fleet.dmWatch).toHaveBeenCalledWith([]);
+    expect(repo.setWatchHealth).toHaveBeenCalledWith([], ['i1', 'i2'], expect.any(Date));
+  });
+});
+
 describe('OkchatDmWatchService.changes', () => {
   it('long-polls the worker and gives each changed account once', async () => {
     const { service, fleet } = setup({
