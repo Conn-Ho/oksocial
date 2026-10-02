@@ -34,7 +34,13 @@ fi
 until on_builder true; do sleep 5; done
 trap 'gc instances stop "$BUILDER" --quiet --async >/dev/null 2>&1 || true' EXIT
 
-echo "building ${sha:0:8} on $BUILDER"
+# the image is loaded next to the old ones: drop those first and make sure it fits (~8 GB unpacked twice)
+free=$(gc ssh "$SERVER" --command "~/oksocial/deploy/deploy.sh --prune" 2>/dev/null | tail -1)
+if [ -z "$free" ] || [ "$free" -lt 20 ]; then
+  echo "only ${free:-?} GB free on $SERVER after pruning old images; not loading another one" >&2
+  exit 1
+fi
+echo "building ${sha:0:8} on $BUILDER ($free GB free on $SERVER)"
 # status file: running | loaded | failed:<step>; the log keeps the build output
 on_builder "cat > /tmp/build-$sha.sh <<'SCRIPT'
 set -uo pipefail

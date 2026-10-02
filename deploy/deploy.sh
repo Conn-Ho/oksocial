@@ -4,11 +4,33 @@
 # queue. A backend that stays silent gets one pm2 restart; if it is still down, or no worker polls,
 # the previous image is put back. Old images are pruned only after a healthy deploy.
 #   ~/oksocial/deploy/deploy.sh [image tag or commit sha]
+#   ~/oksocial/deploy/deploy.sh --prune    (only drop old images; prints the free disk in GB)
 set -euo pipefail
 cd "${OKSOCIAL_DEPLOY_DIR:-$HOME/oksocial/deploy}"
 IMAGE=ghcr.io/conn-ho/oksocial
 TAG=${1:-latest}
+# every build is a ~7.4 GB image: keep the running one, latest and this many of the newest others
+KEEP_IMAGES=2
 compose() { docker compose -f docker-compose.prod.yml "$@"; }
+free_gb() { df -BG --output=avail / | tail -1 | tr -dc 0-9; }
+prune_images() {
+  local running latest_id kept=0 id tag
+  running=$(docker inspect -f '{{.Image}}' oksocial-oksocial-1 2>/dev/null || true)
+  latest_id=$(docker image inspect -f '{{.Id}}' "$IMAGE:latest" 2>/dev/null || true)
+  # newest first
+  docker images --no-trunc --format '{{.ID}} {{.Tag}}' "$IMAGE" | while read -r id tag; do
+    [ "$tag" = latest ] && continue
+    if [ "$id" = "$running" ] || [ "$id" = "$latest_id" ]; then continue; fi
+    if [ "$kept" -lt "$KEEP_IMAGES" ]; then kept=$((kept + 1)); continue; fi
+    docker rmi "$IMAGE:$tag" >/dev/null 2>&1 || true
+  done
+  docker image prune -f >/dev/null 2>&1 || true
+}
+if [ "$TAG" = --prune ]; then
+  prune_images
+  echo "$(free_gb)"
+  exit 0
+fi
 backend_up() {
   compose exec -T oksocial node -e "fetch('http://127.0.0.1:3000/',{signal:AbortSignal.timeout(5000)}).then(()=>process.exit(0),()=>process.exit(1))" >/dev/null 2>&1
 }
@@ -55,7 +77,7 @@ if [ "$healthy" = 1 ] && ! wait_for 240 has_pollers; then
 fi
 
 if [ "$healthy" = 1 ]; then
-  docker image prune -f >/dev/null 2>&1 || true
+  prune_images
   echo "deployed $TAG: backend answering, $(pollers) pollers on main"
   exit 0
 fi
