@@ -1,6 +1,6 @@
 /**
  * opencli xhsdm list [--limit 50] [--wait 15]  conversations (id, name, time, summary, pinned, unread, group)
- * opencli xhsdm read <conv-id> [--limit 40]  messages of one conversation (time, from, text, mine)
+ * opencli xhsdm read <conv-id> [--limit 40]  messages of one conversation (time, from, text, mine, kind: text|media)
  * opencli xhsdm send <conv-id> <text>    type into the composer and press Enter; verifies the message appears
  *
  * Web IM at https://www.xiaohongshu.com/chat (needs a www.xiaohongshu.com login, separate from the creator
@@ -9,9 +9,10 @@
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { ArgumentError, CommandExecutionError, AuthRequiredError } from '@jackwener/opencli/errors';
+// the page scripts live in pages.js (no imports: the browser worker's tests run them against a DOM)
+import { DISMISS, LIST, MESSAGES, PAGE_STATE } from './pages.js';
 
 const base = { site: 'xhsdm', domain: 'www.xiaohongshu.com', strategy: Strategy.UI, browser: true };
-const DISMISS = `(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => /^我知道了$/.test((x.innerText || '').trim())); if (b) { b.click(); return true; } return false; })()`;
 
 async function openChat(page, convId) {
   await page.goto(convId ? `https://www.xiaohongshu.com/chat/${convId}` : 'https://www.xiaohongshu.com/chat', { waitUntil: 'load', settleMs: 4000 });
@@ -20,22 +21,6 @@ async function openChat(page, convId) {
   await page.evaluate(DISMISS);
   await page.wait(0.5);
 }
-
-const LIST = `(() => Array.from(document.querySelectorAll('.xhs-im-conv-item')).map((e) => {
-  const name = (e.querySelector('.xhs-im-conv-item__name')?.innerText || '').trim();
-  const summary = (e.querySelector('.xhs-im-conv-item__summary-text')?.innerText || '').trim();
-  const unreadEl = e.querySelector('[class*="badge"], [class*="unread"], [class*="count"]');
-  return { id: e.getAttribute('data-conv-id') || '', name, time: (e.querySelector('.xhs-im-conv-item__time')?.innerText || '').trim(), summary, pinned: e.classList.contains('xhs-im-conv-item--pinned'), unread: Number((unreadEl?.innerText || '').replace(/\\D/g, '')) || 0, group: /^\\d+$/.test(e.getAttribute('data-conv-id') || '') };
-}).filter((c) => c.id))()`;
-
-// What the chat page shows instead of the conversation list, for the error (never message text).
-const PAGE_STATE = `(() => {
-  const text = (document.body?.innerText || '').slice(0, 3000);
-  const shows = /在其他页面|其他页面打开|其他窗口|已在别处/.test(text) ? 'it says the chat is open in another page'
-    : /手机号登录|获取验证码|扫码登录/.test(text) ? 'it shows a login form'
-    : 'no conversation list';
-  return shows + ' (path ' + location.pathname + ', ' + document.querySelectorAll('.xhs-im-conv-item').length + ' conversations)';
-})()`;
 
 cli({
   ...base, access: 'read', name: 'list', description: 'Xiaohongshu DM conversations (web IM)',
@@ -57,23 +42,6 @@ cli({
     return rows.slice(0, Number(kwargs.limit) || 50);
   },
 });
-
-const MESSAGES = `(() => {
-  const list = document.querySelector('.xhs-im-msg-list');
-  if (!list) return [];
-  let time = '';
-  const out = [];
-  for (const el of Array.from(list.children)) {
-    const cls = (el.className || '').toString();
-    if (/time-divider/.test(cls)) { time = (el.innerText || '').trim(); continue; }
-    const text = (el.innerText || '').replace(/\\s+/g, ' ').trim();
-    if (!text) continue;
-    const mine = /--self|--mine|--right|is-self|self/.test(cls) || !!el.querySelector('[class*="self"], [class*="mine"], [class*="right"]');
-    const from = (el.querySelector('[class*="name"], [class*="nick"]')?.innerText || '').trim();
-    out.push({ time, from, mine, text: text.slice(0, 500), cls: cls.slice(0, 60) });
-  }
-  return out;
-})()`;
 
 cli({
   ...base, access: 'read', name: 'read', description: 'Messages of one Xiaohongshu DM conversation',

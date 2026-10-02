@@ -31,6 +31,8 @@ const TITLE_MAX = 20;
 // described to the okchat agent in the contract's words.
 const UNSHOWN_DM = /^暂不支持该消息类型/;
 export const XHS_UNSHOWN_DM_TEXT = '［对方发来一条网页版看不到的消息，请在小红书 App 查看］';
+// An image, sticker or video without text (xhsdm read reports it as kind "media").
+export const XHS_MEDIA_DM_TEXT = '［对方发来一张图片或表情，请在小红书 App 查看］';
 // Provisional (nothing documents the web IM's limit): xhsdm read keeps 500 characters of a message,
 // so a reply is held to what a later read can still match.
 const DM_MAX_LENGTH = 500;
@@ -304,18 +306,20 @@ export class XiaohongshuWebProvider
         .map((c) => ({ id: String(c.id), name: String(c.name || ''), unread: Number(c.unread) || 0, summary: String(c.summary || '') })),
     read: async (slot, conversationId, limit) =>
       (
-        await this.list<{ time: string; from: string; mine: boolean | string; text: string }>(
+        await this.list<{ time: string; from: string; mine: boolean | string; text: string; kind?: string }>(
           slot,
           ['xhsdm', 'read', conversationId, '--limit', String(limit)],
           90_000
         )
       )
-        .filter((m) => m.text)
+        .filter((m) => m.text || m.kind === 'media')
         .map((m) => ({
           from: String(m.from || ''),
           mine: String(m.mine) === 'true',
-          text: UNSHOWN_DM.test(m.text) ? XHS_UNSHOWN_DM_TEXT : m.text,
+          text: m.kind === 'media' ? XHS_MEDIA_DM_TEXT : UNSHOWN_DM.test(m.text) ? XHS_UNSHOWN_DM_TEXT : m.text,
           time: String(m.time || ''),
+          // only an xhsdm that reports media says what each message is (an older one skipped media)
+          ...(m.kind === 'media' || m.kind === 'text' ? { kind: m.kind } : {}),
         })),
     send: async (slot, conversationId, text) => {
       // `--`: the conversation id and the text are never options. The format goes before it, since

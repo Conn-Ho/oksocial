@@ -3,7 +3,8 @@ import { OkchatOutboxKind, OkchatReplyStatus, Prisma } from '@prisma/client';
 import { PrismaRepository, PrismaTransaction } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 
 export type OkchatBindingInput = { integrationId: string; bindingId: string; hookUrl: string };
-export type OkchatTailMessage = { from: string; mine: boolean; text: string };
+// kind: set once the reader reports media messages (tails stored before have none, see alignedNew)
+export type OkchatTailMessage = { from: string; mine: boolean; text: string; kind?: 'text' | 'media' };
 export type OkchatOutboxInput = {
   integrationId: string;
   kind: OkchatOutboxKind;

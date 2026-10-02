@@ -91,6 +91,55 @@ describe('tail alignment', () => {
   });
 });
 
+describe('media messages (images, stickers) across the change that started reading them', () => {
+  const PHOTO = '［对方发来一张图片或表情，请在小红书 App 查看］';
+  // what a reader that reports media gives: every row has its kind
+  const t = (m: { from: string; mine: boolean; text: string; time: string }) => ({ ...m, kind: 'text' as const });
+  const photo = (mine = false) => ({ from: mine ? '我' : '小C', mine, text: PHOTO, time: '10:00', kind: 'media' as const });
+  const rows = (...m: Array<{ from: string; mine: boolean; text: string; kind?: string }>) =>
+    m.map(({ from, mine, text, kind }) => (kind ? { from, mine, text, kind } : { from, mine, text }));
+
+  it('a tail stored before (it skipped the photo) aligns on the text messages: nothing is pushed twice', () => {
+    // the old reader skipped the customer's photo between 在吗 and 您好
+    const legacy = { initialized: true, tail: tailOf(them('在吗'), me('您好')) };
+    const read = [t(them('在吗')), photo(), t(me('您好')), t(them('多少钱'))];
+    expect(alignedNew(legacy.tail, read)).toEqual([t(them('多少钱'))]);
+    expect(newMessages(legacy, read, 1)).toEqual([t(them('多少钱'))]);
+    // the read, media included, replaces the old tail...
+    const tail = nextTail(legacy, read);
+    expect(tail).toEqual(rows(...read));
+    // ...so the next read with nothing new pushes nothing, and a new photo exactly once
+    expect(alignedNew(tail, read)).toEqual([]);
+    expect(alignedNew(tail, [...read, photo()])).toEqual([photo()]);
+    const after = nextTail({ initialized: true, tail }, [...read, photo()]);
+    expect(alignedNew(after, [...read, photo()])).toEqual([]);
+    expect(alignedNew(after, [...read, photo(), photo()])).toEqual([photo()]);
+  });
+
+  it('a photo after the last message of an old tail is new once, not on every read', () => {
+    const legacy = { initialized: true, tail: tailOf(them('在吗')) };
+    const read = [t(them('在吗')), photo()];
+    expect(alignedNew(legacy.tail, read)).toEqual([photo()]);
+    const tail = nextTail(legacy, read);
+    expect(alignedNew(tail, read)).toEqual([]);
+  });
+
+  it('a reader that does not report media (the plugin not updated yet) aligns exactly as before', () => {
+    const tail = tailOf(them('在吗'), me('您好'));
+    expect(alignedNew(tail, [them('在吗'), me('您好'), them('多少钱')])).toEqual([them('多少钱')]);
+    expect(nextTail({ initialized: true, tail }, [them('在吗'), me('您好'), them('多少钱')])).toEqual(tailOf(them('在吗'), me('您好'), them('多少钱')));
+    // and a tail with media read by such a reader matches on its text messages
+    const aware = rows(t(them('在吗')), photo(), t(me('您好')));
+    expect(alignedNew(aware, [them('在吗'), me('您好'), them('多少钱')])).toEqual([them('多少钱')]);
+  });
+
+  it('a photo and a text are different messages, a photo from us is not the customer\'s', () => {
+    const tail = rows(t(them('在吗')), photo());
+    expect(alignedNew(tail, [t(them('在吗')), photo(), photo(true)])).toEqual([photo(true)]);
+    expect(alignedNew(rows(t(them(PHOTO))), [photo()])).toEqual([photo()]);
+  });
+});
+
 describe('parseImTime (Asia/Shanghai)', () => {
   // 2026-10-02 14:30 in Shanghai
   const now = new Date('2026-10-02T06:30:00Z');
@@ -264,6 +313,25 @@ describe('OkchatDmService', () => {
     // both are in the tail the next read aligns with
     expect(thread.tail).toEqual(tailOf(them('我们已相互关注，开始聊天吧'), them('你好，请问还有货吗')));
     expect(thread.seq).toBe(1);
+  });
+
+  it('a photo the customer sent is pushed in words the agent can act on', async () => {
+    const PHOTO = '［对方发来一张图片或表情，请在小红书 App 查看］';
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '[图片]' }],
+      reads: {
+        c1: [
+          { ...them('在吗'), kind: 'text' },
+          { ...me('在的'), kind: 'text' },
+          { from: '小C', mine: false, text: PHOTO, time: '14:05', kind: 'media' },
+        ],
+      },
+      threads: [{ threadId: 'c1', initialized: true, seq: 3, lastSummary: '在的', tail: tailOf(them('在吗'), me('在的')) }],
+    });
+    await service.readDue(NOW);
+    const [, , thread, batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:4', text: PHOTO, sentAt: '2026-10-02T14:05:00+08:00' }]);
+    expect(thread.tail.at(-1)).toEqual({ from: '小C', mine: false, text: PHOTO, kind: 'media' });
   });
 
   it('a conversation never read and without unread messages is left alone', async () => {

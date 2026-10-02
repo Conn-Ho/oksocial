@@ -32,7 +32,7 @@ const READ_BATCH = 12;
 const TEXT_KEPT = 500;
 const SHANGHAI_MS = 8 * 60 * 60_000;
 
-type Read = Pick<DmMessage, 'from' | 'mine' | 'text'> & Partial<Pick<DmMessage, 'time'>>;
+type Read = Pick<DmMessage, 'from' | 'mine' | 'text'> & Partial<Pick<DmMessage, 'time' | 'kind'>>;
 type ThreadState = { initialized: boolean; tail: OkchatTailMessage[] } | null;
 type Channel = { integrationId: string; slot: string; platform: string; dm: DmCapabilities };
 type Lease = { integrationId: string; owner: string };
@@ -50,20 +50,33 @@ export const normalizeDmText = (text: string) => String(text ?? '').replace(/\s+
 // echoes are compared with every whitespace removed (newlines, spaces, U+3000), the rule okchat's driver uses too
 export const echoKey = (text: string) => normalizeDmText(text).replace(/\s+/g, '');
 
-const same = (a: Read, b: Read) => a.mine === b.mine && normalizeDmText(a.text) === normalizeDmText(b.text);
+const isMedia = (m: Read) => m.kind === 'media';
+const same = (a: Read, b: Read) => a.mine === b.mine && isMedia(a) === isMedia(b) && normalizeDmText(a.text) === normalizeDmText(b.text);
+/**
+ * Rows from a reader that reports media messages: every one says its kind. Reads and tails from
+ * before (or from an xhsdm not updated yet) skipped images and stickers. Pure.
+ */
+const reportsMedia = (rows: Read[]) => rows.length > 0 && rows.every((m) => m.kind === 'text' || m.kind === 'media');
 
 /**
  * What follows the stored tail in a new read: the longest suffix of the tail that equals a prefix
- * of the read is what was already seen. No overlap: all of it is new. Pure.
+ * of the read is what was already seen. No overlap: all of it is new.
+ *
+ * When the tail or the read comes from a reader that skipped media messages, both are matched on
+ * their text messages only and what follows the last matched one is new: a tail stored before
+ * media were read never makes its old texts look new again. Pure.
  */
 export const alignedNew = <T extends Read>(tail: Read[], read: T[]): T[] => {
-  for (let k = Math.min(tail.length, read.length); k > 0; k -= 1) {
+  const counted = reportsMedia(tail) && reportsMedia(read) ? () => true : (m: Read) => !isMedia(m);
+  const old = tail.filter(counted);
+  const seen = read.map((m, at) => ({ m, at })).filter(({ m }) => counted(m));
+  for (let k = Math.min(old.length, seen.length); k > 0; k -= 1) {
     let match = true;
     for (let i = 0; i < k && match; i += 1) {
-      match = same(tail[tail.length - k + i], read[i]);
+      match = same(old[old.length - k + i], seen[i].m);
     }
     if (match) {
-      return read.slice(k);
+      return read.slice(seen[k - 1].at + 1);
     }
   }
   return read;
@@ -85,11 +98,16 @@ export const newMessages = <T extends Read>(thread: ThreadState, read: T[], unre
   return read.filter((m) => !m.mine).slice(-unread);
 };
 
-/** The tail stored after a read: the last DM_TAIL_MAX messages, ours included. Pure. */
-export const nextTail = (thread: ThreadState, read: Read[]): OkchatTailMessage[] =>
-  (thread?.initialized ? [...thread.tail, ...alignedNew(thread.tail, read)] : read)
+/**
+ * The tail stored after a read: the last DM_TAIL_MAX messages, ours included. The first read that
+ * reports media replaces a tail stored without them, so the tail is all of one kind again. Pure.
+ */
+export const nextTail = (thread: ThreadState, read: Read[]): OkchatTailMessage[] => {
+  const replaced = !!thread?.initialized && reportsMedia(read) && !reportsMedia(thread.tail);
+  return (thread?.initialized && !replaced ? [...thread.tail, ...alignedNew(thread.tail, read)] : read)
     .slice(-DM_TAIL_MAX)
-    .map(({ from, mine, text }) => ({ from, mine, text }));
+    .map(({ from, mine, text, kind }) => (kind ? { from, mine, text, kind } : { from, mine, text }));
+};
 
 /**
  * The conversations to open now: unread ones first (most unread first), then the ones already read

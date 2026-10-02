@@ -362,6 +362,20 @@ describe('inbox fetch mapping', () => {
     expect(p.dm.loggedOutReason).toMatch(/小红书网页版已退出登录/);
   });
 
+  it('Xiaohongshu DM channel: an image or sticker (no text) is a message, described for the agent', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [
+      { time: '10:00', from: '小C', mine: false, kind: 'text', text: '在吗' },
+      { time: '10:01', from: '小C', mine: false, kind: 'media', text: '' },
+      { time: '10:02', from: 'me', mine: true, kind: 'media', text: '' },
+      { time: '10:03', from: '小C', mine: false, kind: 'text', text: '' },
+    ] }]);
+    expect(await withFleet(new XiaohongshuWebProvider(), fleet).dm.read('s1', 'c1', 20)).toEqual([
+      { from: '小C', mine: false, text: '在吗', time: '10:00', kind: 'text' },
+      { from: '小C', mine: false, text: '［对方发来一张图片或表情，请在小红书 App 查看］', time: '10:01', kind: 'media' },
+      { from: 'me', mine: true, text: '［对方发来一张图片或表情，请在小红书 App 查看］', time: '10:02', kind: 'media' },
+    ]);
+  });
+
   it('Xiaohongshu describes a DM the web IM cannot show in the okchat contract\'s words', async () => {
     const fleet = fakeFleet([{ ok: true, data: [{ time: '10:00', from: '小C', mine: false, text: '暂不支持该消息类型，请到手机端查看' }] }]);
     const [m] = await withFleet(new XiaohongshuWebProvider(), fleet).dm.read('s1', 'c1', 20);

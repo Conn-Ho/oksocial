@@ -165,6 +165,9 @@ export type DmMessage = {
   text: string;
   // as the site prints it, often relative (14:05, 昨天 14:05, 09-28 14:05)
   time: string;
+  // what the message is, from a reader that tells (text, or media: an image, a sticker, a video,
+  // whose text then describes it). Readers that do not tell skipped media messages.
+  kind?: 'text' | 'media';
 };
 export type DmCapabilities = {
   // the longest reply the platform takes, in characters
