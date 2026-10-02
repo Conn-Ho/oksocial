@@ -11,6 +11,11 @@ export const DM_WATCH_PROVIDERS = ['xiaohongshu'];
 export const DM_WATCH_HEALTH_TTL_MS = 3 * 60_000;
 // how long one long poll of the worker waits for a change (the worker allows 55 s)
 export const DM_WATCH_WAIT_MS = 50_000;
+// accounts in one PUT /dm-watch (the worker's limit): any more keep the 1-minute poll
+export const DM_WATCH_MAX_ACCOUNTS = 1000;
+// what the worker takes as a slot and as a key (deploy/browser-fleet/worker/src/schemas.ts)
+const SLOT_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const unsupported = (err: unknown) => err instanceof BrowserFleetError && err.status === 404;
 
@@ -36,7 +41,16 @@ export class OkchatDmWatchService {
     }
     const scope = okchatDmWatchScope();
     const all = await this._repository.watchableBindings(DM_WATCH_PROVIDERS, now);
-    const bindings = scope === 'all' ? all : scope === 'off' ? [] : all.filter((b) => scope.has(b.integrationId));
+    const scoped = scope === 'all' ? all : scope === 'off' ? [] : all.filter((b) => scope.has(b.integrationId));
+    // one account the worker would refuse must not cost every other one its watch
+    const valid = scoped.filter((b) => SLOT_RE.test(b.integration.token || '') && KEY_RE.test(b.integrationId));
+    if (valid.length < scoped.length) {
+      console.log('okchat dm watch: accounts not watched (slot or id the browser worker refuses)', scoped.length - valid.length);
+    }
+    const bindings = valid.slice(0, DM_WATCH_MAX_ACCOUNTS);
+    if (bindings.length < valid.length) {
+      console.log('okchat dm watch: accounts not watched (more than the browser worker takes)', valid.length - bindings.length);
+    }
     const left = all.filter((b) => !bindings.includes(b)).map((b) => b.integrationId);
     let watchers: DmWatcherStatus[];
     try {
@@ -46,6 +60,7 @@ export class OkchatDmWatchService {
       if (unsupported(err)) {
         return { watching: false, accounts: bindings.length, healthy: 0, unsupported: true };
       }
+      console.log('okchat dm watch sync', (err as Error)?.message);
       throw err;
     }
     const ids = bindings.map((b) => b.integrationId);
@@ -67,6 +82,7 @@ export class OkchatDmWatchService {
       if (unsupported(err)) {
         return { cursor, integrationIds: [] as string[], unsupported: true };
       }
+      console.log('okchat dm watch changes', (err as Error)?.message);
       throw err;
     }
   }

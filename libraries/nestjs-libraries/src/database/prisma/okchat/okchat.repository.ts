@@ -303,6 +303,18 @@ export class OkchatRepository {
     });
   }
 
+  /**
+   * A never-read conversation about to be opened: what its list entry said (opening it marks it read
+   * on the platform), so a read that dies before saving it is not the end of its messages.
+   */
+  markPending(integrationId: string, threadId: string, data: { displayName: string; pendingUnread: number; pendingSummary: string }) {
+    return this._threads.model.okchatThread.upsert({
+      where: { integrationId_threadId: { integrationId, threadId } },
+      create: { integrationId, threadId, ...data },
+      update: { pendingUnread: data.pendingUnread, pendingSummary: data.pendingSummary },
+    });
+  }
+
   /** A conversation as just read, with the batch of its new messages (one transaction). */
   saveRead(
     integrationId: string,
@@ -310,7 +322,8 @@ export class OkchatRepository {
     data: { displayName: string; tail: OkchatTailMessage[]; seq: number; lastSummary: string },
     batch: OkchatOutboxInput | null
   ) {
-    const thread = { ...data, tail: data.tail as unknown as Prisma.InputJsonValue, initialized: true };
+    // a saved read is no longer pending
+    const thread = { ...data, tail: data.tail as unknown as Prisma.InputJsonValue, initialized: true, pendingUnread: 0, pendingSummary: null as string | null };
     return this._transaction.model.$transaction([
       this._threads.model.okchatThread.upsert({
         where: { integrationId_threadId: { integrationId, threadId } },

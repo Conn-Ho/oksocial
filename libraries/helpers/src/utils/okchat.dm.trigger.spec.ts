@@ -1,13 +1,13 @@
 import { createReadCoalescer } from '@gitroom/helpers/utils/okchat.dm.trigger';
 
 /** A read the test finishes; `log` records starts and pauses in order. */
-const harness = (results: Array<{ busy?: boolean } | Error> = []) => {
+const harness = (results: Array<{ busy?: boolean; more?: boolean } | Error> = [], extra: { maxConcurrent?: number; moreFollowUps?: number } = {}) => {
   const log: string[] = [];
   const pending: Array<() => void> = [];
   const read = jest.fn((id: string) => {
     log.push(`read ${id}`);
     const next = results.shift() ?? { busy: false };
-    return new Promise<{ busy?: boolean }>((resolve, reject) => pending.push(() => (next instanceof Error ? reject(next) : resolve(next))));
+    return new Promise<{ busy?: boolean; more?: boolean }>((resolve, reject) => pending.push(() => (next instanceof Error ? reject(next) : resolve(next))));
   });
   const sleeps: Array<() => void> = [];
   const sleep = jest.fn((ms: number) => {
@@ -15,7 +15,7 @@ const harness = (results: Array<{ busy?: boolean } | Error> = []) => {
     return new Promise<void>((resolve) => sleeps.push(resolve));
   });
   let clock = 1_000_000;
-  const reads = createReadCoalescer({ read, sleep, now: () => clock, cooldownMs: 15_000, busyRetryMs: 20_000, busyRetries: 2 });
+  const reads = createReadCoalescer({ read, sleep, now: () => clock, cooldownMs: 15_000, busyRetryMs: 20_000, busyRetries: 2, ...extra });
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   return {
     reads,
@@ -119,5 +119,34 @@ describe('createReadCoalescer: one triggered read per account at a time', () => 
     expect(h.read).toHaveBeenCalledTimes(2);
     await h.finish();
     await h.reads.settled();
+  });
+
+  it('at most 3 accounts are read at once: a burst of changes never crowds out the worker\'s other runs', async () => {
+    const h = harness([], { maxConcurrent: 3 });
+    for (const id of ['i1', 'i2', 'i3', 'i4', 'i5']) h.reads.trigger(id);
+    await h.flush();
+    expect(h.log).toEqual(['read i1', 'read i2', 'read i3']);
+    await h.finish();
+    expect(h.log).toEqual(['read i1', 'read i2', 'read i3', 'read i4']);
+    await h.finish();
+    await h.finish();
+    await h.finish();
+    await h.finish();
+    await h.reads.settled();
+    expect(h.read).toHaveBeenCalledTimes(5);
+  });
+
+  it('a read that left unread conversations for later reads the account again, a few times at most', async () => {
+    const h = harness([{ more: true }, { more: true }, { more: true }, { more: true }], { moreFollowUps: 2 });
+    h.reads.trigger('i1');
+    await h.flush();
+    await h.finish();
+    await h.wake();
+    await h.finish();
+    await h.wake();
+    await h.finish();
+    await h.reads.settled();
+    // the read and two more, each after the pause; then the poll's reads take over
+    expect(h.log).toEqual(['read i1', 'sleep 15000', 'read i1', 'sleep 15000', 'read i1']);
   });
 });

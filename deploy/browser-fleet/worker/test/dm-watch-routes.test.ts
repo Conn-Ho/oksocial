@@ -54,7 +54,7 @@ describe('PUT /dm-watch', () => {
   it('refuses what is not a list of slots and keys', async () => {
     const { watch, calls } = stubWatch();
     const { app } = await buildTestApp({ deps: { dmWatch: watch } });
-    for (const payload of [{}, { accounts: [{ slot: '../etc', key: 'k' }] }, { accounts: [{ slot: 'xhs-2', key: 'a b' }] }, { accounts: [{ slot: 'xhs-2' }] }, { accounts: Array.from({ length: 201 }, (_, i) => ({ slot: `s${i}x`, key: 'k' })) }]) {
+    for (const payload of [{}, { accounts: [{ slot: '../etc', key: 'k' }] }, { accounts: [{ slot: 'xhs-2', key: 'a b' }] }, { accounts: [{ slot: 'xhs-2' }] }, { accounts: Array.from({ length: 1001 }, (_, i) => ({ slot: `s${i}x`, key: 'k' })) }]) {
       const res = await app.inject({ method: 'PUT', url: '/dm-watch', headers: auth, payload });
       assert.equal(res.statusCode, 400, JSON.stringify(payload).slice(0, 60));
     }

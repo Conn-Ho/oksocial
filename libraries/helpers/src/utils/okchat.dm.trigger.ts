@@ -5,6 +5,8 @@ export interface TriggeredRead {
   read?: boolean;
   // another read (the poll's) had the account
   busy?: boolean;
+  // the read left unread conversations for later (it opens a few per read)
+  more?: boolean;
 }
 
 export interface ReadCoalescerOptions {
@@ -17,21 +19,54 @@ export interface ReadCoalescerOptions {
   // an account another read has is tried again after this pause, at most busyRetries times
   busyRetryMs: number;
   busyRetries: number;
+  // accounts read at once (the poll reads 3 at a time too: the browser worker runs 3 commands)
+  maxConcurrent?: number;
+  // a read that left unread conversations is followed by this many more at most
+  moreFollowUps?: number;
 }
 
 /**
  * One triggered read per account at a time: a change of an account being read only marks it for
  * one more read once that read is done, never a second read alongside it, and reads of an account
  * are at least cooldownMs apart (a burst of messages is one read; risk control watches bursts of
- * page loads). A read that fails is left to the poll, the safety net.
+ * page loads), at most maxConcurrent accounts at once. A read that left unread conversations for
+ * later is followed by another (moreFollowUps at most). A read that fails is left to the poll.
  */
 export const createReadCoalescer = (options: ReadCoalescerOptions) => {
   const running = new Map<string, Promise<void>>();
   const again = new Set<string>();
   const ended = new Map<string, number>();
+  const maxConcurrent = options.maxConcurrent ?? Infinity;
+  let reading = 0;
+  const waiting: Array<() => void> = [];
+  // a slot among maxConcurrent: a read that ends hands its slot to the next one waiting
+  const acquire = async () => {
+    if (reading < maxConcurrent) {
+      reading += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  };
+  const release = () => {
+    const next = waiting.shift();
+    if (next) {
+      next();
+    } else {
+      reading -= 1;
+    }
+  };
+  const readOnce = async (id: string) => {
+    await acquire();
+    try {
+      return await options.read(id);
+    } finally {
+      release();
+    }
+  };
 
   const readUntilCaughtUp = async (id: string) => {
     let busy = 0;
+    let more = 0;
     for (;;) {
       const wait = (ended.get(id) ?? -Infinity) + options.cooldownMs - options.now();
       if (wait > 0) {
@@ -40,7 +75,7 @@ export const createReadCoalescer = (options: ReadCoalescerOptions) => {
       again.delete(id);
       let result: TriggeredRead | null | undefined = null;
       try {
-        result = await options.read(id);
+        result = await readOnce(id);
       } catch {
         result = null;
       }
@@ -50,6 +85,10 @@ export const createReadCoalescer = (options: ReadCoalescerOptions) => {
         continue;
       }
       ended.set(id, options.now());
+      if (result?.more && more < (options.moreFollowUps ?? 0)) {
+        more += 1;
+        again.add(id);
+      }
       if (!again.has(id)) {
         break;
       }

@@ -123,7 +123,7 @@ export const MediaFetchBody = z.object({ urls: z.array(z.string().max(8192)).min
 
 /** The accounts the DM watch keeps a tab for (PUT /dm-watch): slot + the caller's id for it. */
 export const DM_WATCH_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
-export const DM_WATCH_MAX_ACCOUNTS = 200;
+export const DM_WATCH_MAX_ACCOUNTS = 1000;
 export const DmWatchBody = z.object({
   accounts: z
     .array(z.object({ slot: z.string().regex(SLOT_PARAM_RE, 'invalid slot name'), key: z.string().regex(DM_WATCH_KEY_RE, 'invalid key') }))

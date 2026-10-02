@@ -2759,6 +2759,10 @@ model OkchatThread {
   initialized   Boolean  @default(false)
   // the conversation list's preview of its last message at that read: a change means activity
   lastSummary   String?
+  // a never-read conversation about to be opened (opening it marks it read on the platform): its
+  // unread count and preview then, until a read saves it, so the next read still finds its messages
+  pendingUnread  Int      @default(0)
+  pendingSummary String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

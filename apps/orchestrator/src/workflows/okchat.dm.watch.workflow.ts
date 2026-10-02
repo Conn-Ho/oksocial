@@ -30,6 +30,10 @@ const COOLDOWN_MS = 30_000;
 // an account the poll is reading: tried again after this long, a few times (a read takes ~1-2 min)
 const BUSY_RETRY_MS = 20_000;
 const BUSY_RETRIES = 12;
+// accounts read at once, like the poll (the browser worker runs 3 commands at a time)
+const READ_CONCURRENCY = 3;
+// a read that left unread conversations (it opens 5) is followed by at most this many more
+const MORE_FOLLOW_UPS = 3;
 // rounds per run (each a long poll of up to 50 s: a few hours), then a fresh run: keeps the history small
 const ROUNDS_PER_RUN = 240;
 
@@ -48,6 +52,8 @@ export async function okchatDmWatchWorkflow(input?: { cursor?: string | null }):
     cooldownMs: COOLDOWN_MS,
     busyRetryMs: BUSY_RETRY_MS,
     busyRetries: BUSY_RETRIES,
+    maxConcurrent: READ_CONCURRENCY,
+    moreFollowUps: MORE_FOLLOW_UPS,
   });
   for (let round = 0; round < ROUNDS_PER_RUN; round++) {
     if (syncedAt === null || Date.now() - syncedAt >= SYNC_EVERY_MS) {

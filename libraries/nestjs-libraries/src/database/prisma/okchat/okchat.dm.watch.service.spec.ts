@@ -3,6 +3,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', 
 import { BrowserFleetError } from '@gitroom/nestjs-libraries/browser/browser.fleet.client';
 import {
   DM_WATCH_HEALTH_TTL_MS,
+  DM_WATCH_MAX_ACCOUNTS,
   DM_WATCH_WAIT_MS,
   OkchatDmWatchService,
 } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.watch.service';
@@ -88,6 +89,44 @@ describe('OkchatDmWatchService.sync: OKCHAT_DM_WATCH', () => {
     expect(await service.sync(NOW)).toEqual({ watching: false, accounts: 0, healthy: 0 });
     expect(fleet.dmWatch).toHaveBeenCalledWith([]);
     expect(repo.setWatchHealth).toHaveBeenCalledWith([], ['i1', 'i2'], expect.any(Date));
+  });
+});
+
+describe('OkchatDmWatchService.sync: what the worker would refuse', () => {
+  it('leaves out an account whose slot or id the worker cannot take, instead of losing the watch of all', async () => {
+    const logs = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { service, fleet, repo } = setup({
+      bindings: [
+        { integrationId: 'i1', integration: { token: 'xhs-1' } },
+        { integrationId: 'i2', integration: { token: '../etc' } },
+        { integrationId: 'bad id', integration: { token: 'xhs-3' } },
+      ],
+    });
+    await service.sync(NOW);
+    expect(fleet.dmWatch).toHaveBeenCalledWith([{ slot: 'xhs-1', key: 'i1' }]);
+    expect(repo.setWatchHealth).toHaveBeenCalledWith([], ['i1', 'i2', 'bad id'], expect.any(Date));
+    expect(logs.mock.calls.some((c) => String(c[0]).includes('not watched'))).toBe(true);
+    logs.mockRestore();
+  });
+
+  it('watches at most DM_WATCH_MAX_ACCOUNTS (the worker\'s limit); the rest keep the 1-minute poll', async () => {
+    const logs = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const many = Array.from({ length: DM_WATCH_MAX_ACCOUNTS + 2 }, (_, i) => ({ integrationId: `i${i}`, integration: { token: `xhs-${i}` } }));
+    const { service, fleet } = setup({ bindings: many });
+    await service.sync(NOW);
+    expect((fleet.dmWatch.mock.calls[0] as any[])[0]).toHaveLength(DM_WATCH_MAX_ACCOUNTS);
+    logs.mockRestore();
+  });
+
+  it('a worker failure other than 404 is logged, not swallowed', async () => {
+    const logs = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const down = setup({ watchers: new BrowserFleetError('bad gateway', 502) });
+    await expect(down.service.sync(NOW)).rejects.toThrow('bad gateway');
+    expect(logs).toHaveBeenCalledWith('okchat dm watch sync', 'bad gateway');
+    const lost = setup({ changes: new Error('fetch failed') });
+    await expect(lost.service.changes('b1:1')).rejects.toThrow('fetch failed');
+    expect(logs).toHaveBeenCalledWith('okchat dm watch changes', 'fetch failed');
+    logs.mockRestore();
   });
 });
 

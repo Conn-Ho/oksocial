@@ -15,7 +15,8 @@ const setup = () => {
     upsert: jest.fn((args: any) => ({ op: 'upsert', args })),
   };
   const integration = { findMany: jest.fn(async () => [{ id: 'i1' }, { id: 'i2' }]) };
-  const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })) };
+  const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })), create: jest.fn((args: any) => ({ op: 'create', args })) };
+  const okchatThread = { upsert: jest.fn((args: any) => ({ op: 'upsert', args })) };
   const okchatReply = {
     deleteMany: jest.fn(async () => ({ count: 5 })),
     groupBy: jest.fn(async () => [] as any[]),
@@ -23,10 +24,10 @@ const setup = () => {
     count: jest.fn(async () => 7),
   };
   const transaction = { $transaction: jest.fn(async (ops: any[]) => ops) };
-  const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply };
+  const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply, okchatThread };
   const r = { model } as any;
   const repo = new OkchatRepository(r, r, r, r, r, r, r, r, r, { model: transaction } as any);
-  return { repo, okchatLink, okchatBinding, integration, transaction, okchatOutbox, okchatReply };
+  return { repo, okchatLink, okchatBinding, integration, transaction, okchatOutbox, okchatReply, okchatThread };
 };
 
 const bindings = [
@@ -262,5 +263,25 @@ describe('OkchatRepository: the DM watch', () => {
     okchatBinding.updateMany.mockClear();
     await repo.setWatchHealth([], [], until);
     expect(okchatBinding.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('OkchatRepository: a never-read conversation about to be opened', () => {
+  it('is marked with its unread count and preview, without touching a thread already read', async () => {
+    const { repo, okchatThread } = setup();
+    await repo.markPending('i1', 'c1', { displayName: '小C', pendingUnread: 2, pendingSummary: '在吗' });
+    expect(okchatThread.upsert).toHaveBeenCalledWith({
+      where: { integrationId_threadId: { integrationId: 'i1', threadId: 'c1' } },
+      create: { integrationId: 'i1', threadId: 'c1', displayName: '小C', pendingUnread: 2, pendingSummary: '在吗' },
+      update: { pendingUnread: 2, pendingSummary: '在吗' },
+    });
+  });
+
+  it('a saved read clears the mark', async () => {
+    const { repo, okchatThread } = setup();
+    await repo.saveRead('i1', 'c1', { displayName: '小C', tail: [], seq: 1, lastSummary: '在吗' }, null);
+    const [args] = okchatThread.upsert.mock.calls[0] as any[];
+    expect(args.update).toMatchObject({ initialized: true, pendingUnread: 0, pendingSummary: null });
+    expect(args.create).toMatchObject({ initialized: true, pendingUnread: 0, pendingSummary: null });
   });
 });

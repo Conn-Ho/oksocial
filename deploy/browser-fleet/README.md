@@ -236,7 +236,7 @@ state (`active`, `inactive`, `failed`, `activating`, …), `profileId` is `null`
 | `POST /slots/:slot/login-form` | `{step: identifier\|password\|code, value: string[1..512] (no control characters), hints?}` | the state after typing `value` into that step's field and submitting it (`next:"password"`: only typed); `stale:true` when the page was on another step (nothing typed); `409 BUSY` while another submit types into the slot |
 | `POST /slots/:slot/run` | `{args: string[1..40] (≤32000 chars each, ≤200000 in all, no NUL), timeoutMs?: 1000..600000 = 120000}` | always 200: `{ok:true, data, durationMs}` or `{ok:false, code, exitCode, message, opencliCode?, help?, durationMs}` |
 | `POST /media/fetch` | `{urls: string[1..20]}` | `{paths: string[]}` (same order) |
-| `PUT /dm-watch` | `{accounts: [{slot, key: /^[A-Za-z0-9_-]{1,64}$/}] (≤200)}`: every account to watch | `{ok:true, watchers: Watcher[]}`; accounts left out are dropped and their tabs closed |
+| `PUT /dm-watch` | `{accounts: [{slot, key: /^[A-Za-z0-9_-]{1,64}$/}] (≤1000)}`: every account to watch | `{ok:true, watchers: Watcher[]}`; accounts left out are dropped and their tabs closed |
 | `GET /dm-watch` | | `{ok:true, watchers: Watcher[]}` |
 | `GET /dm-watch/changes?cursor=<c>&waitMs=0..55000` | | `{ok:true, cursor, changes:[{slot, key, at}]}`: one per account changed after `cursor`, waiting up to `waitMs` for one; no cursor, or one of another worker process, starts from now (nothing is replayed) |
 

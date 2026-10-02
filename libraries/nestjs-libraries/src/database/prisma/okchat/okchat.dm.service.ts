@@ -21,7 +21,7 @@ export const DM_READ_LIMIT = 20;
 export const DM_TAIL_MAX = 30;
 // A read holds the account this long, renewed before each page it reads: two reads of one account
 // (the poll and one the watcher triggered) never interleave, and a read that died lets go soon.
-export const DM_READ_LEASE_MS = 5 * 60_000;
+export const DM_READ_LEASE_MS = 10 * 60_000;
 // A customer message equal to what we sent to the conversation within this window is taken for
 // our own reply read back without the mark of ours (an echo) and dropped. The mark comes from the
 // bubble's side in the page (chat-item__content--left/right) and is reliable, so this is only a
@@ -129,21 +129,27 @@ export const nextTail = (thread: ThreadState, read: Read[]): OkchatTailMessage[]
 };
 
 /**
- * The conversations to open now: unread ones first (most unread first), then the ones already read
- * whose last-message preview moved (e.g. read on the phone), at most `limit`. Conversations never
- * read and without unread messages wait until they have some. Pure.
+ * The conversations to open now: unread ones first (most unread first), then never-read ones opened
+ * before but not saved, then the ones already read whose last-message preview moved (e.g. read on
+ * the phone), at most `limit`. Conversations never read and without unread messages wait until
+ * they have some. Pure.
  */
 export const pickConversations = (
   conversations: DmConversation[],
-  threads: Map<string, Pick<OkchatThread, 'initialized' | 'lastSummary'>>,
+  threads: Map<string, Pick<OkchatThread, 'initialized' | 'lastSummary'> & Partial<Pick<OkchatThread, 'pendingUnread'>>>,
   limit: number
 ) => {
   const unread = conversations.filter((c) => c.unread > 0).sort((a, b) => b.unread - a.unread);
+  // opened once but never saved: its badge is gone, its messages are still to be pushed
+  const pending = conversations.filter((c) => {
+    const t = threads.get(c.id);
+    return c.unread <= 0 && !!t && !t.initialized && (t.pendingUnread ?? 0) > 0;
+  });
   const moved = conversations.filter((c) => {
     const t = threads.get(c.id);
     return c.unread <= 0 && !!t?.initialized && (t.lastSummary ?? '') !== c.summary;
   });
-  return [...unread, ...moved].slice(0, limit);
+  return [...unread, ...pending, ...moved].slice(0, limit);
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -227,7 +233,7 @@ export class OkchatDmService {
     let read = 0;
     await inParallel(due, READ_CONCURRENCY, async (binding) => {
       try {
-        if ((await this.readLeased(binding, now)) === 'read') {
+        if ((await this.readLeased(binding, now)) !== 'busy') {
           read += 1;
         }
       } catch (err) {
@@ -242,24 +248,25 @@ export class OkchatDmService {
    * change: the same read as a round's (lease, alignment, outbox). Busy while another read has the
    * account; nothing for an account a round would not read either (paused, unlinked, logged out).
    */
-  async readOne(integrationId: string, now = new Date()): Promise<{ read: boolean; busy?: boolean }> {
+  async readOne(integrationId: string, now = new Date()): Promise<{ read: boolean; busy?: boolean; more?: boolean }> {
     const binding = await this._repository.readableBinding(integrationId, this._integrationManager.getDmProviders(), now);
     if (!binding) {
       return { read: false };
     }
-    return (await this.readLeased(binding, now)) === 'read' ? { read: true } : { read: false, busy: true };
+    const done = await this.readLeased(binding, now);
+    // more: unread conversations were left for another read (DM_CONVERSATIONS_PER_READ per read)
+    return done === 'busy' ? { read: false, busy: true } : { read: true, more: done.more };
   }
 
   /** Reads the account under its lease; 'busy' when another read holds it (that read covers it). */
-  private async readLeased(binding: ReadableBinding, now: Date): Promise<'read' | 'busy'> {
+  private async readLeased(binding: ReadableBinding, now: Date): Promise<'busy' | { more: boolean }> {
     const lease: Lease = { integrationId: binding.integrationId, owner: this.newOwner() };
     const at = this.clock();
     if (!(await this._repository.claimRead(lease.integrationId, lease.owner, at, new Date(at.getTime() + DM_READ_LEASE_MS)))) {
       return 'busy';
     }
     try {
-      await this.readAccount(binding, now, lease);
-      return 'read';
+      return await this.readAccount(binding, now, lease);
     } finally {
       await this._repository.releaseRead(lease.integrationId, lease.owner);
     }
@@ -289,10 +296,11 @@ export class OkchatDmService {
     }
   }
 
-  private async readAccount(binding: ReadableBinding, now: Date, lease: Lease) {
+  private async readAccount(binding: ReadableBinding, now: Date, lease: Lease): Promise<{ more: boolean }> {
+    const none = { more: false };
     const provider = this._integrationManager.getSocialIntegration(binding.integration.providerIdentifier);
     if (!provider?.dm) {
-      return;
+      return none;
     }
     const channel: Channel = {
       integrationId: binding.integrationId,
@@ -304,21 +312,38 @@ export class OkchatDmService {
     try {
       conversations = await this.listConversations(channel);
     } catch (err) {
-      return this.readFailed(binding, channel, err, now);
+      await this.readFailed(binding, channel, err, now);
+      return none;
+    }
+    // the list can take long (a second try): the lease is checked before anything is opened
+    if (!(await this.renew(lease))) {
+      return this.leaseLost(channel);
     }
     const threads = new Map((await this._repository.threads(channel.integrationId)).map((t) => [t.threadId, t]));
-    for (const conversation of pickConversations(conversations, threads, DM_CONVERSATIONS_PER_READ)) {
+    const picked = pickConversations(conversations, threads, Infinity);
+    for (const conversation of picked.slice(0, DM_CONVERSATIONS_PER_READ)) {
       const [min, max] = channel.dm.readGapMs;
       await this.sleep(min + this.random() * (max - min));
       if (!(await this.renew(lease))) {
         return this.leaseLost(channel);
+      }
+      const thread = threads.get(conversation.id);
+      // opening a never-read conversation clears its badge on the platform: what it said is kept
+      // first, so a read that dies before saving it still finds its messages next time
+      if (!thread?.initialized && !(thread?.pendingUnread > 0) && conversation.unread > 0) {
+        await this._repository.markPending(channel.integrationId, conversation.id, {
+          displayName: conversation.name,
+          pendingUnread: conversation.unread,
+          pendingSummary: conversation.summary,
+        });
       }
       let read: DmMessage[];
       try {
         read = await channel.dm.read(channel.slot, conversation.id, DM_READ_LIMIT);
       } catch (err) {
         if (err instanceof RefreshToken || isPushback((err as Error)?.message || '')) {
-          return this.readFailed(binding, channel, err, now);
+          await this.readFailed(binding, channel, err, now);
+          return none;
         }
         // one conversation that does not load is read again next time
         console.log(`okchat dm conversation ${channel.integrationId}`, (err as Error)?.message);
@@ -328,13 +353,15 @@ export class OkchatDmService {
       if (!(await this.renew(lease))) {
         return this.leaseLost(channel);
       }
-      await this.saveConversation(channel, conversation, threads.get(conversation.id) ?? null, read, now);
+      await this.saveConversation(channel, conversation, thread ?? null, read, now);
     }
     await this._repository.updateBinding(channel.integrationId, { lastReadAt: now, loggedOutReason: null });
+    return { more: picked.length > DM_CONVERSATIONS_PER_READ };
   }
 
   private leaseLost(channel: Channel) {
     console.log(`okchat dm read ${channel.integrationId}: another read took the account over, stopping`);
+    return { more: false };
   }
 
   private async saveConversation(channel: Channel, conversation: DmConversation, thread: OkchatThread | null, read: DmMessage[], now: Date) {
@@ -344,8 +371,11 @@ export class OkchatDmService {
         echoKey
       )
     );
+    // a conversation opened before but never saved counts what its list entry said then
+    const [unread, summary] =
+      thread && !thread.initialized && thread.pendingUnread > 0 ? [thread.pendingUnread, thread.pendingSummary ?? ''] : [conversation.unread, conversation.summary];
     // ours are never pushed, nor is what we sent to this conversation read back without the mark
-    const incoming = newMessages(state, read, conversation.unread, conversation.summary).filter((m) => !m.mine && !echoes.has(echoKey(m.text)));
+    const incoming = newMessages(state, read, unread, summary).filter((m) => !m.mine && !echoes.has(echoKey(m.text)));
     const first = (thread?.seq ?? 0) + 1;
     const messages = incoming.map((m, i) => ({
       id: `${conversation.id}:${first + i}`,
