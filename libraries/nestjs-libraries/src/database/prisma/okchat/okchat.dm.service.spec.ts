@@ -5,6 +5,7 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.servic
 import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
   DM_READ_EVERY_MS,
+  DM_WATCHED_READ_EVERY_MS,
   OkchatDmService,
   alignedNew,
   newMessages,
@@ -127,6 +128,13 @@ describe('pickConversations', () => {
   });
 });
 
+describe('DM read cadence', () => {
+  it('a linked account is read every minute; every 5 minutes while its real-time watcher is healthy', () => {
+    expect(DM_READ_EVERY_MS).toBe(60_000);
+    expect(DM_WATCHED_READ_EVERY_MS).toBe(5 * 60_000);
+  });
+});
+
 describe('OkchatDmService', () => {
   const NOW = new Date('2026-10-02T06:30:00Z');
   const binding = (over: any = {}) => ({
@@ -179,7 +187,12 @@ describe('OkchatDmService', () => {
       threads: [],
     });
     await service.readDue(NOW);
-    expect(repo.readableBindings).toHaveBeenCalledWith(['xiaohongshu'], NOW, new Date(NOW.getTime() - DM_READ_EVERY_MS), expect.any(Number));
+    expect(repo.readableBindings).toHaveBeenCalledWith(
+      ['xiaohongshu'],
+      NOW,
+      { readBefore: new Date(NOW.getTime() - DM_READ_EVERY_MS), watchedReadBefore: new Date(NOW.getTime() - DM_WATCHED_READ_EVERY_MS) },
+      expect.any(Number)
+    );
     expect(repo.saveRead).toHaveBeenCalledWith(
       'i1',
       'c1',

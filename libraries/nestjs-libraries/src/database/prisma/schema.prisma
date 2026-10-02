@@ -2729,6 +2729,9 @@ model OkchatBinding {
   pauseReason     String?
   // the site the account's DMs live on is logged out; null once a read works again
   loggedOutReason String?
+  // the browser worker's real-time DM watcher reported the account healthy until then: meanwhile
+  // the poll is only a 5-minute safety net (it lapses by itself when the watch stops reporting)
+  watchHealthyUntil DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   integration     Integration @relation(fields: [integrationId], references: [id])

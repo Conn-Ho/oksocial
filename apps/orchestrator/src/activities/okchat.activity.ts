@@ -15,7 +15,7 @@ export class OkchatActivity {
     private _replies: OkchatReplyService
   ) {}
 
-  // the DMs of linked accounts not read for 3 minutes
+  // the DMs of linked accounts not read for a minute (5 while their watcher is healthy)
   @ActivityMethod()
   async readOkchatDms() {
     return okchatEnabled() ? { enabled: true, read: await this._dm.readDue() } : { enabled: false };

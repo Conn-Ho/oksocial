@@ -7,8 +7,12 @@ import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abst
 import { DmCapabilities, DmConversation, DmMessage } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { DM_PAUSE_MINUTES, TOO_FREQUENT_RE, isPushback } from '@gitroom/nestjs-libraries/browser/risk.control';
 
-// okchat contract §7: a linked account's DMs are read about every 3 minutes, unread first.
-export const DM_READ_EVERY_MS = 3 * 60_000;
+// A linked account's DMs are read every minute, unread first (the contract's §7 said 3 minutes:
+// too slow for a customer waiting on an answer)...
+export const DM_READ_EVERY_MS = 60_000;
+// ...and only every 5 minutes, as a safety net, while the browser worker's real-time watcher of the
+// account is healthy: the watcher triggers a read the moment the conversation list changes.
+export const DM_WATCHED_READ_EVERY_MS = 5 * 60_000;
 // conversations opened per account and read (each is a page load in the account's browser)
 export const DM_CONVERSATIONS_PER_READ = 5;
 // messages read per conversation, and kept as its tail
@@ -142,8 +146,8 @@ export const inParallel = async <T>(items: T[], limit: number, run: (item: T) =>
 };
 
 /**
- * okchat 私信通道, reading: each linked account's conversations are read in its browser about every
- * 3 minutes, matched against what was read before, and the customer's new messages are queued for
+ * okchat 私信通道, reading: each linked account's conversations are read in its browser every minute
+ * (every 5 while its real-time watcher is healthy, and right away when the watcher sees a change), matched against what was read before, and the customer's new messages are queued for
  * okchat, one batch per conversation. Message ids are the conversation id and a running number.
  */
 @Injectable()
@@ -157,12 +161,15 @@ export class OkchatDmService {
     private _outbox: OkchatOutboxService
   ) {}
 
-  /** One round: every linked account not read for DM_READ_EVERY_MS (and not paused). */
+  /**
+   * One round: every linked account (not paused) not read for DM_READ_EVERY_MS, or for
+   * DM_WATCHED_READ_EVERY_MS while its watcher is healthy.
+   */
   async readDue(now = new Date()) {
     const due = await this._repository.readableBindings(
       this._integrationManager.getDmProviders(),
       now,
-      new Date(now.getTime() - DM_READ_EVERY_MS),
+      { readBefore: new Date(now.getTime() - DM_READ_EVERY_MS), watchedReadBefore: new Date(now.getTime() - DM_WATCHED_READ_EVERY_MS) },
       READ_BATCH
     );
     let read = 0;

@@ -14,8 +14,9 @@ const { readOkchatDms } = proxyActivities<OkchatActivity>({
 // rounds per run (a few hours), then a fresh run: keeps the history small
 const ROUNDS_PER_RUN = 240;
 
-// Every minute: read the DMs of each okchat-linked account whose last read is 3 minutes old
-// (unread conversations first) in its browser, and queue the new messages for okchat. Started by
+// Every minute: read the DMs of each okchat-linked account whose last read is a minute old (5
+// minutes while its real-time DM watcher is healthy, which reads it on every change),
+// unread conversations first, in its browser, and queue the new messages for okchat. Started by
 // InfiniteWorkflowRegister (RUN_CRON) when okchat is configured.
 export async function okchatDmWorkflow(): Promise<void> {
   for (let round = 0; round < ROUNDS_PER_RUN; round++) {

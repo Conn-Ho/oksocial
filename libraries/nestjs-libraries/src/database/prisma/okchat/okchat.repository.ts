@@ -184,13 +184,25 @@ export class OkchatRepository {
     });
   }
 
-  /** Active bindings of linked organizations whose account can be read now, the least recently read first. */
-  readableBindings(providers: string[], now: Date, readBefore: Date, limit: number) {
+  /**
+   * Active bindings of linked organizations whose account is due a read now, the least recently read
+   * first: not read since `readBefore`, or, while the account's DM watcher is healthy (it triggers a
+   * read on every new DM), not since `watchedReadBefore`.
+   */
+  readableBindings(providers: string[], now: Date, cutoffs: { readBefore: Date; watchedReadBefore: Date }, limit: number) {
     return this._bindings.model.okchatBinding.findMany({
       where: {
         active: true,
-        OR: [{ lastReadAt: null }, { lastReadAt: { lt: readBefore } }],
-        AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }],
+        AND: [
+          { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+          {
+            OR: [
+              { lastReadAt: null },
+              { lastReadAt: { lt: cutoffs.watchedReadBefore } },
+              { lastReadAt: { lt: cutoffs.readBefore }, OR: [{ watchHealthyUntil: null }, { watchHealthyUntil: { lt: now } }] },
+            ],
+          },
+        ],
         integration: {
           deletedAt: null,
           disabled: false,

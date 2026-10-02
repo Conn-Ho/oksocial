@@ -148,3 +148,31 @@ describe('OkchatRepository reply queue', () => {
     expect(okchatReply.count).toHaveBeenCalledWith({ where: { integrationId: 'i1', status: 'QUEUED' } });
   });
 });
+
+describe('OkchatRepository.readableBindings', () => {
+  const now = new Date('2026-10-03T06:00:00Z');
+  const readBefore = new Date(now.getTime() - 60_000);
+  const watchedReadBefore = new Date(now.getTime() - 5 * 60_000);
+
+  it('every minute, or every 5 minutes while the account\'s DM watcher is healthy; paused accounts wait', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.readableBindings(['xiaohongshu'], now, { readBefore, watchedReadBefore }, 12);
+    const [args] = okchatBinding.findMany.mock.calls[0] as any[];
+    expect(args.where.active).toBe(true);
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([
+        { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+        {
+          OR: [
+            { lastReadAt: null },
+            { lastReadAt: { lt: watchedReadBefore } },
+            { lastReadAt: { lt: readBefore }, OR: [{ watchHealthyUntil: null }, { watchHealthyUntil: { lt: now } }] },
+          ],
+        },
+      ])
+    );
+    expect(args.where.integration).toMatchObject({ providerIdentifier: { in: ['xiaohongshu'] }, deletedAt: null, disabled: false });
+    expect(args.orderBy).toEqual({ lastReadAt: { sort: 'asc', nulls: 'first' } });
+    expect(args.take).toBe(12);
+  });
+});
