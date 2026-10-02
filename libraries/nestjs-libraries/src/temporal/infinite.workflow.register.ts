@@ -76,6 +76,7 @@ export class InfiniteWorkflowRegister implements OnModuleInit {
       for (const [workflow, workflowId] of okchatEnabled()
         ? [
             ['okchatDmWorkflow', 'okchat-dm-workflow'],
+            ['okchatDmWatchWorkflow', 'okchat-dm-watch-workflow'],
             ['okchatReplyWorkflow', 'okchat-reply-workflow'],
             ['okchatPushWorkflow', 'okchat-push-workflow'],
           ]

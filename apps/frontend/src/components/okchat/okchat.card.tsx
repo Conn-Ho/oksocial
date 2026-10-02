@@ -252,7 +252,7 @@ export const OkchatCard: FC = () => {
                 : linked
                 ? t(
                     'okchat_card_linked_hint',
-                    '{{platforms}}私信约每 3 分钟同步到 okchat，由 AI 接待和客服在那里回复，回复从这里的账号发出。',
+                    '{{platforms}}私信会及时同步到 okchat（通常 1 分钟内），由 AI 接待和客服在那里回复，回复从这里的账号发出。',
                     { platforms }
                   )
                 : gaveUp

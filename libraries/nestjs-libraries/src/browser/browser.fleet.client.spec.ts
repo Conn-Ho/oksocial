@@ -28,6 +28,30 @@ describe('BrowserFleetClient', () => {
     expect(await client.run('s1', ['x', 'y'])).toEqual({ ...failure, message: 'Run "okcli browser bind" again (okcli bridge)', help: 'see okcli doctor' });
   });
 
+  it('sets the DM-watched accounts with PUT and long-polls their changes with a deadline past the wait', async () => {
+    const fetchImpl = jest.fn((url: string) =>
+      url.includes('/changes')
+        ? reply(200, { ok: true, cursor: 'b1:4', changes: [{ slot: 's1', key: 'i1', at: '2026-10-03T06:00:00.000Z' }] })
+        : reply(200, { ok: true, watchers: [{ slot: 's1', key: 'i1', healthy: true, phase: 'watching', page: 'list', reason: null }] })
+    );
+    const client = new BrowserFleetClient('http://w', 't', fetchImpl as any);
+    expect(await client.dmWatch([{ slot: 's1', key: 'i1' }])).toEqual({
+      ok: true,
+      watchers: [{ slot: 's1', key: 'i1', healthy: true, phase: 'watching', page: 'list', reason: null }],
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as any;
+    expect([url, init.method, JSON.parse(init.body)]).toEqual(['http://w/dm-watch', 'PUT', { accounts: [{ slot: 's1', key: 'i1' }] }]);
+    expect(await client.dmWatchChanges('b1:3', 50_000)).toEqual({ ok: true, cursor: 'b1:4', changes: [{ slot: 's1', key: 'i1', at: '2026-10-03T06:00:00.000Z' }] });
+    expect((fetchImpl.mock.calls[1] as any)[0]).toBe('http://w/dm-watch/changes?waitMs=50000&cursor=b1%3A3');
+    await client.dmWatchChanges(null, 0);
+    expect((fetchImpl.mock.calls[2] as any)[0]).toBe('http://w/dm-watch/changes?waitMs=0');
+  });
+
+  it('a worker without the DM watch is a 404 BrowserFleetError', async () => {
+    const client = new BrowserFleetClient('http://w', 't', (() => reply(404, { ok: false, code: 'NOT_FOUND', error: 'route not found' })) as any);
+    await expect(client.dmWatch([])).rejects.toEqual(expect.objectContaining({ status: 404, code: 'NOT_FOUND' }));
+  });
+
   it('throws BrowserFleetError with the worker message on a non-2xx reply', async () => {
     const client = new BrowserFleetClient(
       'http://worker:7788',

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app.ts';
 
-export function registerHealthRoutes(app: FastifyInstance, { slots, daemonUp, runQueue }: AppDeps): void {
+export function registerHealthRoutes(app: FastifyInstance, { slots, daemonUp, runQueue, dmWatch }: AppDeps): void {
   app.get('/health', async (req, reply) => {
     const [listed, up] = await Promise.all([
       slots.list().then(
@@ -15,6 +15,13 @@ export function registerHealthRoutes(app: FastifyInstance, { slots, daemonUp, ru
       req.log.warn({ err: listed.error }, 'health: account-ctl list failed');
       return reply.code(503).send({ ok: false, slots: null, daemon, error: 'account-ctl list failed' });
     }
-    return { ok: true, slots: listed.count, daemon, runs: runQueue.stats() };
+    const watchers = dmWatch?.statuses();
+    return {
+      ok: true,
+      slots: listed.count,
+      daemon,
+      runs: runQueue.stats(),
+      ...(watchers ? { dmWatch: { watchers: watchers.length, healthy: watchers.filter((w) => w.healthy).length } } : {}),
+    };
   });
 }

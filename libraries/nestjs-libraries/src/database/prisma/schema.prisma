@@ -2729,6 +2729,13 @@ model OkchatBinding {
   pauseReason     String?
   // the site the account's DMs live on is logged out; null once a read works again
   loggedOutReason String?
+  // the browser worker's real-time DM watcher reported the account healthy until then: meanwhile
+  // the poll is only a 5-minute safety net (it lapses by itself when the watch stops reporting)
+  watchHealthyUntil DateTime?
+  // one read of the account at a time (the poll and watcher-triggered reads): held until then by
+  // readLeaseOwner and renewed before each page it reads, so a read that died lets go soon
+  readLeaseUntil  DateTime?
+  readLeaseOwner  String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   integration     Integration @relation(fields: [integrationId], references: [id])
@@ -2752,6 +2759,10 @@ model OkchatThread {
   initialized   Boolean  @default(false)
   // the conversation list's preview of its last message at that read: a change means activity
   lastSummary   String?
+  // a never-read conversation about to be opened (opening it marks it read on the platform): its
+  // unread count and preview then, until a read saves it, so the next read still finds its messages
+  pendingUnread  Int      @default(0)
+  pendingSummary String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

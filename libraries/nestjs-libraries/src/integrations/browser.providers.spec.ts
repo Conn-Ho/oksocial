@@ -346,17 +346,34 @@ describe('inbox fetch mapping', () => {
       { from: 'me', mine: true, text: '在', time: '10:01' },
     ]);
     await p.dm.send('s1', 'c1', '您好，在的');
+    await p.dm.conversations('s1', { patient: true });
     expect(fleet.calls).toEqual([
       ['xhsdm', 'list', '--limit', '30'],
       ['xhsdm', 'read', 'c1', '--limit', '20'],
       // the format first (the worker appends one only when there is none), then -- : the
       // conversation id and the text are never read as options
       ['xhsdm', 'send', '-f', 'json', '--', 'c1', '您好，在的'],
+      // the second try of a list that did not show waits longer for it
+      ['xhsdm', 'list', '--limit', '30', '--wait', '40'],
     ]);
     expect(p.dm.maxLength).toBe(500);
     expect(p.dm.checkText!('--help')).toMatch(/不能以「-」开头/);
     expect(p.dm.checkText!('好的 -_-')).toBeNull();
     expect(p.dm.loggedOutReason).toMatch(/小红书网页版已退出登录/);
+  });
+
+  it('Xiaohongshu DM channel: an image or sticker (no text) is a message, described for the agent', async () => {
+    const fleet = fakeFleet([{ ok: true, data: [
+      { time: '10:00', from: '小C', mine: false, kind: 'text', text: '在吗' },
+      { time: '10:01', from: '小C', mine: false, kind: 'media', text: '' },
+      { time: '10:02', from: 'me', mine: true, kind: 'media', text: '' },
+      { time: '10:03', from: '小C', mine: false, kind: 'text', text: '' },
+    ] }]);
+    expect(await withFleet(new XiaohongshuWebProvider(), fleet).dm.read('s1', 'c1', 20)).toEqual([
+      { from: '小C', mine: false, text: '在吗', time: '10:00', kind: 'text' },
+      { from: '小C', mine: false, text: '［对方发来一张图片或表情，请在小红书 App 查看］', time: '10:01', kind: 'media' },
+      { from: 'me', mine: true, text: '［对方发来一张图片或表情，请在小红书 App 查看］', time: '10:02', kind: 'media' },
+    ]);
   });
 
   it('Xiaohongshu describes a DM the web IM cannot show in the okchat contract\'s words', async () => {

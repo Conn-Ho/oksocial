@@ -2,9 +2,12 @@ jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository', 
 jest.mock('@gitroom/nestjs-libraries/integrations/integration.manager', () => ({ IntegrationManager: class {} }));
 jest.mock('@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service', () => ({ OkchatOutboxService: class {} }));
 
-import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import { BadBody, RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
+  DM_ECHO_WINDOW_MS,
+  DM_READ_LEASE_MS,
   DM_READ_EVERY_MS,
+  DM_WATCHED_READ_EVERY_MS,
   OkchatDmService,
   alignedNew,
   newMessages,
@@ -52,16 +55,32 @@ describe('tail alignment', () => {
     expect(alignedNew(tail, [them('在吗'), me('您好'), me('请问需要什么'), them('看看这个')])).toEqual([me('请问需要什么'), them('看看这个')]);
   });
 
-  it('the first read of a conversation: with unread, the customer\'s messages after our last one', () => {
+  it('the first read of a conversation: the customer\'s last `unread` messages, counted from the end', () => {
     const read = [them('上次的'), me('好的'), them('在吗'), them('还有货吗')];
     expect(newMessages(null, read, 2)).toEqual([them('在吗'), them('还有货吗')]);
-    expect(newMessages({ initialized: false, tail: [] }, read, 1)).toEqual([them('在吗'), them('还有货吗')]);
-    // never answered: everything the customer wrote
+    expect(newMessages({ initialized: false, tail: [] }, read, 1)).toEqual([them('还有货吗')]);
     expect(newMessages(null, [them('一'), them('二')], 2)).toEqual([them('一'), them('二')]);
+    // the platform's greeting from hours before the account was linked stays history
+    const live = [them('我们已相互关注，开始聊天吧', '03:47'), them('你好，请问还有货吗', '17:21')];
+    expect(newMessages(null, live, 1)).toEqual([them('你好，请问还有货吗', '17:21')]);
+    // more unread than the read holds: every customer message of it, never ours
+    expect(newMessages(null, [me('您好'), them('在吗')], 5)).toEqual([them('在吗')]);
     // nothing unread: the tail is only initialized
     expect(newMessages(null, read, 0)).toEqual([]);
     // initialized: the tail decides, not unread
     expect(newMessages({ initialized: true, tail: tailOf(them('上次的'), me('好的')) }, read, 0)).toEqual([them('在吗'), them('还有货吗')]);
+  });
+
+  it('the first read keeps what came in between the list and the read, anchored on the list\'s preview', () => {
+    // the list said 1 unread, preview 你好; two more came in before the conversation was opened
+    const read = [them('我们已相互关注，开始聊天吧'), them('你好'), them('在吗'), them('想问下价格')];
+    expect(newMessages(null, read, 1, '你好')).toEqual([them('你好'), them('在吗'), them('想问下价格')]);
+    expect(newMessages(null, read, 2, '在吗')).toEqual([them('你好'), them('在吗'), them('想问下价格')]);
+    // a preview cut short by the list, with an ellipsis
+    expect(newMessages(null, [them('旧'), them('请问这款还有现货吗我想买两件')], 1, '请问这款还有现货吗…')).toEqual([them('请问这款还有现货吗我想买两件')]);
+    // a preview the read does not show ([图片], a card): counted from the end as before
+    expect(newMessages(null, read, 1, '[图片]')).toEqual([them('想问下价格')]);
+    expect(newMessages(null, read, 1)).toEqual([them('想问下价格')]);
   });
 
   it('the next tail is the last 30 messages read, ours included, without times', () => {
@@ -83,6 +102,55 @@ describe('tail alignment', () => {
   it('normalizeDmText collapses whitespace like the page and keeps what a read keeps (500)', () => {
     expect(normalizeDmText('  你好\n\n 在的  ')).toBe('你好 在的');
     expect(normalizeDmText('字'.repeat(600))).toHaveLength(500);
+  });
+});
+
+describe('media messages (images, stickers) across the change that started reading them', () => {
+  const PHOTO = '［对方发来一张图片或表情，请在小红书 App 查看］';
+  // what a reader that reports media gives: every row has its kind
+  const t = (m: { from: string; mine: boolean; text: string; time: string }) => ({ ...m, kind: 'text' as const });
+  const photo = (mine = false) => ({ from: mine ? '我' : '小C', mine, text: PHOTO, time: '10:00', kind: 'media' as const });
+  const rows = (...m: Array<{ from: string; mine: boolean; text: string; kind?: string }>) =>
+    m.map(({ from, mine, text, kind }) => (kind ? { from, mine, text, kind } : { from, mine, text }));
+
+  it('a tail stored before (it skipped the photo) aligns on the text messages: nothing is pushed twice', () => {
+    // the old reader skipped the customer's photo between 在吗 and 您好
+    const legacy = { initialized: true, tail: tailOf(them('在吗'), me('您好')) };
+    const read = [t(them('在吗')), photo(), t(me('您好')), t(them('多少钱'))];
+    expect(alignedNew(legacy.tail, read)).toEqual([t(them('多少钱'))]);
+    expect(newMessages(legacy, read, 1)).toEqual([t(them('多少钱'))]);
+    // the read, media included, replaces the old tail...
+    const tail = nextTail(legacy, read);
+    expect(tail).toEqual(rows(...read));
+    // ...so the next read with nothing new pushes nothing, and a new photo exactly once
+    expect(alignedNew(tail, read)).toEqual([]);
+    expect(alignedNew(tail, [...read, photo()])).toEqual([photo()]);
+    const after = nextTail({ initialized: true, tail }, [...read, photo()]);
+    expect(alignedNew(after, [...read, photo()])).toEqual([]);
+    expect(alignedNew(after, [...read, photo(), photo()])).toEqual([photo()]);
+  });
+
+  it('a photo after the last message of an old tail is new once, not on every read', () => {
+    const legacy = { initialized: true, tail: tailOf(them('在吗')) };
+    const read = [t(them('在吗')), photo()];
+    expect(alignedNew(legacy.tail, read)).toEqual([photo()]);
+    const tail = nextTail(legacy, read);
+    expect(alignedNew(tail, read)).toEqual([]);
+  });
+
+  it('a reader that does not report media (the plugin not updated yet) aligns exactly as before', () => {
+    const tail = tailOf(them('在吗'), me('您好'));
+    expect(alignedNew(tail, [them('在吗'), me('您好'), them('多少钱')])).toEqual([them('多少钱')]);
+    expect(nextTail({ initialized: true, tail }, [them('在吗'), me('您好'), them('多少钱')])).toEqual(tailOf(them('在吗'), me('您好'), them('多少钱')));
+    // and a tail with media read by such a reader matches on its text messages
+    const aware = rows(t(them('在吗')), photo(), t(me('您好')));
+    expect(alignedNew(aware, [them('在吗'), me('您好'), them('多少钱')])).toEqual([them('多少钱')]);
+  });
+
+  it('a photo and a text are different messages, a photo from us is not the customer\'s', () => {
+    const tail = rows(t(them('在吗')), photo());
+    expect(alignedNew(tail, [t(them('在吗')), photo(), photo(true)])).toEqual([photo(true)]);
+    expect(alignedNew(rows(t(them(PHOTO))), [photo()])).toEqual([photo()]);
   });
 });
 
@@ -116,6 +184,11 @@ describe('parseImTime (Asia/Shanghai)', () => {
 describe('pickConversations', () => {
   const conv = (id: string, unread: number, summary = '') => ({ id, name: id, unread, summary });
 
+  it('a never-read conversation that was opened but not saved comes back even without unread', () => {
+    const threads = new Map<string, any>([['p', { initialized: false, lastSummary: null, pendingUnread: 1 }]]);
+    expect(pickConversations([conv('p', 0, 'x'), conv('q', 0, 'y'), conv('u', 1)], threads, 5).map((c) => c.id)).toEqual(['u', 'p']);
+  });
+
   it('unread first, then initialized conversations whose preview changed, at most `limit`', () => {
     const threads = new Map<string, any>([
       ['a', { initialized: true, lastSummary: '旧' }],
@@ -124,6 +197,21 @@ describe('pickConversations', () => {
     ]);
     const picked = pickConversations([conv('a', 0, '新'), conv('b', 0, '同'), conv('c', 0, 'x'), conv('d', 0, 'y'), conv('e', 1), conv('f', 3)], threads, 3);
     expect(picked.map((c) => c.id)).toEqual(['f', 'e', 'a']);
+  });
+});
+
+describe('DM read cadence', () => {
+  it('a linked account is read every minute; every 5 minutes while its real-time watcher is healthy', () => {
+    expect(DM_READ_EVERY_MS).toBe(60_000);
+    expect(DM_WATCHED_READ_EVERY_MS).toBe(5 * 60_000);
+  });
+
+  it('what we sent is taken for an echo for 10 minutes', () => {
+    expect(DM_ECHO_WINDOW_MS).toBe(10 * 60_000);
+  });
+
+  it('a read holds its account for 10 minutes at a time', () => {
+    expect(DM_READ_LEASE_MS).toBe(10 * 60_000);
   });
 });
 
@@ -138,14 +226,17 @@ describe('OkchatDmService', () => {
     ...over,
   });
 
-  const setup = (opts: { conversations?: any; reads?: Record<string, any>; threads?: any[]; sent?: string[]; bindings?: any[] } = {}) => {
+  const setup = (
+    opts: { conversations?: any; lists?: any[]; reads?: Record<string, any>; threads?: any[]; sent?: string[]; sentLog?: Array<{ text: string; sentAt: Date }>; bindings?: any[] } = {}
+  ) => {
     const dm = {
       maxLength: 500,
       readGapMs: [8000, 15000] as [number, number],
       loggedOutReason: '小红书网页版已退出登录',
-      conversations: jest.fn(async () => {
-        if (opts.conversations instanceof Error) throw opts.conversations;
-        return opts.conversations ?? [];
+      conversations: jest.fn(async (..._args: any[]) => {
+        const next = Array.isArray(opts.lists) && opts.lists.length ? opts.lists.shift() : opts.conversations;
+        if (next instanceof Error) throw next;
+        return next ?? [];
       }),
       read: jest.fn(async (_slot: string, id: string) => {
         const r = opts.reads?.[id];
@@ -156,9 +247,16 @@ describe('OkchatDmService', () => {
     };
     const repo = {
       readableBindings: jest.fn(async () => opts.bindings ?? [binding()]),
+      claimRead: jest.fn(async (..._args: any[]) => true),
+      renewRead: jest.fn(async (..._args: any[]) => true),
+      releaseRead: jest.fn(async (..._args: any[]) => ({ count: 1 })),
       threads: jest.fn(async () => opts.threads ?? []),
-      sentTexts: jest.fn(async () => opts.sent ?? []),
+      sentTexts: jest.fn(async (_id: string, _thread: string, since: Date) => [
+        ...(opts.sent ?? []),
+        ...(opts.sentLog ?? []).filter((r) => r.sentAt >= since).map((r) => r.text),
+      ]),
       saveRead: jest.fn(async () => []),
+      markPending: jest.fn(async () => ({})),
       updateBinding: jest.fn(async () => ({ count: 1 })),
     };
     const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm }) };
@@ -169,6 +267,8 @@ describe('OkchatDmService', () => {
       sleeps.push(ms);
     };
     (service as any).random = () => 0.5;
+    (service as any).clock = () => NOW;
+    (service as any).newOwner = () => 'read-1';
     return { service, repo, dm, outbox, sleeps };
   };
 
@@ -179,7 +279,12 @@ describe('OkchatDmService', () => {
       threads: [],
     });
     await service.readDue(NOW);
-    expect(repo.readableBindings).toHaveBeenCalledWith(['xiaohongshu'], NOW, new Date(NOW.getTime() - DM_READ_EVERY_MS), expect.any(Number));
+    expect(repo.readableBindings).toHaveBeenCalledWith(
+      ['xiaohongshu'],
+      NOW,
+      { readBefore: new Date(NOW.getTime() - DM_READ_EVERY_MS), watchedReadBefore: new Date(NOW.getTime() - DM_WATCHED_READ_EVERY_MS) },
+      expect.any(Number)
+    );
     expect(repo.saveRead).toHaveBeenCalledWith(
       'i1',
       'c1',
@@ -228,6 +333,107 @@ describe('OkchatDmService', () => {
     expect(thread.seq).toBe(8);
     expect(batch.batchId).toBe('c1:8-8');
     expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:8', text: '谢谢', sentAt: '2026-10-02T10:00:00+08:00' }]);
+  });
+
+  it('a conversation read for the first time pushes only its unread messages, not older history', async () => {
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好，请问还有货吗' }],
+      reads: { c1: [them('我们已相互关注，开始聊天吧', '03:47'), them('你好，请问还有货吗', '17:21')] },
+      threads: [],
+    });
+    await service.readDue(NOW);
+    const [, , thread, batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:1', text: '你好，请问还有货吗', sentAt: '2026-10-02T17:21:00+08:00' }]);
+    // both are in the tail the next read aligns with
+    expect(thread.tail).toEqual(tailOf(them('我们已相互关注，开始聊天吧'), them('你好，请问还有货吗')));
+    expect(thread.seq).toBe(1);
+  });
+
+  it('a photo the customer sent is pushed in words the agent can act on', async () => {
+    const PHOTO = '［对方发来一张图片或表情，请在小红书 App 查看］';
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '[图片]' }],
+      reads: {
+        c1: [
+          { ...them('在吗'), kind: 'text' },
+          { ...me('在的'), kind: 'text' },
+          { from: '小C', mine: false, text: PHOTO, time: '14:05', kind: 'media' },
+        ],
+      },
+      threads: [{ threadId: 'c1', initialized: true, seq: 3, lastSummary: '在的', tail: tailOf(them('在吗'), me('在的')) }],
+    });
+    await service.readDue(NOW);
+    const [, , thread, batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages).toEqual([{ id: 'c1:4', text: PHOTO, sentAt: '2026-10-02T14:05:00+08:00' }]);
+    expect(thread.tail.at(-1)).toEqual({ from: '小C', mine: false, text: PHOTO, kind: 'media' });
+  });
+
+  it('first contact: messages sent while the read waited between the list and the conversation are kept', async () => {
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('我们已相互关注，开始聊天吧', '03:47'), them('你好', '17:21'), them('在吗', '17:21'), them('想问下价格', '17:21')] },
+      threads: [],
+    });
+    await service.readDue(NOW);
+    const [, , , batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages.map((m: any) => m.text)).toEqual(['你好', '在吗', '想问下价格']);
+  });
+
+  it('a never-read conversation is marked before it is opened (opening it marks it read on the platform)', async () => {
+    const { service, repo } = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 2, summary: '在吗' }],
+      reads: { c1: new Error('xiaohongshu TIMEOUT: the message list did not load') },
+      threads: [],
+    });
+    await service.readDue(NOW);
+    expect(repo.markPending).toHaveBeenCalledWith('i1', 'c1', { displayName: '小C', pendingUnread: 2, pendingSummary: '在吗' });
+    expect(repo.saveRead).not.toHaveBeenCalled();
+  });
+
+  it('...so the next read opens it again although its badge is gone, and pushes what was unread then', async () => {
+    const { service, repo } = setup({
+      // the failed open cleared the badge; a third message came after
+      conversations: [{ id: 'c1', name: '小C', unread: 0, summary: '还有吗' }],
+      reads: { c1: [them('我们已相互关注，开始聊天吧'), them('你好'), them('在吗'), them('还有吗')] },
+      threads: [{ threadId: 'c1', initialized: false, seq: 0, lastSummary: null, tail: [], pendingUnread: 2, pendingSummary: '在吗' }],
+    });
+    await service.readDue(NOW);
+    expect(repo.markPending).not.toHaveBeenCalled();
+    const [, , , batch] = repo.saveRead.mock.calls[0] as any[];
+    expect(batch.payload.threads[0].messages.map((m: any) => m.text)).toEqual(['你好', '在吗', '还有吗']);
+  });
+
+  it('a conversation never read and without unread messages is left alone', async () => {
+    const { service, dm, repo } = setup({ conversations: [{ id: 'c1', name: '小C', unread: 0, summary: 'x' }], reads: { c1: [them('旧的')] } });
+    await service.readDue(NOW);
+    expect(dm.read).not.toHaveBeenCalled();
+    expect(repo.saveRead).not.toHaveBeenCalled();
+  });
+
+  it('drops an echo of what we sent in the last 10 minutes, not a customer saying the same later', async () => {
+    const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
+    const thread = { threadId: 'c1', initialized: true, seq: 1, lastSummary: '在吗', tail: tailOf(them('在吗')) };
+    // we said 你好 15 minutes ago; the customer says 你好 now
+    const later = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('在吗'), me('你好'), them('你好')] },
+      threads: [thread],
+      sentLog: [{ text: '你好', sentAt: minutesAgo(15) }],
+    });
+    await later.service.readDue(NOW);
+    expect(later.repo.sentTexts).toHaveBeenCalledWith('i1', 'c1', new Date(NOW.getTime() - DM_ECHO_WINDOW_MS));
+    expect(((later.repo.saveRead.mock.calls[0] as any[])[3] as any).payload.threads[0].messages).toEqual([
+      { id: 'c1:2', text: '你好', sentAt: '2026-10-02T10:00:00+08:00' },
+    ]);
+    // our 你好 of a minute ago read back without the mark of ours: an echo, dropped
+    const echo = setup({
+      conversations: [{ id: 'c1', name: '小C', unread: 1, summary: '你好' }],
+      reads: { c1: [them('在吗'), them('你好')] },
+      threads: [thread],
+      sentLog: [{ text: '你好', sentAt: minutesAgo(1) }],
+    });
+    await echo.service.readDue(NOW);
+    expect((echo.repo.saveRead.mock.calls[0] as any[])[3]).toBeNull();
   });
 
   it('a conversation with nothing new still stores its tail, without a batch', async () => {
@@ -282,5 +488,196 @@ describe('OkchatDmService', () => {
     const { service, repo } = setup({ conversations: new Error('xiaohongshu BRIDGE_DOWN: worker') });
     await service.readDue(NOW);
     expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW });
+  });
+
+  it('a conversation list that does not show is tried once more right away, waiting longer', async () => {
+    const { service, repo, dm } = setup({
+      lists: [new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item'), [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }]],
+      reads: { c1: [them('在吗')] },
+    });
+    await service.readDue(NOW);
+    expect(dm.conversations.mock.calls).toEqual([['slot1'], ['slot1', { patient: true }]]);
+    expect(repo.saveRead).toHaveBeenCalledTimes(1);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: null });
+  });
+
+  it('the second try failing too counts as one failed read', async () => {
+    const { service, repo, dm } = setup({ conversations: new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item') });
+    await service.readDue(NOW);
+    expect(dm.conversations).toHaveBeenCalledTimes(2);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW });
+    expect(repo.saveRead).not.toHaveBeenCalled();
+  });
+
+  it('a second try refused by an xhsdm without --wait keeps the first failure; one that finds the site logged out says so', async () => {
+    const logs = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const refused = setup({
+      lists: [new Error('xiaohongshu FAILED: Selector not found: .xhs-im-conv-item'), new BadBody('xiaohongshu', '{}', '{}', "error: unknown option '--wait'")],
+    });
+    await refused.service.readDue(NOW);
+    expect(logs.mock.calls.at(-1)).toEqual(['okchat dm list i1', 'xiaohongshu FAILED: Selector not found: .xhs-im-conv-item']);
+    const out = setup({ lists: [new Error('xiaohongshu TIMEOUT: slow'), new RefreshToken('xiaohongshu', '{}', '{}', 'Not logged in')] });
+    await out.service.readDue(NOW);
+    expect(out.repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: '小红书网页版已退出登录' });
+    logs.mockRestore();
+  });
+
+  it('a logged-out site or platform pushback is not tried again', async () => {
+    const out = setup({ conversations: new RefreshToken('xiaohongshu', '{}', '{}', 'Not logged in') });
+    await out.service.readDue(NOW);
+    expect(out.dm.conversations).toHaveBeenCalledTimes(1);
+    const pushed = setup({ conversations: new Error('平台风控拦截了这次操作：请完成滑块验证') });
+    await pushed.service.readDue(NOW);
+    expect(pushed.dm.conversations).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OkchatDmService: one read of an account at a time', () => {
+  const NOW = new Date('2026-10-02T06:30:00Z');
+  const make = (claims: boolean[]) => {
+    const order: string[] = [];
+    const dm = {
+      maxLength: 500,
+      readGapMs: [0, 0] as [number, number],
+      loggedOutReason: 'x',
+      conversations: jest.fn(async () => {
+        order.push('list');
+        return [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }];
+      }),
+      read: jest.fn(async () => {
+        order.push('read c1');
+        return [them('在吗')];
+      }),
+      send: jest.fn(),
+    };
+    const repo = {
+      readableBindings: jest.fn(async () => [
+        { integrationId: 'i1', loggedOutReason: null, integration: { token: 'slot1', providerIdentifier: 'xiaohongshu' } },
+      ]),
+      claimRead: jest.fn(async (_id: string, owner: string, at: Date, until: Date) => {
+        order.push(`claim ${owner} until +${(until.getTime() - at.getTime()) / 60_000}m`);
+        return claims.length ? claims.shift()! : true;
+      }),
+      renewRead: jest.fn(async (_id: string, owner: string, at: Date, until: Date) => {
+        order.push(`renew ${owner} until +${(until.getTime() - at.getTime()) / 60_000}m`);
+        return claims.length ? claims.shift()! : true;
+      }),
+      releaseRead: jest.fn(async (_id: string, owner: string) => {
+        order.push(`release ${owner}`);
+        return { count: 1 };
+      }),
+      threads: jest.fn(async () => []),
+      sentTexts: jest.fn(async () => []),
+      saveRead: jest.fn(async () => {
+        order.push('save c1');
+        return [];
+      }),
+      markPending: jest.fn(async (_id: string, threadId: string) => {
+        order.push(`pending ${threadId}`);
+        return {};
+      }),
+      updateBinding: jest.fn(async () => ({ count: 1 })),
+    };
+    const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm }) };
+    const service = new OkchatDmService(repo as any, manager as any, { queueStatus: jest.fn() } as any);
+    Object.assign(service as any, { sleep: async () => undefined, random: () => 0, clock: () => NOW, newOwner: () => 'read-1' });
+    return { service, repo, order };
+  };
+
+  it('a read holds the account\'s lease, renewed before each page, and gives it back', async () => {
+    const { service, order } = make([]);
+    expect(await service.readDue(NOW)).toEqual({ accounts: 1, read: 1 });
+    expect(order).toEqual([
+      'claim read-1 until +10m',
+      'list',
+      // right after the list, before anything is opened
+      'renew read-1 until +10m',
+      'renew read-1 until +10m',
+      'pending c1',
+      'read c1',
+      'renew read-1 until +10m',
+      'save c1',
+      'release read-1',
+    ]);
+  });
+
+  it('an account another read holds (the watcher\'s or a stuck one\'s) is left to it', async () => {
+    const { service, order, repo } = make([false]);
+    expect(await service.readDue(NOW)).toEqual({ accounts: 1, read: 0 });
+    expect(order).toEqual(['claim read-1 until +10m']);
+    expect(repo.releaseRead).not.toHaveBeenCalled();
+  });
+
+  it('a read that lost its lease (it took longer than the lease) stops without saving', async () => {
+    const { service, order, repo } = make([true, true, true, false]);
+    await service.readDue(NOW);
+    expect(order).toEqual([
+      'claim read-1 until +10m',
+      'list',
+      'renew read-1 until +10m',
+      'renew read-1 until +10m',
+      'pending c1',
+      'read c1',
+      'renew read-1 until +10m',
+      'release read-1',
+    ]);
+    expect(repo.saveRead).not.toHaveBeenCalled();
+    expect(repo.updateBinding).not.toHaveBeenCalled();
+  });
+});
+
+describe('OkchatDmService.readOne: a read right away (the watcher saw the list change)', () => {
+  const NOW = new Date('2026-10-03T06:30:00Z');
+  const make = (opts: { binding?: any; claim?: boolean } = {}) => {
+    const dm = {
+      maxLength: 500,
+      readGapMs: [0, 0] as [number, number],
+      loggedOutReason: 'x',
+      conversations: jest.fn(async () => [{ id: 'c1', name: '小C', unread: 1, summary: '在吗' }]),
+      read: jest.fn(async () => [them('在吗')]),
+      send: jest.fn(),
+    };
+    const binding = { integrationId: 'i1', loggedOutReason: null, integration: { token: 'slot1', providerIdentifier: 'xiaohongshu' } };
+    const repo = {
+      readableBinding: jest.fn(async () => ('binding' in opts ? opts.binding : binding)),
+      claimRead: jest.fn(async () => opts.claim ?? true),
+      renewRead: jest.fn(async () => true),
+      releaseRead: jest.fn(async () => ({ count: 1 })),
+      threads: jest.fn(async () => []),
+      sentTexts: jest.fn(async () => []),
+      saveRead: jest.fn(async () => []),
+      markPending: jest.fn(async () => ({})),
+      updateBinding: jest.fn(async () => ({ count: 1 })),
+    };
+    const manager = { getDmProviders: () => ['xiaohongshu'], getSocialIntegration: () => ({ name: '小红书', dm }) };
+    const service = new OkchatDmService(repo as any, manager as any, { queueStatus: jest.fn() } as any);
+    Object.assign(service as any, { sleep: async () => undefined, random: () => 0, clock: () => NOW, newOwner: () => 'read-9' });
+    return { service, repo, dm };
+  };
+
+  it('reads the account the same way a round does: list, conversations, batch, lastReadAt', async () => {
+    const { service, repo, dm } = make();
+    expect(await service.readOne('i1', NOW)).toEqual({ read: true, more: false });
+    expect(repo.readableBinding).toHaveBeenCalledWith('i1', ['xiaohongshu'], NOW);
+    expect(dm.conversations).toHaveBeenCalledWith('slot1');
+    expect(repo.saveRead).toHaveBeenCalledTimes(1);
+    expect(repo.updateBinding).toHaveBeenCalledWith('i1', { lastReadAt: NOW, loggedOutReason: null });
+    expect(repo.releaseRead).toHaveBeenCalledWith('i1', 'read-9');
+  });
+
+  it('says when unread conversations were left for another read (it opens 5 per read)', async () => {
+    const { service, dm } = make();
+    dm.conversations.mockResolvedValueOnce(Array.from({ length: 7 }, (_, i) => ({ id: `c${i}`, name: 'x', unread: 1, summary: '在吗' })));
+    expect(await service.readOne('i1', NOW)).toEqual({ read: true, more: true });
+    expect(dm.read).toHaveBeenCalledTimes(5);
+  });
+
+  it('busy while another read has the account; nothing for an account not to be read (paused, unlinked)', async () => {
+    const busy = make({ claim: false });
+    expect(await busy.service.readOne('i1', NOW)).toEqual({ read: false, busy: true });
+    expect(busy.dm.conversations).not.toHaveBeenCalled();
+    const none = make({ binding: null });
+    expect(await none.service.readOne('i1', NOW)).toEqual({ read: false });
+    expect(none.repo.claimRead).not.toHaveBeenCalled();
   });
 });

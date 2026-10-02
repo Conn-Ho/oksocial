@@ -165,6 +165,9 @@ export type DmMessage = {
   text: string;
   // as the site prints it, often relative (14:05, 昨天 14:05, 09-28 14:05)
   time: string;
+  // what the message is, from a reader that tells (text, or media: an image, a sticker, a video,
+  // whose text then describes it). Readers that do not tell skipped media messages.
+  kind?: 'text' | 'media';
 };
 export type DmCapabilities = {
   // the longest reply the platform takes, in characters
@@ -175,7 +178,8 @@ export type DmCapabilities = {
   loggedOutReason: string;
   // why a reply cannot go out as written (shown to the agent), or null
   checkText?(text: string): string | null;
-  conversations(token: string): Promise<DmConversation[]>;
+  // `patient`: a second try after the list did not show, waiting longer for it
+  conversations(token: string, opts?: { patient?: boolean }): Promise<DmConversation[]>;
   // the last `limit` messages of a conversation, oldest first
   read(token: string, conversationId: string, limit: number): Promise<DmMessage[]>;
   send(token: string, conversationId: string, text: string): Promise<void>;

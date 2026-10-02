@@ -3324,7 +3324,7 @@
   "okchat_card_title": "DMs are handled in okchat",
   "okchat_card_linked": "Connected",
   "okchat_card_waiting": "Confirm the connection on the okchat page that just opened. This card turns \"Connected\" when it is done.",
-  "okchat_card_linked_hint": "{{platforms}} DMs sync to okchat about every 3 minutes. The AI assistant and your agents answer them there, and the replies go out from these accounts.",
+  "okchat_card_linked_hint": "{{platforms}} DMs sync to okchat as they come in, usually within a minute. The AI assistant and your agents answer them there, and the replies go out from these accounts.",
   "okchat_card_gave_up": "okchat has not confirmed the connection yet. If you already confirmed it in okchat, wait a moment and refresh, or open it again.",
   "okchat_card_hint": "{{platforms}} DMs are no longer answered in oksocial: sign in to okchat with your oksocial account and the team's accounts become okchat channels automatically.",
   "okchat_card_reopen": "Open okchat again",

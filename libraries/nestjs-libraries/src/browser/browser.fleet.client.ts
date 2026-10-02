@@ -82,7 +82,31 @@ export interface BrowserLoginFormState {
   stale?: true;
 }
 
+/** An account the worker keeps a real-time DM watcher for (PUT /dm-watch). */
+export interface DmWatchAccount {
+  slot: string;
+  // the integration id: changes come back with it
+  key: string;
+}
+
+/** How a watcher is doing (the worker's Watcher; deploy/browser-fleet/README.md). */
+export interface DmWatcherStatus {
+  slot: string;
+  key: string;
+  healthy: boolean;
+  phase: string;
+  page: string | null;
+  reason: string | null;
+}
+
+export interface DmWatchChanges {
+  cursor: string;
+  changes: Array<{ slot: string; key: string; at: string }>;
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
+// a long poll is answered by the worker within its wait; this much more and it is lost
+const LONG_POLL_GRACE_MS = 15_000;
 // A run may take up to its own timeout plus queueing behind other runs of the same slot.
 const RUN_GRACE_MS = 120_000;
 
@@ -99,7 +123,7 @@ export class BrowserFleetClient {
   }
 
   private async call<T>(
-    method: 'GET' | 'POST' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
     timeoutMs = DEFAULT_TIMEOUT_MS
@@ -199,6 +223,17 @@ export class BrowserFleetClient {
       { urls },
       10 * 60_000
     );
+  }
+
+  /** The accounts to keep a real-time DM watcher for, all of them (others are dropped); their health. */
+  dmWatch(accounts: DmWatchAccount[]) {
+    return this.call<{ ok: boolean; watchers: DmWatcherStatus[] }>('PUT', '/dm-watch', { accounts });
+  }
+
+  /** The watched accounts whose conversation list changed after `cursor`, waiting up to waitMs for one. */
+  dmWatchChanges(cursor: string | null, waitMs: number) {
+    const query = new URLSearchParams({ waitMs: String(waitMs), ...(cursor ? { cursor } : {}) });
+    return this.call<{ ok: boolean } & DmWatchChanges>('GET', `/dm-watch/changes?${query}`, undefined, waitMs + LONG_POLL_GRACE_MS);
   }
 
   async run<T = unknown>(slot: string, args: string[], timeoutMs = 120_000) {

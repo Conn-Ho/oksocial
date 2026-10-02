@@ -3,7 +3,8 @@ import { OkchatOutboxKind, OkchatReplyStatus, Prisma } from '@prisma/client';
 import { PrismaRepository, PrismaTransaction } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 
 export type OkchatBindingInput = { integrationId: string; bindingId: string; hookUrl: string };
-export type OkchatTailMessage = { from: string; mine: boolean; text: string };
+// kind: set once the reader reports media messages (tails stored before have none, see alignedNew)
+export type OkchatTailMessage = { from: string; mine: boolean; text: string; kind?: 'text' | 'media' };
 export type OkchatOutboxInput = {
   integrationId: string;
   kind: OkchatOutboxKind;
@@ -25,6 +26,17 @@ const channelSelect = {
   inBetweenSteps: true,
   deletedAt: true,
 } satisfies Prisma.IntegrationSelect;
+
+// an account whose DMs can be read: in use, its browser logged in, its team linked to okchat
+const usableIntegration = (providers: string[]): Prisma.IntegrationWhereInput => ({
+  deletedAt: null,
+  disabled: false,
+  refreshNeeded: false,
+  inBetweenSteps: false,
+  providerIdentifier: { in: providers },
+  organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
+});
+const notPaused = (now: Date): Prisma.OkchatBindingWhereInput => ({ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] });
 
 @Injectable()
 export class OkchatRepository {
@@ -184,25 +196,91 @@ export class OkchatRepository {
     });
   }
 
-  /** Active bindings of linked organizations whose account can be read now, the least recently read first. */
-  readableBindings(providers: string[], now: Date, readBefore: Date, limit: number) {
+  /**
+   * Active bindings of linked organizations whose account is due a read now, the least recently read
+   * first: not read since `readBefore`, or, while the account's DM watcher is healthy (it triggers a
+   * read on every new DM), not since `watchedReadBefore`.
+   */
+  readableBindings(providers: string[], now: Date, cutoffs: { readBefore: Date; watchedReadBefore: Date }, limit: number) {
     return this._bindings.model.okchatBinding.findMany({
       where: {
         active: true,
-        OR: [{ lastReadAt: null }, { lastReadAt: { lt: readBefore } }],
-        AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }],
-        integration: {
-          deletedAt: null,
-          disabled: false,
-          refreshNeeded: false,
-          inBetweenSteps: false,
-          providerIdentifier: { in: providers },
-          organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
-        },
+        AND: [
+          notPaused(now),
+          // another read has the account right now
+          { OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: now } }] },
+          {
+            OR: [
+              { lastReadAt: null },
+              { lastReadAt: { lt: cutoffs.watchedReadBefore } },
+              { lastReadAt: { lt: cutoffs.readBefore }, OR: [{ watchHealthyUntil: null }, { watchHealthyUntil: { lt: now } }] },
+            ],
+          },
+        ],
+        integration: usableIntegration(providers),
       },
       orderBy: { lastReadAt: { sort: 'asc', nulls: 'first' } },
       take: limit,
       include: { integration: { select: channelSelect } },
+    });
+  }
+
+  /** One binding a round would read, whenever it was last read (a read its watcher asked for). */
+  readableBinding(integrationId: string, providers: string[], now: Date) {
+    return this._bindings.model.okchatBinding.findFirst({
+      where: { integrationId, active: true, AND: [notPaused(now)], integration: usableIntegration(providers) },
+      include: { integration: { select: channelSelect } },
+    });
+  }
+
+  /** The accounts to keep a real-time DM watcher for: readable ones whose DM site is logged in. */
+  watchableBindings(providers: string[], now: Date) {
+    return this._bindings.model.okchatBinding.findMany({
+      where: { active: true, loggedOutReason: null, AND: [notPaused(now)], integration: usableIntegration(providers) },
+      select: { integrationId: true, integration: { select: { token: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** The accounts whose watcher is healthy (until `until`, when the poll is a safety net) and the others. */
+  async setWatchHealth(healthy: string[], unhealthy: string[], until: Date) {
+    if (healthy.length) {
+      await this._bindings.model.okchatBinding.updateMany({ where: { integrationId: { in: healthy } }, data: { watchHealthyUntil: until } });
+    }
+    if (unhealthy.length) {
+      await this._bindings.model.okchatBinding.updateMany({ where: { integrationId: { in: unhealthy } }, data: { watchHealthyUntil: null } });
+    }
+  }
+
+  /**
+   * Takes the account's read lease for `owner` until `until`: false while another read holds an
+   * unexpired one. A row update, so two readers cannot both win.
+   */
+  async claimRead(integrationId: string, owner: string, at: Date, until: Date) {
+    const { count } = await this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }] },
+      data: { readLeaseUntil: until, readLeaseOwner: owner },
+    });
+    return count === 1;
+  }
+
+  /**
+   * Extends the lease `owner` holds: false once it lapsed, even if nobody took it meanwhile (another
+   * read may have come and gone, and what this read loaded at its start is stale).
+   */
+  async renewRead(integrationId: string, owner: string, at: Date, until: Date) {
+    const { count } = await this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, readLeaseOwner: owner, readLeaseUntil: { gte: at } },
+      data: { readLeaseUntil: until },
+    });
+    return count === 1;
+  }
+
+  /** Gives the read lease back, unless another read took it over meanwhile. */
+  releaseRead(integrationId: string, owner: string) {
+    return this._bindings.model.okchatBinding.updateMany({
+      where: { integrationId, readLeaseOwner: owner },
+      data: { readLeaseUntil: null, readLeaseOwner: null },
     });
   }
 
@@ -225,6 +303,18 @@ export class OkchatRepository {
     });
   }
 
+  /**
+   * A never-read conversation about to be opened: what its list entry said (opening it marks it read
+   * on the platform), so a read that dies before saving it is not the end of its messages.
+   */
+  markPending(integrationId: string, threadId: string, data: { displayName: string; pendingUnread: number; pendingSummary: string }) {
+    return this._threads.model.okchatThread.upsert({
+      where: { integrationId_threadId: { integrationId, threadId } },
+      create: { integrationId, threadId, ...data },
+      update: { pendingUnread: data.pendingUnread, pendingSummary: data.pendingSummary },
+    });
+  }
+
   /** A conversation as just read, with the batch of its new messages (one transaction). */
   saveRead(
     integrationId: string,
@@ -232,7 +322,8 @@ export class OkchatRepository {
     data: { displayName: string; tail: OkchatTailMessage[]; seq: number; lastSummary: string },
     batch: OkchatOutboxInput | null
   ) {
-    const thread = { ...data, tail: data.tail as unknown as Prisma.InputJsonValue, initialized: true };
+    // a saved read is no longer pending
+    const thread = { ...data, tail: data.tail as unknown as Prisma.InputJsonValue, initialized: true, pendingUnread: 0, pendingSummary: null as string | null };
     return this._transaction.model.$transaction([
       this._threads.model.okchatThread.upsert({
         where: { integrationId_threadId: { integrationId, threadId } },

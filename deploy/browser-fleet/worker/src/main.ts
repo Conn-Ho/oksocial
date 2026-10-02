@@ -1,9 +1,12 @@
 /** Entry point: `node src/main.ts` (Node 22 strips the types; no build step). */
+import type { FastifyInstance } from 'fastify';
 import { createAccountCtl } from './account-ctl.ts';
 import { buildApp, LOG_REDACT_PATHS } from './app.ts';
 import { captureQr, showTab } from './cdp.ts';
 import { realClock } from './clock.ts';
 import { loadConfig } from './config.ts';
+import { createCdpWatchBrowser } from './dm-watch/cdp.ts';
+import { createDmWatch, fileTargetStore } from './dm-watch/manager.ts';
 import { fillLoginForm, probeLoginForm } from './login-form.ts';
 import { createMediaFetcher } from './media.ts';
 import { tcpProbe } from './net.ts';
@@ -28,7 +31,25 @@ async function main(): Promise<void> {
   const slots = simBin ? withSimulatedSlots(realSlots) : realSlots;
   const sim = simBin ? createOpencli(simBin, { env: { ...process.env, SIM_STATE_DIR: config.simStateDir } }) : undefined;
   const runQueue = new KeyedQueue({ maxConcurrent: RUN_CONCURRENCY, maxPendingPerKey: MAX_QUEUED_RUNS_PER_SLOT });
-  const runner = createSlotRunner({ opencli: createOpencli(config.opencliBin), sim, slots, queue: runQueue, clock });
+  // the app's logger exists once the app does; the watch only logs after start()
+  let logged: FastifyInstance | undefined;
+  const dmWatch = createDmWatch({
+    slots,
+    browser: createCdpWatchBrowser(),
+    activity: (slot) => runQueue.activity(slot),
+    clock,
+    store: fileTargetStore(config.dmWatchStateFile),
+    yieldToRuns: config.dmWatchYield,
+    log: { info: (obj, msg) => logged?.log.info(obj, msg), warn: (obj, msg) => logged?.log.warn(obj, msg) },
+  });
+  const runner = createSlotRunner({
+    opencli: createOpencli(config.opencliBin),
+    sim,
+    slots,
+    queue: runQueue,
+    clock,
+    beforeRun: (slot, args) => dmWatch.beforeRun(slot, args),
+  });
   const media = createMediaFetcher({ dir: config.mediaDir, allowedOrigins: config.mediaAllowedOrigins, maxBytes: config.mediaMaxBytes });
 
   const app = await buildApp({
@@ -38,13 +59,16 @@ async function main(): Promise<void> {
     runQueue,
     daemonUp: () => tcpProbe(OPENCLI_DAEMON_PORT),
     openTab: (cdpPort, url, reuseId) => showTab(cdpPort, url, reuseId),
-    captureQr: (cdpPort, targetId, reveal) => captureQr(cdpPort, targetId, reveal),
-    probeLoginForm: (cdpPort, targetId, hints) => probeLoginForm(cdpPort, targetId, hints),
-    fillLoginForm: (cdpPort, targetId, input) => fillLoginForm(cdpPort, targetId, input),
+    captureQr: (cdpPort, targetId, reveal, avoid) => captureQr(cdpPort, targetId, reveal, { avoid }),
+    probeLoginForm: (cdpPort, targetId, hints, avoid) => probeLoginForm(cdpPort, targetId, hints, { avoid }),
+    fillLoginForm: (cdpPort, targetId, input, avoid) => fillLoginForm(cdpPort, targetId, input, { avoid }),
     media,
+    dmWatch,
     runAllowedSites: config.runAllowedSites,
     logger: { level: config.logLevel, redact: { paths: LOG_REDACT_PATHS, censor: '[redacted]' } },
   });
+  logged = app;
+  dmWatch.start();
 
   const sweep = (): void => {
     media.cleanup().then(

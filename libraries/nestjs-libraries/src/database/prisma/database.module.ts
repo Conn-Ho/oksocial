@@ -98,6 +98,7 @@ import { SyncSettingsService } from '@gitroom/nestjs-libraries/database/prisma/s
 import { OkchatRepository } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.repository';
 import { OkchatLinkService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.link.service';
 import { OkchatDmService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.service';
+import { OkchatDmWatchService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.dm.watch.service';
 import { OkchatOutboxService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.outbox.service';
 import { OkchatReplyService } from '@gitroom/nestjs-libraries/database/prisma/okchat/okchat.reply.service';
 import { OkchatClient } from '@gitroom/nestjs-libraries/okchat/okchat.client';
@@ -164,6 +165,7 @@ import { OkchatClient } from '@gitroom/nestjs-libraries/okchat/okchat.client';
     OkchatRepository,
     OkchatLinkService,
     OkchatDmService,
+    OkchatDmWatchService,
     OkchatOutboxService,
     OkchatReplyService,
     ChannelStatsRepository,

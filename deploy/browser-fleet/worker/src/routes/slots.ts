@@ -11,7 +11,9 @@ const REVEAL_MAX = 200;
 
 type SlotParams = { Params: { slot: string } };
 
-export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captureQr, probeLoginForm, fillLoginForm }: AppDeps): void {
+export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captureQr, probeLoginForm, fillLoginForm, dmWatch }: AppDeps): void {
+  // the DM watcher's tabs are never the screen tab: nothing is clicked or typed there
+  const watcherTabs = (name: string): ReadonlySet<string> => dmWatch?.targetIds(name) ?? new Set();
   // The tab each slot's login screen shows (this process): the next open reuses it.
   const screenTabs = new Map<string, string>();
   // Slots whose login page got its `reveal` click since it was opened: some are toggles (SMS ⇄ QR),
@@ -92,7 +94,7 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captu
     if (slots.isSimulated(name)) return { image: null };
     const slot = await slots.require(name);
     if (slot.chrome !== 'active') throw new HttpError(409, 'CHROME_NOT_RUNNING', `slot ${name}: chrome is ${slot.chrome}`);
-    const qr = await captureQr(slot.cdp, screenTabs.get(name), revealed.has(name) ? undefined : reveal);
+    const qr = await captureQr(slot.cdp, screenTabs.get(name), revealed.has(name) ? undefined : reveal, watcherTabs(name));
     if (qr.revealed) revealed.add(name);
     return { image: qr.image };
   });
@@ -104,7 +106,7 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captu
     const name = slotParam(req.params.slot);
     const hints = parseHintsQuery(req.query.hints);
     const slot = await activeSlot(name);
-    return probeLoginForm(slot.cdp, screenTabs.get(name), hints);
+    return probeLoginForm(slot.cdp, screenTabs.get(name), hints, watcherTabs(name));
   });
 
   app.post<SlotParams>('/slots/:slot/login-form', async (req) => {
@@ -114,7 +116,7 @@ export function registerSlotRoutes(app: FastifyInstance, { slots, openTab, captu
     if (filling.has(name)) throw new HttpError(409, 'BUSY', `slot ${name}: the login form is still being filled in`);
     filling.add(name);
     try {
-      return await fillLoginForm(slot.cdp, screenTabs.get(name), { step, value, hints: hints ?? {} });
+      return await fillLoginForm(slot.cdp, screenTabs.get(name), { step, value, hints: hints ?? {} }, watcherTabs(name));
     } finally {
       filling.delete(name);
     }

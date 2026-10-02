@@ -9,12 +9,14 @@ const setup = () => {
   };
   const okchatBinding = {
     findMany: jest.fn(async () => [] as any[]),
+    findFirst: jest.fn(async () => null as any),
     updateMany: jest.fn((args: any) => ({ op: 'updateMany', args })),
     deleteMany: jest.fn((args: any) => ({ op: 'deleteMany', args })),
     upsert: jest.fn((args: any) => ({ op: 'upsert', args })),
   };
   const integration = { findMany: jest.fn(async () => [{ id: 'i1' }, { id: 'i2' }]) };
-  const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })) };
+  const okchatOutbox = { deleteMany: jest.fn(async () => ({ count: 4 })), create: jest.fn((args: any) => ({ op: 'create', args })) };
+  const okchatThread = { upsert: jest.fn((args: any) => ({ op: 'upsert', args })) };
   const okchatReply = {
     deleteMany: jest.fn(async () => ({ count: 5 })),
     groupBy: jest.fn(async () => [] as any[]),
@@ -22,10 +24,10 @@ const setup = () => {
     count: jest.fn(async () => 7),
   };
   const transaction = { $transaction: jest.fn(async (ops: any[]) => ops) };
-  const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply };
+  const model = { okchatLink, okchatBinding, integration, okchatOutbox, okchatReply, okchatThread };
   const r = { model } as any;
   const repo = new OkchatRepository(r, r, r, r, r, r, r, r, r, { model: transaction } as any);
-  return { repo, okchatLink, okchatBinding, integration, transaction, okchatOutbox, okchatReply };
+  return { repo, okchatLink, okchatBinding, integration, transaction, okchatOutbox, okchatReply, okchatThread };
 };
 
 const bindings = [
@@ -146,5 +148,140 @@ describe('OkchatRepository reply queue', () => {
     const { repo, okchatReply } = setup();
     expect(await repo.queuedCount('i1')).toBe(7);
     expect(okchatReply.count).toHaveBeenCalledWith({ where: { integrationId: 'i1', status: 'QUEUED' } });
+  });
+});
+
+describe('OkchatRepository.readableBindings', () => {
+  const now = new Date('2026-10-03T06:00:00Z');
+  const readBefore = new Date(now.getTime() - 60_000);
+  const watchedReadBefore = new Date(now.getTime() - 5 * 60_000);
+
+  it('every minute, or every 5 minutes while the account\'s DM watcher is healthy; paused accounts wait', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.readableBindings(['xiaohongshu'], now, { readBefore, watchedReadBefore }, 12);
+    const [args] = okchatBinding.findMany.mock.calls[0] as any[];
+    expect(args.where.active).toBe(true);
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([
+        { OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] },
+        { OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: now } }] },
+        {
+          OR: [
+            { lastReadAt: null },
+            { lastReadAt: { lt: watchedReadBefore } },
+            { lastReadAt: { lt: readBefore }, OR: [{ watchHealthyUntil: null }, { watchHealthyUntil: { lt: now } }] },
+          ],
+        },
+      ])
+    );
+    expect(args.where.integration).toMatchObject({ providerIdentifier: { in: ['xiaohongshu'] }, deletedAt: null, disabled: false });
+    expect(args.orderBy).toEqual({ lastReadAt: { sort: 'asc', nulls: 'first' } });
+    expect(args.take).toBe(12);
+  });
+});
+
+describe('OkchatRepository read lease', () => {
+  const at = new Date('2026-10-03T06:00:00Z');
+  const until = new Date('2026-10-03T06:05:00Z');
+
+  it('is taken when free or expired', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    expect(await repo.claimRead('i1', 'read-1', at, until)).toBe(true);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', OR: [{ readLeaseUntil: null }, { readLeaseUntil: { lt: at } }] },
+      data: { readLeaseUntil: until, readLeaseOwner: 'read-1' },
+    });
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+    expect(await repo.claimRead('i1', 'read-2', at, until)).toBe(false);
+  });
+
+  it('is renewed only while the same read still holds it unbroken: once it lapsed, the read stops', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    expect(await repo.renewRead('i1', 'read-1', at, until)).toBe(true);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', readLeaseOwner: 'read-1', readLeaseUntil: { gte: at } },
+      data: { readLeaseUntil: until },
+    });
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+    expect(await repo.renewRead('i1', 'read-1', at, until)).toBe(false);
+  });
+
+  it('is given back only by the read that holds it', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+    await repo.releaseRead('i1', 'read-1');
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({
+      where: { integrationId: 'i1', readLeaseOwner: 'read-1' },
+      data: { readLeaseUntil: null, readLeaseOwner: null },
+    });
+  });
+});
+
+describe('OkchatRepository: the DM watch', () => {
+  const now = new Date('2026-10-03T06:00:00Z');
+  const usable = {
+    deletedAt: null,
+    disabled: false,
+    refreshNeeded: false,
+    inBetweenSteps: false,
+    providerIdentifier: { in: ['xiaohongshu'] },
+    organization: { deletedAt: null, okchatLink: { status: 'LINKED' } },
+  };
+
+  it('one account read right away: the same accounts a round reads, whenever it was last read', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.readableBinding('i1', ['xiaohongshu'], now);
+    const [args] = okchatBinding.findFirst.mock.calls[0] as any[];
+    expect(args.where).toEqual({
+      integrationId: 'i1',
+      active: true,
+      AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }],
+      integration: usable,
+    });
+    expect(args.include).toEqual({ integration: { select: expect.objectContaining({ token: true, providerIdentifier: true }) } });
+  });
+
+  it('the accounts to watch: readable ones whose DM site is not logged out, with their slot', async () => {
+    const { repo, okchatBinding } = setup();
+    await repo.watchableBindings(['xiaohongshu'], now);
+    expect(okchatBinding.findMany).toHaveBeenCalledWith({
+      where: { active: true, loggedOutReason: null, AND: [{ OR: [{ pausedUntil: null }, { pausedUntil: { lt: now } }] }], integration: usable },
+      select: { integrationId: true, integration: { select: { token: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('records which watchers are healthy until when, and clears the others', async () => {
+    const { repo, okchatBinding } = setup();
+    okchatBinding.updateMany.mockResolvedValue({ count: 1 } as any);
+    const until = new Date('2026-10-03T06:03:00Z');
+    await repo.setWatchHealth(['i1'], ['i2', 'i3'], until);
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({ where: { integrationId: { in: ['i1'] } }, data: { watchHealthyUntil: until } });
+    expect(okchatBinding.updateMany).toHaveBeenCalledWith({ where: { integrationId: { in: ['i2', 'i3'] } }, data: { watchHealthyUntil: null } });
+    okchatBinding.updateMany.mockClear();
+    await repo.setWatchHealth([], [], until);
+    expect(okchatBinding.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('OkchatRepository: a never-read conversation about to be opened', () => {
+  it('is marked with its unread count and preview, without touching a thread already read', async () => {
+    const { repo, okchatThread } = setup();
+    await repo.markPending('i1', 'c1', { displayName: '小C', pendingUnread: 2, pendingSummary: '在吗' });
+    expect(okchatThread.upsert).toHaveBeenCalledWith({
+      where: { integrationId_threadId: { integrationId: 'i1', threadId: 'c1' } },
+      create: { integrationId: 'i1', threadId: 'c1', displayName: '小C', pendingUnread: 2, pendingSummary: '在吗' },
+      update: { pendingUnread: 2, pendingSummary: '在吗' },
+    });
+  });
+
+  it('a saved read clears the mark', async () => {
+    const { repo, okchatThread } = setup();
+    await repo.saveRead('i1', 'c1', { displayName: '小C', tail: [], seq: 1, lastSummary: '在吗' }, null);
+    const [args] = okchatThread.upsert.mock.calls[0] as any[];
+    expect(args.update).toMatchObject({ initialized: true, pendingUnread: 0, pendingSummary: null });
+    expect(args.create).toMatchObject({ initialized: true, pendingUnread: 0, pendingSummary: null });
   });
 });

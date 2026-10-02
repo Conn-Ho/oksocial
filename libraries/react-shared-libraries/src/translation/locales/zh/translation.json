@@ -1069,7 +1069,7 @@
   "okchat_card_title": "私信在 okchat 处理",
   "okchat_card_linked": "已接入",
   "okchat_card_waiting": "请在新打开的 okchat 页面里确认连接，完成后这里会自动变成「已接入」。",
-  "okchat_card_linked_hint": "{{platforms}}私信约每 3 分钟同步到 okchat，由 AI 接待和客服在那里回复，回复从这里的账号发出。",
+  "okchat_card_linked_hint": "{{platforms}}私信会及时同步到 okchat（通常 1 分钟内），由 AI 接待和客服在那里回复，回复从这里的账号发出。",
   "okchat_card_gave_up": "还没有收到 okchat 的连接确认。如果已经在 okchat 里确认过，稍等片刻再刷新；也可以再打开一次。",
   "okchat_card_hint": "{{platforms}}私信不再在 oksocial 里回复：用 oksocial 账号直接登录 okchat，团队里的账号会自动成为 okchat 的渠道。",
   "okchat_card_reopen": "重新打开 okchat",

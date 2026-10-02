@@ -247,7 +247,7 @@ function dmList({ acct, opts }) {
 function dmRead({ acct, args, opts }) {
   const conv = dmConv(acct, args[0]);
   conv.unread = 0;
-  return conv.messages.slice(-intOpt(opts, 'limit', 40)).map((m) => ({ time: fmtMonthDayTime(m.time), from: m.from, mine: m.mine, text: m.text }));
+  return conv.messages.slice(-intOpt(opts, 'limit', 40)).map((m) => ({ time: fmtMonthDayTime(m.time), from: m.from, mine: m.mine, kind: 'text', text: m.text }));
 }
 
 function dmSend({ acct, args }) {
